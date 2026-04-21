@@ -1,0 +1,33 @@
+{
+  "expo": {
+    "name": "Horizonte",
+    "slug": "horizonte",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "horizonte",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FF5722"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.horizonte.financas"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#FF5722"
+      },
+      "package": "com.horizonte.financas"
+    },
+    "plugins": [
+      "expo-router"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
