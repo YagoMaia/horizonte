@@ -7,6 +7,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   Alert,
+  Platform,
 } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { useTheme } from '@/hooks/useTheme'
@@ -51,7 +52,7 @@ function MenuItem({ icon, label, value, onPress, danger, colors }: MenuItemProps
 
 export function MenuScreen() {
   const { colors } = useTheme()
-  const { accounts, transactions, tags, totalBalance } = useStoreContext()
+  const { accounts, transactions, tags, totalBalance, clearAllData } = useStoreContext()
 
   return (
     <ScrollView
@@ -170,14 +171,22 @@ export function MenuScreen() {
         <MenuItem
           icon="trash-outline"
           label="Limpar todos os dados"
-          onPress={() => Alert.alert(
-            'Atenção',
-            'Isso irá apagar todos os seus dados permanentemente. Tem certeza?',
-            [
-              { text: 'Cancelar', style: 'cancel' },
-              { text: 'Apagar', style: 'destructive' }
-            ]
-          )}
+          onPress={() => {
+            if (Platform.OS === 'web') {
+              if (window.confirm('Atenção: Isso irá apagar todos os seus dados permanentemente. Tem certeza?')) {
+                clearAllData()
+              }
+            } else {
+              Alert.alert(
+                'Atenção',
+                'Isso irá apagar todos os seus dados permanentemente. Tem certeza?',
+                [
+                  { text: 'Cancelar', style: 'cancel' },
+                  { text: 'Apagar', style: 'destructive', onPress: clearAllData }
+                ]
+              )
+            }
+          }}
           danger
           colors={colors}
         />

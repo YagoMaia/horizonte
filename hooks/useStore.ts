@@ -10,64 +10,17 @@ const STORAGE_KEYS = {
   MONTHLY_BUDGET: '@horizonte:monthly_budget',
 }
 
-const DEFAULT_TAGS: Tag[] = [
-  { id: '1', name: 'Alimentação', color: '#FF7043', icon: 'fast-food' },
-  { id: '2', name: 'Transporte', color: '#42A5F5', icon: 'car' },
-  { id: '3', name: 'Saúde', color: '#66BB6A', icon: 'medical' },
-  { id: '4', name: 'Lazer', color: '#AB47BC', icon: 'game-controller' },
-  { id: '5', name: 'Moradia', color: '#FFA726', icon: 'home' },
-  { id: '6', name: 'Educação', color: '#26C6DA', icon: 'school' },
-  { id: '7', name: 'Salário', color: '#9CCC65', icon: 'cash' },
-  { id: '8', name: 'Investimentos', color: '#8D6E63', icon: 'trending-up' },
-]
+const DEFAULT_TAGS: Tag[] = []
 
-const DEFAULT_ACCOUNTS: Account[] = [
-  { id: '1', name: 'Conta Corrente', balance: 3250.00, type: 'corrente', color: '#42A5F5', icon: 'card' },
-  { id: '2', name: 'Poupança', balance: 12000.00, type: 'poupanca', color: '#66BB6A', icon: 'leaf' },
-  { id: '3', name: 'Carteira', balance: 150.00, type: 'carteira', color: '#FFA726', icon: 'wallet' },
-]
+const DEFAULT_ACCOUNTS: Account[] = []
 
-const DEFAULT_TRANSACTIONS: Transaction[] = [
-  {
-    id: '1',
-    description: 'Salário',
-    amount: 5500,
-    type: 'receita',
-    date: new Date().toISOString(),
-    accountId: '1',
-    tagIds: ['7'],
-    recurrence: 'mensal',
-    paid: true,
-  },
-  {
-    id: '2',
-    description: 'Aluguel',
-    amount: 1800,
-    type: 'despesa',
-    date: new Date().toISOString(),
-    accountId: '1',
-    tagIds: ['5'],
-    recurrence: 'mensal',
-    paid: true,
-  },
-  {
-    id: '3',
-    description: 'Supermercado',
-    amount: 420,
-    type: 'despesa',
-    date: new Date().toISOString(),
-    accountId: '1',
-    tagIds: ['1'],
-    recurrence: 'unica',
-    paid: true,
-  },
-]
+const DEFAULT_TRANSACTIONS: Transaction[] = []
 
 export function useStore() {
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [accounts, setAccounts] = useState<Account[]>([])
   const [tags, setTags] = useState<Tag[]>([])
-  const [monthlyBudget, setMonthlyBudget] = useState<number>(5000)
+  const [monthlyBudget, setMonthlyBudget] = useState<number>(0)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -85,7 +38,7 @@ export function useStore() {
       setTransactions(txRaw ? JSON.parse(txRaw) : DEFAULT_TRANSACTIONS)
       setAccounts(accRaw ? JSON.parse(accRaw) : DEFAULT_ACCOUNTS)
       setTags(tagsRaw ? JSON.parse(tagsRaw) : DEFAULT_TAGS)
-      setMonthlyBudget(budgetRaw ? parseFloat(budgetRaw) : 5000)
+      setMonthlyBudget(budgetRaw ? parseFloat(budgetRaw) : 0)
     } catch (e) {
       setTransactions(DEFAULT_TRANSACTIONS)
       setAccounts(DEFAULT_ACCOUNTS)
@@ -113,6 +66,19 @@ export function useStore() {
   const saveTags = useCallback(async (data: Tag[]) => {
     await AsyncStorage.setItem(STORAGE_KEYS.TAGS, JSON.stringify(data))
     setTags(data)
+  }, [])
+
+  const clearAllData = useCallback(async () => {
+    await AsyncStorage.multiRemove([
+      STORAGE_KEYS.TRANSACTIONS,
+      STORAGE_KEYS.ACCOUNTS,
+      STORAGE_KEYS.TAGS,
+      STORAGE_KEYS.MONTHLY_BUDGET,
+    ])
+    setTransactions(DEFAULT_TRANSACTIONS)
+    setAccounts(DEFAULT_ACCOUNTS)
+    setTags(DEFAULT_TAGS)
+    setMonthlyBudget(0)
   }, [])
 
   const addTransaction = useCallback(async (tx: Omit<Transaction, 'id'>) => {
@@ -174,5 +140,6 @@ export function useStore() {
     deleteTransaction,
     saveAccounts,
     saveTags,
+    clearAllData,
   }
 }
