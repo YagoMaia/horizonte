@@ -82,20 +82,55 @@ export function useStore() {
   }, [])
 
   const addTransaction = useCallback(async (tx: Omit<Transaction, 'id'>) => {
-    const newTx: Transaction = { ...tx, id: Date.now().toString() }
-    const updated = [newTx, ...transactions]
-    await saveTransactions(updated)
+    const newTransactions: Transaction[] = []
+    let updatedAccounts = [...accounts]
 
-    // Update account balance
-    const updatedAccounts = accounts.map(acc => {
-      if (acc.id === tx.accountId) {
-        const delta = tx.type === 'receita' ? tx.amount : -tx.amount
-        return { ...acc, balance: acc.balance + (tx.paid ? delta : 0) }
+    if (tx.recurrence === 'mensal') {
+      const baseDate = new Date(tx.date)
+      for (let i = 0; i < 12; i++) {
+        const currentDate = new Date(baseDate)
+        currentDate.setMonth(baseDate.getMonth() + i)
+        
+        // Apenas a primeira parcela pode vir como "paga", as próximas são sempre pendentes
+        const isPaid = i === 0 ? tx.paid : false
+
+        newTransactions.push({
+          ...tx,
+          id: Date.now().toString() + '-' + i,
+          date: currentDate.toISOString(),
+          paid: isPaid,
+        })
+
+        if (isPaid) {
+          updatedAccounts = updatedAccounts.map(acc => {
+            if (acc.id === tx.accountId) {
+              const delta = tx.type === 'receita' ? tx.amount : -tx.amount
+              return { ...acc, balance: acc.balance + delta }
+            }
+            return acc
+          })
+        }
       }
-      return acc
-    })
+    } else {
+      const newTx: Transaction = { ...tx, id: Date.now().toString() }
+      newTransactions.push(newTx)
+
+      if (tx.paid) {
+        updatedAccounts = updatedAccounts.map(acc => {
+          if (acc.id === tx.accountId) {
+            const delta = tx.type === 'receita' ? tx.amount : -tx.amount
+            return { ...acc, balance: acc.balance + delta }
+          }
+          return acc
+        })
+      }
+    }
+
+    const updated = [...newTransactions, ...transactions]
+    await saveTransactions(updated)
     await saveAccounts(updatedAccounts)
-    return newTx
+    
+    return newTransactions[0]
   }, [transactions, accounts, saveTransactions, saveAccounts])
 
   const deleteTransaction = useCallback(async (id: string) => {

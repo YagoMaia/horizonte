@@ -17,6 +17,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useTheme } from '@/hooks/useTheme'
 import { TransactionType, RecurrenceType } from '@/constants/types'
 
+const WEEK_DAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
+const MONTHS = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
+
 interface AddTransactionModalProps {
   visible: boolean
   onClose: () => void
@@ -37,6 +40,12 @@ export function AddTransactionModal({ visible, onClose, onAdd, accounts, tags }:
   const { colors } = useTheme()
   const insets = useSafeAreaInsets()
 
+  const getFormattedDate = (offsetDays = 0) => {
+    const d = new Date()
+    d.setDate(d.getDate() + offsetDays)
+    return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
+  }
+
   const [type, setType] = useState<TransactionType>('despesa')
   const [description, setDescription] = useState('')
   const [amount, setAmount] = useState('')
@@ -44,15 +53,109 @@ export function AddTransactionModal({ visible, onClose, onAdd, accounts, tags }:
   const [selectedTags, setSelectedTags] = useState<string[]>([])
   const [recurrence, setRecurrence] = useState<RecurrenceType>('unica')
   const [paid, setPaid] = useState(true)
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0])
+  const [date, setDate] = useState(getFormattedDate(0))
+  const [showCalendar, setShowCalendar] = useState(false)
+  const [calendarMonth, setCalendarMonth] = useState(new Date())
+
+  React.useEffect(() => {
+    const parts = date.split('/')
+    if (parts.length === 3 && parts[2].length === 4) {
+      const [day, month, year] = parts
+      const parsedDate = new Date(Number(year), Number(month) - 1, Number(day))
+      if (!isNaN(parsedDate.getTime())) {
+         setCalendarMonth(parsedDate)
+      }
+    }
+  }, [date])
+
+  const renderCalendar = () => {
+    const year = calendarMonth.getFullYear()
+    const month = calendarMonth.getMonth()
+    const daysInMonth = new Date(year, month + 1, 0).getDate()
+    const firstDayOfWeek = new Date(year, month, 1).getDay()
+
+    const days = []
+    for (let i = 0; i < firstDayOfWeek; i++) {
+      days.push(null)
+    }
+    for (let i = 1; i <= daysInMonth; i++) {
+      days.push(i)
+    }
+
+    const today = new Date()
+    let parsedCurrentDate = new Date()
+    const parts = date.split('/')
+    if (parts.length === 3 && parts[2].length === 4) {
+      parsedCurrentDate = new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0]))
+    }
+
+    return (
+      <View style={{ backgroundColor: colors.card, borderRadius: 12, padding: 12, borderWidth: 1, borderColor: colors.border, marginTop: 8 }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <TouchableOpacity onPress={() => setCalendarMonth(new Date(year, month - 1, 1))} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <Ionicons name="chevron-back" size={20} color={colors.foreground} />
+          </TouchableOpacity>
+          <Text style={{ fontWeight: '600', color: colors.foreground }}>
+            {MONTHS[month]} {year}
+          </Text>
+          <TouchableOpacity onPress={() => setCalendarMonth(new Date(year, month + 1, 1))} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <Ionicons name="chevron-forward" size={20} color={colors.foreground} />
+          </TouchableOpacity>
+        </View>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+          {WEEK_DAYS.map((wd, i) => (
+            <View key={`wd-${i}`} style={{ width: '14.28%', alignItems: 'center', marginBottom: 8 }}>
+              <Text style={{ fontSize: 12, fontWeight: '500', color: colors.mutedForeground }}>{wd.charAt(0)}</Text>
+            </View>
+          ))}
+          {days.map((d, i) => {
+            if (!d) return <View key={`empty-${i}`} style={{ width: '14.28%' }} />
+            const isSelected = parsedCurrentDate.getDate() === d && parsedCurrentDate.getMonth() === month && parsedCurrentDate.getFullYear() === year
+            const isToday = today.getDate() === d && today.getMonth() === month && today.getFullYear() === year
+            return (
+              <TouchableOpacity
+                key={`day-${d}`}
+                style={{ width: '14.28%', alignItems: 'center', paddingVertical: 6 }}
+                onPress={() => {
+                  setDate(`${String(d).padStart(2, '0')}/${String(month + 1).padStart(2, '0')}/${year}`)
+                  setShowCalendar(false)
+                }}
+              >
+                <View style={{
+                  width: 30, height: 30, borderRadius: 15,
+                  alignItems: 'center', justifyContent: 'center',
+                  backgroundColor: isSelected ? colors.primary : 'transparent',
+                  borderWidth: isToday && !isSelected ? 1 : 0,
+                  borderColor: colors.primary
+                }}>
+                  <Text style={{
+                    color: isSelected ? '#FFF' : colors.foreground,
+                    fontWeight: isSelected || isToday ? '600' : '400'
+                  }}>{d}</Text>
+                </View>
+              </TouchableOpacity>
+            )
+          })}
+        </View>
+      </View>
+    )
+  }
 
   const handleSubmit = () => {
     if (!description.trim() || !amount || !accountId) return
+    
+    let isoDate = new Date().toISOString()
+    const parts = date.split('/')
+    if (parts.length === 3 && parts[2].length === 4) {
+      const [day, month, year] = parts
+      isoDate = new Date(Number(year), Number(month) - 1, Number(day)).toISOString()
+    }
+
     onAdd({
       description: description.trim(),
       amount: parseFloat(amount.replace(',', '.')),
       type,
-      date: new Date(date).toISOString(),
+      date: isoDate,
       accountId,
       tagIds: selectedTags,
       recurrence,
@@ -64,6 +167,7 @@ export function AddTransactionModal({ visible, onClose, onAdd, accounts, tags }:
     setSelectedTags([])
     setRecurrence('unica')
     setPaid(true)
+    setDate(getFormattedDate(0))
     onClose()
   }
 
@@ -153,14 +257,32 @@ export function AddTransactionModal({ visible, onClose, onAdd, accounts, tags }:
 
           {/* Date */}
           <View style={styles.field}>
-            <Text style={[styles.label, { color: colors.mutedForeground }]}>Data</Text>
-            <TextInput
-              style={[styles.input, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.card }]}
-              value={date}
-              onChangeText={setDate}
-              placeholder="AAAA-MM-DD"
-              placeholderTextColor={colors.mutedForeground}
-            />
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Text style={[styles.label, { color: colors.mutedForeground }]}>Data</Text>
+              <View style={{ flexDirection: 'row', gap: 12 }}>
+                <TouchableOpacity onPress={() => { setDate(getFormattedDate(-1)); setShowCalendar(false) }}>
+                  <Text style={{ fontSize: 13, color: colors.primary, fontWeight: '600' }}>Ontem</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => { setDate(getFormattedDate(0)); setShowCalendar(false) }}>
+                  <Text style={{ fontSize: 13, color: colors.primary, fontWeight: '600' }}>Hoje</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => { setDate(getFormattedDate(1)); setShowCalendar(false) }}>
+                  <Text style={{ fontSize: 13, color: colors.primary, fontWeight: '600' }}>Amanhã</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+            {showCalendar ? (
+              renderCalendar()
+            ) : (
+              <TouchableOpacity 
+                style={[styles.input, { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderColor: colors.border, backgroundColor: colors.card }]}
+                onPress={() => setShowCalendar(true)}
+                activeOpacity={0.7}
+              >
+                <Text style={{ color: colors.foreground, fontSize: 15 }}>{date}</Text>
+                <Ionicons name="calendar-outline" size={20} color={colors.mutedForeground} />
+              </TouchableOpacity>
+            )}
           </View>
 
           {/* Account selector */}

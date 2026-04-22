@@ -66,7 +66,7 @@ export function SaldosScreen() {
         {/* Recent Transactions */}
         <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Lançamentos Recentes</Text>
         <View style={[styles.txList, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          {transactions.length === 0 && (
+          {transactions.filter(tx => tx.paid).length === 0 && (
             <View style={styles.emptyState}>
               <Ionicons name="receipt-outline" size={40} color={colors.mutedForeground} />
               <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
@@ -77,8 +77,8 @@ export function SaldosScreen() {
               </Text>
             </View>
           )}
-          {transactions.slice(0, 30).map((tx, idx) => {
-            const isLast = idx === Math.min(transactions.length, 30) - 1
+          {transactions.filter(tx => tx.paid).slice(0, 30).map((tx, idx, arr) => {
+            const isLast = idx === arr.length - 1
             const isReceita = tx.type === 'receita'
             const isTransf = tx.type === 'transferencia'
             const amountColor = isReceita ? colors.success : isTransf ? colors.primary : colors.destructive

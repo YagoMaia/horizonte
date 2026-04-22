@@ -50,18 +50,11 @@ export function HorizonteScreen() {
   const {
     transactions,
     accounts,
-    monthlyBudget: savedBudget,
-    saveMonthlyBudget,
   } = useStoreContext();
 
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth());
-
-  // Gasto mensal — persiste no AsyncStorage via contexto
-  const [monthlyBudgetStr, setMonthlyBudgetStr] = useState(String(savedBudget));
-  const [editingBudget, setEditingBudget] = useState(false);
-  const monthlyBudget = parseFloat(monthlyBudgetStr.replace(',', '.')) || 0;
 
   const prevMonth = () => {
     if (month === 0) {
@@ -80,7 +73,6 @@ export function HorizonteScreen() {
 
   const days = useMemo(() => {
     const daysCount = getDaysInMonth(year, month);
-    const dailyBudget = daysCount > 0 ? monthlyBudget / daysCount : 0;
 
     const monthTxs = transactions.filter((tx) => {
       const d = new Date(tx.date);
@@ -102,6 +94,16 @@ export function HorizonteScreen() {
       else if (tx.type === 'despesa') openingBalance += tx.amount;
     });
 
+    let planForMonth = 0;
+    if (year === today.getFullYear() && month === today.getMonth()) {
+      const remainingDays = daysCount - today.getDate() + 1;
+      if (remainingDays > 0) {
+        planForMonth = Math.max(0, totalBalance) / remainingDays;
+      }
+    } else if (year > today.getFullYear() || (year === today.getFullYear() && month > today.getMonth())) {
+      planForMonth = Math.max(0, openingBalance) / daysCount;
+    }
+
     let runningBalance = openingBalance;
     const result = [];
 
@@ -114,9 +116,6 @@ export function HorizonteScreen() {
         .filter((t) => t.type === 'despesa')
         .reduce((s, t) => s + t.amount, 0);
 
-      // Apply real transactions + daily budget deduction
-      runningBalance += income - expense - dailyBudget;
-
       const dayDate = new Date(year, month, d);
       const isPast =
         dayDate <
@@ -126,26 +125,33 @@ export function HorizonteScreen() {
         month === today.getMonth() &&
         year === today.getFullYear();
 
+      let dailyPlan = 0;
+      if (!isPast) {
+        dailyPlan = planForMonth;
+      }
+
+      // Apply real transactions + daily plan deduction
+      runningBalance += income - expense - dailyPlan;
+
       result.push({
         day: d,
         weekDay: getWeekDay(year, month, d),
         income,
         expense,
-        dailyBudget,
+        dailyPlan,
         balance: runningBalance,
         isPast,
         isToday,
       });
     }
     return result;
-  }, [transactions, accounts, year, month, monthlyBudget, totalBalance]);
+  }, [transactions, accounts, year, month, totalBalance]);
 
   const totalIncome = days.reduce((s, d) => s + d.income, 0);
   const totalExpense = days.reduce((s, d) => s + d.expense, 0);
   const endBalance =
     days.length > 0 ? days[days.length - 1].balance : totalBalance;
-  const daysCount = getDaysInMonth(year, month);
-  const dailyBudget = daysCount > 0 ? monthlyBudget / daysCount : 0;
+  const currentDailyPlan = days.find(d => !d.isPast)?.dailyPlan || 0;
 
   return (
     <KeyboardAvoidingView
@@ -180,7 +186,7 @@ export function HorizonteScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Budget config card */}
+      {/* Plan Info card */}
       <View
         style={[
           styles.budgetCard,
@@ -195,7 +201,7 @@ export function HorizonteScreen() {
             ]}
           >
             <Ionicons
-              name='calculator-outline'
+              name='wallet-outline'
               size={18}
               color={colors.primary}
             />
@@ -204,55 +210,22 @@ export function HorizonteScreen() {
             <Text
               style={[styles.budgetLabel, { color: colors.mutedForeground }]}
             >
-              Gasto mensal estimado
+              Saldo Disponível
             </Text>
             <View style={styles.budgetValueRow}>
-              {editingBudget ? (
-                <TextInput
-                  style={[
-                    styles.budgetInput,
-                    {
-                      color: colors.foreground,
-                      borderBottomColor: colors.primary,
-                    },
-                  ]}
-                  value={monthlyBudgetStr}
-                  onChangeText={setMonthlyBudgetStr}
-                  keyboardType='decimal-pad'
-                  autoFocus
-                  onBlur={() => {
-                    setEditingBudget(false);
-                    saveMonthlyBudget(monthlyBudget);
-                  }}
-                  selectTextOnFocus
-                />
-              ) : (
-                <TouchableOpacity
-                  onPress={() => setEditingBudget(true)}
-                  style={styles.budgetValueBtn}
-                >
-                  <Text
-                    style={[styles.budgetValue, { color: colors.foreground }]}
-                  >
-                    {formatCurrency(monthlyBudget)}
-                  </Text>
-                  <Ionicons
-                    name='pencil-outline'
-                    size={14}
-                    color={colors.mutedForeground}
-                  />
-                </TouchableOpacity>
-              )}
+              <Text style={[styles.budgetValue, { color: colors.foreground }]}>
+                {formatCurrency(totalBalance)}
+              </Text>
             </View>
           </View>
           <View style={styles.budgetRight}>
             <Text
               style={[styles.dailyLabel, { color: colors.mutedForeground }]}
             >
-              por dia
+              plano por dia
             </Text>
             <Text style={[styles.dailyValue, { color: colors.primary }]}>
-              {formatShort(dailyBudget)}
+              {formatShort(currentDailyPlan)}
             </Text>
           </View>
         </View>
@@ -321,42 +294,46 @@ export function HorizonteScreen() {
           },
         ]}
       >
-        <Text
-          style={[
-            styles.colDia,
-            styles.headerText,
-            { color: colors.mutedForeground },
-          ]}
-        >
-          DIA
-        </Text>
-        <Text
-          style={[
-            styles.colGasto,
-            styles.headerText,
-            { color: colors.mutedForeground },
-          ]}
-        >
-          GASTO
-        </Text>
-        <Text
-          style={[
-            styles.colPlan,
-            styles.headerText,
-            { color: colors.mutedForeground },
-          ]}
-        >
-          PLAN.
-        </Text>
-        <Text
-          style={[
-            styles.colSaldo,
-            styles.headerText,
-            { color: colors.mutedForeground },
-          ]}
-        >
-          SALDO
-        </Text>
+        <View style={styles.colDia}>
+          <Text
+            style={[
+              styles.headerText,
+              { color: colors.mutedForeground, textAlign: 'left' },
+            ]}
+          >
+            DIA
+          </Text>
+        </View>
+        <View style={styles.colGasto}>
+          <Text
+            style={[
+              styles.headerText,
+              { color: colors.mutedForeground, textAlign: 'right' },
+            ]}
+          >
+            GASTO
+          </Text>
+        </View>
+        <View style={styles.colPlan}>
+          <Text
+            style={[
+              styles.headerText,
+              { color: colors.mutedForeground, textAlign: 'right' },
+            ]}
+          >
+            PLAN.
+          </Text>
+        </View>
+        <View style={[styles.colSaldo, { paddingRight: 8 }]}>
+          <Text
+            style={[
+              styles.headerText,
+              { color: colors.mutedForeground, textAlign: 'right' },
+            ]}
+          >
+            SALDO
+          </Text>
+        </View>
       </View>
 
       {/* Table rows */}
@@ -449,9 +426,15 @@ export function HorizonteScreen() {
 
               {/* PLANEJADO (budget diário) */}
               <View style={styles.colPlan}>
-                <Text style={[styles.cellText, { color: colors.warning }]}>
-                  -{formatShort(d.dailyBudget)}
-                </Text>
+                {d.dailyPlan > 0 ? (
+                  <Text style={[styles.cellText, { color: colors.warning }]}>
+                    {formatShort(d.dailyPlan)}
+                  </Text>
+                ) : (
+                  <Text style={[styles.cellText, { color: colors.mutedForeground }]}>
+                    -
+                  </Text>
+                )}
               </View>
 
               {/* SALDO */}
