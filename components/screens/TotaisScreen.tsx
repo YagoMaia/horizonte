@@ -16,25 +16,32 @@ type Period = 'semana' | 'mes' | 'ano'
 
 export function TotaisScreen() {
   const { colors } = useTheme()
-  const { transactions, tags } = useStoreContext()
+  const { transactions, tags, showPending } = useStoreContext()
   const [period, setPeriod] = useState<Period>('mes')
   const [view, setView] = useState<'despesas' | 'receitas'>('despesas')
 
   const filtered = useMemo(() => {
     const now = new Date()
+
+    // Define os limites exatos para a semana: 7 dias atrás (00:00) até o Fim de Hoje (23:59)
+    const weekAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6, 0, 0, 0, 0)
+    const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
+
     return transactions.filter(tx => {
+      // Se o filtro de previstos estiver desligado, já descarta a transação aqui
+      if (!showPending && !tx.paid) return false
+
       const txDate = new Date(tx.date)
+
       if (period === 'semana') {
-        const weekAgo = new Date(now)
-        weekAgo.setDate(now.getDate() - 7)
-        return txDate >= weekAgo
+        return txDate >= weekAgo && txDate <= endOfToday
       } else if (period === 'mes') {
         return txDate.getMonth() === now.getMonth() && txDate.getFullYear() === now.getFullYear()
       } else {
         return txDate.getFullYear() === now.getFullYear()
       }
     })
-  }, [transactions, period])
+  }, [transactions, period, showPending])
 
   const byTag = useMemo(() => {
     const targetType = view === 'despesas' ? 'despesa' : 'receita'
@@ -140,19 +147,26 @@ export function TotaisScreen() {
                 idx < byTag.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }
               ]}
             >
-              <View style={styles.listItemLeft}>
-                <View style={[styles.tagDot, { backgroundColor: item.color }]} />
-                <Text style={[styles.tagName, { color: colors.foreground }]}>{item.name}</Text>
+              {/* 👉 HEADER DA LINHA (Lado Esquerdo + Lado Direito) */}
+              <View style={styles.listItemHeader}>
+                {/* Esquerda: Bolinha e Nome */}
+                <View style={styles.listItemLeft}>
+                  <View style={[styles.tagDot, { backgroundColor: item.color }]} />
+                  <Text style={[styles.tagName, { color: colors.foreground }]}>{item.name}</Text>
+                </View>
+
+                {/* Direita: Valor e Porcentagem */}
+                <View style={styles.listItemRight}>
+                  <Text style={[styles.tagAmount, { color: colors.foreground }]}>
+                    {formatCurrency(item.amount)}
+                  </Text>
+                  <Text style={[styles.tagPercent, { color: colors.mutedForeground }]}>
+                    {item.percent.toFixed(1)}%
+                  </Text>
+                </View>
               </View>
-              <View style={styles.listItemRight}>
-                <Text style={[styles.tagAmount, { color: colors.foreground }]}>
-                  {formatCurrency(item.amount)}
-                </Text>
-                <Text style={[styles.tagPercent, { color: colors.mutedForeground }]}>
-                  {item.percent.toFixed(1)}%
-                </Text>
-              </View>
-              {/* Progress bar */}
+
+              {/* 👉 BARRA DE PROGRESSO EMBAIXO */}
               <View style={[styles.progressBg, { backgroundColor: colors.border }]}>
                 <View style={[styles.progressFill, { width: `${item.percent}%` as any, backgroundColor: item.color }]} />
               </View>
@@ -214,7 +228,12 @@ const styles = StyleSheet.create({
   },
   listItem: {
     padding: 16,
-    gap: 8,
+    gap: 12, // Aumentei o gap para dar espaço entre os textos e a barra de progresso
+  },
+  listItemHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between', // Joga o nome pra esquerda e os valores pra direita
+    alignItems: 'center',
   },
   listItemLeft: {
     flexDirection: 'row',
@@ -231,17 +250,16 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   listItemRight: {
-    position: 'absolute',
-    right: 16,
-    top: 16,
     alignItems: 'flex-end',
+    // ❌ Removido o 'position: absolute' que estava quebrando o layout
   },
   tagAmount: {
     fontSize: 14,
     fontWeight: '600',
   },
   tagPercent: {
-    fontSize: 11,
+    fontSize: 12, // Aumentei um pouquinho o tamanho da fonte para ler melhor
+    marginTop: 2,
   },
   progressBg: {
     height: 4,
