@@ -176,6 +176,13 @@ export function AddTransactionModal({ visible, onClose, onAdd, onUpdate, account
     )
   }
 
+  // Função para alternar a seleção das Tags
+  const toggleTag = (tagId: string) => {
+    setSelectedTags(prev =>
+      prev.includes(tagId) ? prev.filter(id => id !== tagId) : [...prev, tagId]
+    )
+  }
+
   const handleSubmit = () => {
     if (!description.trim() || !amount || !accountId) return
 
@@ -248,13 +255,34 @@ export function AddTransactionModal({ visible, onClose, onAdd, onUpdate, account
             {calendarTarget === 'main' && renderCalendar()}
           </View>
 
-          {/* Contas e Tags (Simplificado para o código) */}
+          {/* Conta */}
           <View style={styles.field}>
             <Text style={[styles.label, { color: colors.mutedForeground }]}>Conta</Text>
             <View style={styles.chipRow}>
               {accounts.map(acc => (
                 <TouchableOpacity key={acc.id} style={[styles.chip, { borderColor: acc.color, backgroundColor: accountId === acc.id ? acc.color : 'transparent' }]} onPress={() => setAccountId(acc.id)}>
-                  <Text style={{ fontSize: 12, color: accountId === acc.id ? '#FFF' : acc.color }}>{acc.name}</Text>
+                  <Text style={[styles.chipText, { color: accountId === acc.id ? '#FFF' : acc.color }]}>{acc.name}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
+          {/* 👉 TAGS ADICIONADAS AQUI 👈 */}
+          <View style={styles.field}>
+            <Text style={[styles.label, { color: colors.mutedForeground }]}>Tags</Text>
+            <View style={styles.chipRow}>
+              {tags.map(tag => (
+                <TouchableOpacity
+                  key={tag.id}
+                  style={[
+                    styles.chip,
+                    { borderColor: tag.color, backgroundColor: selectedTags.includes(tag.id) ? tag.color : 'transparent' }
+                  ]}
+                  onPress={() => toggleTag(tag.id)}
+                >
+                  <Text style={[styles.chipText, { color: selectedTags.includes(tag.id) ? '#FFF' : tag.color }]}>
+                    {tag.name}
+                  </Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -266,7 +294,7 @@ export function AddTransactionModal({ visible, onClose, onAdd, onUpdate, account
             <View style={styles.chipRow}>
               {RECURRENCE_OPTIONS.map(opt => (
                 <TouchableOpacity key={opt.value} style={[styles.chip, { borderColor: colors.primary, backgroundColor: recurrence === opt.value ? colors.primary : 'transparent' }]} onPress={() => setRecurrence(opt.value)}>
-                  <Text style={{ fontSize: 12, color: recurrence === opt.value ? '#FFF' : colors.primary }}>{opt.label}</Text>
+                  <Text style={[styles.chipText, { color: recurrence === opt.value ? '#FFF' : colors.primary }]}>{opt.label}</Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -325,6 +353,7 @@ const styles = StyleSheet.create({
   dateButton: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderWidth: 1, borderRadius: 10, padding: 12 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, borderWidth: 1 },
+  chipText: { fontSize: 13, fontWeight: '500' },
   switchRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, paddingVertical: 10 },
   // Estilos do Calendário
   calendarBox: { marginTop: 8, borderRadius: 12, padding: 12, borderWidth: 1 },
