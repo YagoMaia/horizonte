@@ -109,7 +109,6 @@ export function SaldosScreen() {
               const mainDisplayValue = isCreditCard ? currentInvoice : acc.balance;
               const cardLimit = acc.creditLimit || (acc.balance > 0 ? acc.balance : 0);
 
-              // 👉 CORREÇÃO AQUI: Agora ele subtrai apenas a "currentInvoice", igualzinho à CartaoScreen!
               const availableLimit = Math.max(0, cardLimit - currentInvoice);
 
               return (
@@ -124,12 +123,13 @@ export function SaldosScreen() {
                     </Text>
 
                     <Text style={[styles.accountBalance, { color: colors.foreground }]}>
-                      {formatCurrency(mainDisplayValue)}
+                      {formatCurrency(availableLimit)}
+
                     </Text>
 
                     {isCreditCard && (
                       <Text style={[styles.availableLimitText, { color: colors.mutedForeground }]}>
-                        {cardLimit === 0 ? 'Lim. não definido' : `Disp. ${formatCurrency(availableLimit)}`}
+                        {cardLimit === 0 ? 'Lim. não definido' : `Fatura. ${formatCurrency(mainDisplayValue)}`}
                       </Text>
                     )}
                   </View>
