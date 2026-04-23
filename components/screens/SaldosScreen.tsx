@@ -7,7 +7,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   Switch,
-  ActivityIndicator, // 👉 Adicionado para o carregamento
+  ActivityIndicator,
 } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { useTheme } from '@/hooks/useTheme'
@@ -28,21 +28,19 @@ export function SaldosScreen() {
     monthlyExpense,
     addTransaction,
     updateTransaction,
-    loading,         // 👉 Puxando o status de carregamento
-    showPending,     // 👉 Puxando a preferência salva
-    setShowPending   // 👉 Puxando a função que salva a preferência
+    loading,
+    showPending,
+    setShowPending
   } = useStoreContext()
 
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null)
   const [isEditing, setIsEditing] = useState(false)
 
-  // 👉 LÓGICA DE FILTRO: Usa a variável que veio do AsyncStorage
   const displayedTransactions = transactions.filter(tx => {
     if (showPending) return true
     return tx.paid === true
   })
 
-  // 👉 SE O APP ESTIVER LENDO A MEMÓRIA, MOSTRA UM CARREGAMENTO
   if (loading) {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
@@ -58,7 +56,7 @@ export function SaldosScreen() {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        {/* Total Balance Card */}
+        {/* Card de Saldo Total */}
         <View style={[styles.balanceCard, { backgroundColor: colors.primary }]}>
           <Text style={styles.balanceLabel}>Saldo Total</Text>
           <Text style={styles.balanceValue}>{formatCurrency(totalBalance)}</Text>
@@ -75,100 +73,87 @@ export function SaldosScreen() {
           </View>
         </View>
 
-        {/* Accounts */}
+        {/* Seção de Contas */}
         <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Contas</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           <View style={styles.accountsRow}>
-            {accounts.map(acc => (
-              <View key={acc.id} style={[styles.accountCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                <View style={[styles.accountIcon, { backgroundColor: acc.color + '20' }]}>
-                  <Ionicons name={acc.icon as any} size={20} color={acc.color} />
+            {accounts.map(acc => {
+
+              // 👉 VERIFICAÇÃO DE SEGURANÇA PARA CRÉDITO
+              // Aqui filtramos APENAS o que realmente consome limite:
+              const totalCreditConsumed = transactions.filter(tx =>
+                tx.accountId === acc.id &&             // 1. Deve ser deste cartão específico
+                tx.paymentMethod === 'credito' &&      // 2. Deve ser método Crédito
+                tx.type === 'despesa'                  // 3. Deve ser uma Despesa
+              ).reduce((sum, tx) => sum + tx.amount, 0);
+
+              // Cálculo do Limite Disponível
+              const displayBalance = acc.type === 'cartao_credito'
+                ? Math.max(0, acc.balance - totalCreditConsumed)
+                : acc.balance;
+
+              return (
+                <View key={acc.id} style={[styles.accountCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                  <View style={[styles.accountIcon, { backgroundColor: acc.color + '20' }]}>
+                    <Ionicons name={acc.icon as any} size={20} color={acc.color} />
+                  </View>
+                  <Text style={[styles.accountName, { color: colors.mutedForeground }]} numberOfLines={1}>
+                    {acc.name}
+                  </Text>
+                  <Text style={[styles.accountBalance, { color: colors.foreground }]}>
+                    {formatCurrency(displayBalance)}
+                  </Text>
+                  {/* Dica visual se for cartão */}
+                  {acc.type === 'cartao_credito' && (
+                    <Text style={{ fontSize: 9, color: colors.mutedForeground, marginTop: -4 }}>LIMITE DISPONÍVEL</Text>
+                  )}
                 </View>
-                <Text style={[styles.accountName, { color: colors.mutedForeground }]} numberOfLines={1}>
-                  {acc.name}
-                </Text>
-                <Text style={[styles.accountBalance, { color: colors.foreground }]}>
-                  {formatCurrency(acc.balance)}
-                </Text>
-              </View>
-            ))}
+              );
+            })}
           </View>
         </ScrollView>
 
-        {/* Recent Transactions Header */}
+        {/* Lançamentos */}
         <View style={styles.sectionHeader}>
           <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Lançamentos</Text>
           <View style={styles.filterToggle}>
-            <Text style={[styles.filterText, { color: colors.mutedForeground }]}>
-              Mostrar previstos
-            </Text>
+            <Text style={[styles.filterText, { color: colors.mutedForeground }]}>Mostrar previstos</Text>
             <Switch
               value={showPending}
-              onValueChange={setShowPending} // Agora salva direto na memória!
+              onValueChange={setShowPending}
               trackColor={{ false: colors.border, true: colors.primary }}
-              thumbColor="#ffffff"
               style={{ transform: [{ scale: 0.8 }] }}
             />
           </View>
         </View>
 
-        {/* List */}
         <View style={[styles.txList, { backgroundColor: colors.card, borderColor: colors.border }]}>
           {displayedTransactions.length === 0 ? (
             <View style={styles.emptyState}>
               <Ionicons name="receipt-outline" size={40} color={colors.mutedForeground} />
-              <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
-                Nenhum lançamento encontrado
-              </Text>
-              {!showPending && (
-                <Text style={[styles.emptyHint, { color: colors.mutedForeground }]}>
-                  Você ocultou os lançamentos previstos
-                </Text>
-              )}
+              <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>Nenhum lançamento</Text>
             </View>
           ) : (
             displayedTransactions.slice(0, 30).map((tx, idx, arr) => {
               const isLast = idx === arr.length - 1
               const isReceita = tx.type === 'receita'
-              const isTransf = tx.type === 'transferencia'
-              const amountColor = isReceita ? colors.success : isTransf ? colors.primary : colors.destructive
-              const amountSign = isReceita ? '+' : isTransf ? '↔' : '-'
-              const bgColor = isReceita ? colors.successLight : isTransf ? colors.primary + '20' : colors.dangerLight
-
+              const amountColor = isReceita ? colors.success : tx.type === 'transferencia' ? colors.primary : colors.destructive
               return (
                 <TouchableOpacity
                   key={tx.id}
-                  style={[
-                    styles.txItem,
-                    !isLast && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }
-                  ]}
+                  style={[styles.txItem, !isLast && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }]}
                   onPress={() => setSelectedTx(tx)}
                   activeOpacity={0.7}
                 >
-                  <View style={[styles.txIcon, { backgroundColor: bgColor }]}>
-                    <Ionicons
-                      name={isReceita ? 'arrow-up' : isTransf ? 'swap-horizontal' : 'arrow-down'}
-                      size={16}
-                      color={amountColor}
-                    />
+                  <View style={[styles.txIcon, { backgroundColor: isReceita ? colors.successLight : colors.dangerLight }]}>
+                    <Ionicons name={isReceita ? 'arrow-up' : 'arrow-down'} size={16} color={amountColor} />
                   </View>
                   <View style={styles.txInfo}>
-                    <Text style={[styles.txDesc, { color: colors.foreground }]} numberOfLines={1}>
-                      {tx.description}
-                    </Text>
-                    <View style={styles.txMeta}>
-                      <Text style={[styles.txDate, { color: colors.mutedForeground }]}>
-                        {formatDateShort(tx.date)}
-                      </Text>
-                      {!tx.paid && (
-                        <View style={[styles.pendingBadge, { backgroundColor: colors.warningLight }]}>
-                          <Text style={[styles.pendingText, { color: colors.warning }]}>Previsto</Text>
-                        </View>
-                      )}
-                    </View>
+                    <Text style={[styles.txDesc, { color: colors.foreground }]} numberOfLines={1}>{tx.description}</Text>
+                    <Text style={[styles.txDate, { color: colors.mutedForeground }]}>{formatDateShort(tx.date)}</Text>
                   </View>
                   <Text style={[styles.txAmount, { color: amountColor }]}>
-                    {amountSign}{formatCurrency(tx.amount)}
+                    {isReceita ? '+' : '-'}{formatCurrency(tx.amount)}
                   </Text>
                 </TouchableOpacity>
               )
@@ -177,21 +162,12 @@ export function SaldosScreen() {
         </View>
       </ScrollView>
 
-      <TransactionDetailModal
-        transaction={isEditing ? null : selectedTx}
-        onClose={() => setSelectedTx(null)}
-        onEdit={() => {
-          setIsEditing(true)
-        }}
-      />
-
+      {/* Modais */}
+      <TransactionDetailModal transaction={isEditing ? null : selectedTx} onClose={() => setSelectedTx(null)} onEdit={() => setIsEditing(true)} />
       {isEditing && selectedTx && (
         <AddTransactionModal
           visible={isEditing}
-          onClose={() => {
-            setIsEditing(false)
-            setSelectedTx(null)
-          }}
+          onClose={() => { setIsEditing(false); setSelectedTx(null); }}
           onAdd={addTransaction}
           onUpdate={updateTransaction}
           accounts={accounts}
@@ -204,7 +180,7 @@ export function SaldosScreen() {
 }
 
 const styles = StyleSheet.create({
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' }, // Novo estilo de loading
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   content: { padding: 16, paddingBottom: 32, gap: 16 },
   balanceCard: { borderRadius: 20, padding: 24, gap: 4 },
   balanceLabel: { color: 'rgba(255,255,255,0.75)', fontSize: 13, fontWeight: '500' },
@@ -225,14 +201,10 @@ const styles = StyleSheet.create({
   txList: { borderRadius: 16, borderWidth: 1, overflow: 'hidden' },
   emptyState: { alignItems: 'center', padding: 40, gap: 8 },
   emptyText: { fontSize: 15, fontWeight: '500' },
-  emptyHint: { fontSize: 13 },
   txItem: { flexDirection: 'row', alignItems: 'center', padding: 14, gap: 12 },
   txIcon: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   txInfo: { flex: 1, gap: 3 },
   txDesc: { fontSize: 14, fontWeight: '500' },
-  txMeta: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   txDate: { fontSize: 12 },
-  pendingBadge: { paddingHorizontal: 6, paddingVertical: 1, borderRadius: 6 },
-  pendingText: { fontSize: 10, fontWeight: '600' },
   txAmount: { fontSize: 15, fontWeight: '600' },
 })
