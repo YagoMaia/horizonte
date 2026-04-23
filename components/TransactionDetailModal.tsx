@@ -19,6 +19,7 @@ import { formatCurrency, formatDate } from '@/lib/utils'
 interface TransactionDetailModalProps {
   transaction: Transaction | null
   onClose: () => void
+  onEdit?: (transaction: Transaction) => void
 }
 
 const RECURRENCE_LABELS: Record<string, string> = {
@@ -29,7 +30,7 @@ const RECURRENCE_LABELS: Record<string, string> = {
   anual: 'Anual',
 }
 
-export function TransactionDetailModal({ transaction, onClose }: TransactionDetailModalProps) {
+export function TransactionDetailModal({ transaction, onClose, onEdit }: TransactionDetailModalProps) {
   const { colors } = useTheme()
   const { accounts, tags, deleteTransaction } = useStoreContext()
   const insets = useSafeAreaInsets()
@@ -60,6 +61,14 @@ export function TransactionDetailModal({ transaction, onClose }: TransactionDeta
     )
   }
 
+  const handleEdit = () => {
+    if (onEdit) {
+      onEdit(transaction)
+    } else {
+      Alert.alert('Editar', 'A funcionalidade de edição será implementada em breve!')
+    }
+  }
+
   return (
     <Modal
       visible={!!transaction}
@@ -74,9 +83,14 @@ export function TransactionDetailModal({ transaction, onClose }: TransactionDeta
             <Ionicons name="close" size={24} color={colors.foreground} />
           </TouchableOpacity>
           <Text style={[styles.headerTitle, { color: colors.foreground }]}>Lançamento</Text>
-          <TouchableOpacity onPress={handleDelete}>
-            <Ionicons name="trash-outline" size={22} color={colors.destructive} />
-          </TouchableOpacity>
+          <View style={styles.headerActions}>
+            <TouchableOpacity onPress={handleEdit} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <Ionicons name="pencil-outline" size={22} color={colors.foreground} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={handleDelete} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <Ionicons name="trash-outline" size={22} color={colors.destructive} />
+            </TouchableOpacity>
+          </View>
         </View>
 
         <ScrollView contentContainerStyle={styles.content}>
@@ -87,8 +101,8 @@ export function TransactionDetailModal({ transaction, onClose }: TransactionDeta
               backgroundColor: isReceita
                 ? colors.successLight
                 : isTransf
-                ? colors.primary + '15'
-                : colors.dangerLight,
+                  ? colors.primary + '15'
+                  : colors.dangerLight,
             }
           ]}>
             <View style={[styles.typeIcon, { backgroundColor: amountColor }]}>
@@ -123,7 +137,7 @@ export function TransactionDetailModal({ transaction, onClose }: TransactionDeta
             <DetailRow label="Data" value={formatDate(transaction.date)} colors={colors} />
             <DetailRow label="Tipo" value={
               transaction.type === 'receita' ? 'Receita' :
-              transaction.type === 'despesa' ? 'Despesa' : 'Transferência'
+                transaction.type === 'despesa' ? 'Despesa' : 'Transferência'
             } colors={colors} />
             <DetailRow label="Conta" value={account?.name ?? '—'} colors={colors} />
             <DetailRow label="Recorrência" value={RECURRENCE_LABELS[transaction.recurrence] ?? '—'} colors={colors} />
@@ -170,6 +184,11 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   headerTitle: { fontSize: 17, fontWeight: '600' },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
   content: { padding: 20, gap: 16 },
   amountHero: {
     borderRadius: 20,

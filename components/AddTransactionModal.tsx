@@ -15,7 +15,7 @@ import {
 import { Ionicons } from '@expo/vector-icons'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useTheme } from '@/hooks/useTheme'
-import { TransactionType, RecurrenceType } from '@/constants/types'
+import { Transaction, TransactionType, RecurrenceType } from '@/constants/types'
 
 const WEEK_DAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
 const MONTHS = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
@@ -24,8 +24,10 @@ interface AddTransactionModalProps {
   visible: boolean
   onClose: () => void
   onAdd: (tx: any) => void
+  onUpdate?: (tx: any) => void
   accounts: any[]
   tags: any[]
+  transactionToEdit?: Transaction | null
 }
 
 const RECURRENCE_OPTIONS: { value: RecurrenceType; label: string }[] = [
@@ -36,9 +38,10 @@ const RECURRENCE_OPTIONS: { value: RecurrenceType; label: string }[] = [
   { value: 'anual', label: 'Anual' },
 ]
 
-export function AddTransactionModal({ visible, onClose, onAdd, accounts, tags }: AddTransactionModalProps) {
+export function AddTransactionModal({ visible, onClose, onAdd, onUpdate, accounts, tags, transactionToEdit }: AddTransactionModalProps) {
   const { colors } = useTheme()
   const insets = useSafeAreaInsets()
+  const isEditing = !!transactionToEdit
 
   const getFormattedDate = (offsetDays = 0) => {
     const d = new Date()
@@ -56,17 +59,49 @@ export function AddTransactionModal({ visible, onClose, onAdd, accounts, tags }:
   const [date, setDate] = useState(getFormattedDate(0))
   const [showCalendar, setShowCalendar] = useState(false)
   const [calendarMonth, setCalendarMonth] = useState(new Date())
+  const [recurrenceStart, setRecurrenceStart] = useState(getFormattedDate(0))
+  const [recurrenceEnd, setRecurrenceEnd] = useState('')
+
+  const resetState = () => {
+    setType('despesa')
+    setDescription('')
+    setAmount('')
+    setAccountId(accounts[0]?.id ?? '')
+    setSelectedTags([])
+    setRecurrence('unica')
+    setPaid(true)
+    setDate(getFormattedDate(0))
+    setShowCalendar(false)
+    setRecurrenceStart(getFormattedDate(0))
+    setRecurrenceEnd('')
+  }
 
   React.useEffect(() => {
+    if (visible) {
+      if (transactionToEdit) {
+        setType(transactionToEdit.type)
+        setDescription(transactionToEdit.description)
+        setAmount(String(transactionToEdit.amount).replace('.', ','))
+        setAccountId(transactionToEdit.accountId)
+        setSelectedTags(transactionToEdit.tagIds)
+        setRecurrence(transactionToEdit.recurrence)
+        setPaid(transactionToEdit.paid)
+        const d = new Date(transactionToEdit.date)
+        setDate(`${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`)
+      } else {
+        resetState()
+      }
+    }
+
     const parts = date.split('/')
     if (parts.length === 3 && parts[2].length === 4) {
       const [day, month, year] = parts
       const parsedDate = new Date(Number(year), Number(month) - 1, Number(day))
       if (!isNaN(parsedDate.getTime())) {
-         setCalendarMonth(parsedDate)
+        setCalendarMonth(parsedDate)
       }
     }
-  }, [date])
+  }, [visible, transactionToEdit, date])
 
   const renderCalendar = () => {
     const year = calendarMonth.getFullYear()
@@ -143,7 +178,7 @@ export function AddTransactionModal({ visible, onClose, onAdd, accounts, tags }:
 
   const handleSubmit = () => {
     if (!description.trim() || !amount || !accountId) return
-    
+
     let isoDate = new Date().toISOString()
     const parts = date.split('/')
     if (parts.length === 3 && parts[2].length === 4) {
@@ -151,7 +186,19 @@ export function AddTransactionModal({ visible, onClose, onAdd, accounts, tags }:
       isoDate = new Date(Number(year), Number(month) - 1, Number(day)).toISOString()
     }
 
-    onAdd({
+    let isoRecurrenceStart;
+    if (recurrenceStart) {
+      const rsParts = recurrenceStart.split('/')
+      if (rsParts.length === 3) isoRecurrenceStart = new Date(Number(rsParts[2]), Number(rsParts[1]) - 1, Number(rsParts[0])).toISOString()
+    }
+
+    let isoRecurrenceEnd;
+    if (recurrenceEnd) {
+      const reParts = recurrenceEnd.split('/')
+      if (reParts.length === 3) isoRecurrenceEnd = new Date(Number(reParts[2]), Number(reParts[1]) - 1, Number(reParts[0])).toISOString()
+    }
+
+    const txData = {
       description: description.trim(),
       amount: parseFloat(amount.replace(',', '.')),
       type,
@@ -160,14 +207,16 @@ export function AddTransactionModal({ visible, onClose, onAdd, accounts, tags }:
       tagIds: selectedTags,
       recurrence,
       paid,
-    })
-    // Reset
-    setDescription('')
-    setAmount('')
-    setSelectedTags([])
-    setRecurrence('unica')
-    setPaid(true)
-    setDate(getFormattedDate(0))
+      recurrenceStartDate: recurrence !== 'unica' ? isoRecurrenceStart : undefined,
+      recurrenceEndDate: recurrence !== 'unica' && isoRecurrenceEnd ? isoRecurrenceEnd : undefined,
+    }
+
+    if (isEditing && onUpdate) {
+      onUpdate({ ...txData, id: transactionToEdit.id })
+    } else {
+      onAdd(txData)
+    }
+
     onClose()
   }
 
@@ -199,7 +248,7 @@ export function AddTransactionModal({ visible, onClose, onAdd, accounts, tags }:
           <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
             <Ionicons name="close" size={24} color={colors.foreground} />
           </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: colors.foreground }]}>Nova Transação</Text>
+          <Text style={[styles.headerTitle, { color: colors.foreground }]}>{isEditing ? 'Editar Transação' : 'Nova Transação'}</Text>
           <TouchableOpacity
             onPress={handleSubmit}
             style={[styles.saveBtn, { backgroundColor: colors.primary }]}
@@ -274,7 +323,7 @@ export function AddTransactionModal({ visible, onClose, onAdd, accounts, tags }:
             {showCalendar ? (
               renderCalendar()
             ) : (
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={[styles.input, { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderColor: colors.border, backgroundColor: colors.card }]}
                 onPress={() => setShowCalendar(true)}
                 activeOpacity={0.7}
@@ -357,6 +406,29 @@ export function AddTransactionModal({ visible, onClose, onAdd, accounts, tags }:
               </View>
             </ScrollView>
           </View>
+
+          {/* Recurrence Dates */}
+          {recurrence !== 'unica' && (
+            <View style={styles.field}>
+              <Text style={[styles.label, { color: colors.mutedForeground }]}>Início da Recorrência</Text>
+              <TextInput
+                style={[styles.input, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.card }]}
+                value={recurrenceStart}
+                onChangeText={setRecurrenceStart}
+                placeholder="DD/MM/AAAA"
+                placeholderTextColor={colors.mutedForeground}
+              />
+
+              <Text style={[styles.label, { color: colors.mutedForeground, marginTop: 8 }]}>Fim da Recorrência (Opcional)</Text>
+              <TextInput
+                style={[styles.input, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.card }]}
+                value={recurrenceEnd}
+                onChangeText={setRecurrenceEnd}
+                placeholder="DD/MM/AAAA"
+                placeholderTextColor={colors.mutedForeground}
+              />
+            </View>
+          )}
 
           {/* Paid toggle */}
           <View style={[styles.row, { borderTopColor: colors.border }]}>

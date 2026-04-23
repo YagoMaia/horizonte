@@ -34,6 +34,10 @@ export interface Transaction {
   recurrence: RecurrenceType
   paid: boolean
   notes?: string
+  isRecurring?: boolean;
+  recurrenceInterval?: 'diario' | 'semanal' | 'mensal' | 'anual';
+  recurrenceStartDate?: string; // Data de início em formato ISO
+  recurrenceEndDate?: string;   // Data de fim em formato ISO (opcional)
 }
 
 export interface DailyBalance {

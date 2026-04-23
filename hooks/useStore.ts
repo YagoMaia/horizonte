@@ -11,9 +11,7 @@ const STORAGE_KEYS = {
 }
 
 const DEFAULT_TAGS: Tag[] = []
-
 const DEFAULT_ACCOUNTS: Account[] = []
-
 const DEFAULT_TRANSACTIONS: Transaction[] = []
 
 export function useStore() {
@@ -90,7 +88,7 @@ export function useStore() {
       for (let i = 0; i < 12; i++) {
         const currentDate = new Date(baseDate)
         currentDate.setMonth(baseDate.getMonth() + i)
-        
+
         // Apenas a primeira parcela pode vir como "paga", as próximas são sempre pendentes
         const isPaid = i === 0 ? tx.paid : false
 
@@ -129,7 +127,7 @@ export function useStore() {
     const updated = [...newTransactions, ...transactions]
     await saveTransactions(updated)
     await saveAccounts(updatedAccounts)
-    
+
     return newTransactions[0]
   }, [transactions, accounts, saveTransactions, saveAccounts])
 
@@ -138,6 +136,7 @@ export function useStore() {
     if (!tx) return
     const updated = transactions.filter(t => t.id !== id)
     await saveTransactions(updated)
+
     // Reverse balance if was paid
     if (tx.paid) {
       const updatedAccounts = accounts.map(acc => {
@@ -149,6 +148,44 @@ export function useStore() {
       })
       await saveAccounts(updatedAccounts)
     }
+  }, [transactions, accounts, saveTransactions, saveAccounts])
+
+  const updateTransaction = useCallback(async (updatedTx: Transaction) => {
+    const oldTx = transactions.find(t => t.id === updatedTx.id)
+    if (!oldTx) return
+
+    let updatedAccounts = [...accounts]
+
+    // Passo 1: Reverter o impacto no saldo da transação antiga (se ela estava paga)
+    if (oldTx.paid) {
+      updatedAccounts = updatedAccounts.map(acc => {
+        if (acc.id === oldTx.accountId) {
+          const delta = oldTx.type === 'receita' ? -oldTx.amount : oldTx.amount
+          return { ...acc, balance: acc.balance + delta }
+        }
+        return acc
+      })
+    }
+
+    // Passo 2: Aplicar o impacto no saldo da nova transação (se ela estiver paga)
+    if (updatedTx.paid) {
+      updatedAccounts = updatedAccounts.map(acc => {
+        if (acc.id === updatedTx.accountId) {
+          const delta = updatedTx.type === 'receita' ? updatedTx.amount : -updatedTx.amount
+          return { ...acc, balance: acc.balance + delta }
+        }
+        return acc
+      })
+    }
+
+    // Passo 3: Substituir a transação antiga pela nova na lista
+    const updatedTransactions = transactions.map(t =>
+      t.id === updatedTx.id ? updatedTx : t
+    )
+
+    // Passo 4: Salvar tudo
+    await saveTransactions(updatedTransactions)
+    await saveAccounts(updatedAccounts)
   }, [transactions, accounts, saveTransactions, saveAccounts])
 
   const totalBalance = accounts.reduce((sum, a) => sum + a.balance, 0)
@@ -173,6 +210,7 @@ export function useStore() {
     monthlyExpense,
     addTransaction,
     deleteTransaction,
+    updateTransaction,
     saveAccounts,
     saveTags,
     clearAllData,
