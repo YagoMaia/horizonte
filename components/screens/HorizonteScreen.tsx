@@ -6,7 +6,6 @@ import {
   ScrollView,
   StyleSheet,
   TouchableOpacity,
-  TextInput,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
@@ -16,18 +15,8 @@ import { useStoreContext } from '@/context/StoreContext';
 import { formatCurrency } from '@/lib/utils';
 
 const MONTH_NAMES = [
-  'Janeiro',
-  'Fevereiro',
-  'Março',
-  'Abril',
-  'Maio',
-  'Junho',
-  'Julho',
-  'Agosto',
-  'Setembro',
-  'Outubro',
-  'Novembro',
-  'Dezembro',
+  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
 ];
 const WEEK_DAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 
@@ -37,20 +26,19 @@ function getDaysInMonth(year: number, month: number) {
 function getWeekDay(year: number, month: number, day: number) {
   return WEEK_DAYS[new Date(year, month, day).getDay()];
 }
+
 function formatShort(value: number): string {
   return new Intl.NumberFormat('pt-BR', {
     style: 'currency',
     currency: 'BRL',
-    maximumFractionDigits: value >= 1000 ? 0 : 2,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   }).format(value);
 }
 
 export function HorizonteScreen() {
   const { colors } = useTheme();
-  const {
-    transactions,
-    accounts,
-  } = useStoreContext();
+  const { transactions, accounts } = useStoreContext();
 
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
@@ -58,14 +46,12 @@ export function HorizonteScreen() {
 
   const prevMonth = () => {
     if (month === 0) {
-      setMonth(11);
-      setYear((y) => y - 1);
+      setMonth(11); setYear((y) => y - 1);
     } else setMonth((m) => m - 1);
   };
   const nextMonth = () => {
     if (month === 11) {
-      setMonth(0);
-      setYear((y) => y + 1);
+      setMonth(0); setYear((y) => y + 1);
     } else setMonth((m) => m + 1);
   };
 
@@ -73,20 +59,16 @@ export function HorizonteScreen() {
 
   const days = useMemo(() => {
     const daysCount = getDaysInMonth(year, month);
-
     const monthTxs = transactions.filter((tx) => {
       const d = new Date(tx.date);
       return d.getFullYear() === year && d.getMonth() === month;
     });
 
-    // Compute opening balance by reversing transactions from this month onward
     const thisPlusAfterTxs = transactions.filter((tx) => {
       const d = new Date(tx.date);
-      return (
-        d.getFullYear() > year ||
-        (d.getFullYear() === year && d.getMonth() >= month)
-      );
+      return (d.getFullYear() > year || (d.getFullYear() === year && d.getMonth() >= month));
     });
+
     let openingBalance = totalBalance;
     thisPlusAfterTxs.forEach((tx) => {
       if (!tx.paid) return;
@@ -94,44 +76,28 @@ export function HorizonteScreen() {
       else if (tx.type === 'despesa') openingBalance += tx.amount;
     });
 
-    let planForMonth = 0;
-    if (year === today.getFullYear() && month === today.getMonth()) {
-      const remainingDays = daysCount - today.getDate() + 1;
-      if (remainingDays > 0) {
-        planForMonth = Math.max(0, totalBalance) / remainingDays;
-      }
-    } else if (year > today.getFullYear() || (year === today.getFullYear() && month > today.getMonth())) {
-      planForMonth = Math.max(0, openingBalance) / daysCount;
-    }
-
     let runningBalance = openingBalance;
     const result = [];
 
     for (let d = 1; d <= daysCount; d++) {
       const dayTxs = monthTxs.filter((tx) => new Date(tx.date).getDate() === d);
-      const income = dayTxs
-        .filter((t) => t.type === 'receita')
-        .reduce((s, t) => s + t.amount, 0);
-      const expense = dayTxs
-        .filter((t) => t.type === 'despesa')
-        .reduce((s, t) => s + t.amount, 0);
+      const income = dayTxs.filter((t) => t.type === 'receita').reduce((s, t) => s + t.amount, 0);
+      const expense = dayTxs.filter((t) => t.type === 'despesa').reduce((s, t) => s + t.amount, 0);
 
       const dayDate = new Date(year, month, d);
-      const isPast =
-        dayDate <
-        new Date(today.getFullYear(), today.getMonth(), today.getDate());
-      const isToday =
-        d === today.getDate() &&
-        month === today.getMonth() &&
-        year === today.getFullYear();
+      const isPast = dayDate < new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const isToday = d === today.getDate() && month === today.getMonth() && year === today.getFullYear();
 
-      let dailyPlan = 0;
-      if (!isPast) {
-        dailyPlan = planForMonth;
+      // Cálculo do plano: Receita de hoje entra no plano de hoje. Despesa só afeta amanhã.
+      let balanceForCurrentPlanning = runningBalance + income;
+      const remainingDays = daysCount - d + 1;
+      let dailyPlan = balanceForCurrentPlanning > 0 ? balanceForCurrentPlanning / remainingDays : 0;
+
+      if (isPast) {
+        runningBalance += income - expense;
+      } else {
+        runningBalance += income - expense - dailyPlan;
       }
-
-      // Apply real transactions + daily plan deduction
-      runningBalance += income - expense - dailyPlan;
 
       result.push({
         day: d,
@@ -149,503 +115,153 @@ export function HorizonteScreen() {
 
   const totalIncome = days.reduce((s, d) => s + d.income, 0);
   const totalExpense = days.reduce((s, d) => s + d.expense, 0);
-  const endBalance =
-    days.length > 0 ? days[days.length - 1].balance : totalBalance;
-  const currentDailyPlan = days.find(d => !d.isPast)?.dailyPlan || 0;
+  const endBalance = days.length > 0 ? days[days.length - 1].balance : totalBalance;
+  const currentDailyPlan = days.find(d => d.isToday || !d.isPast)?.dailyPlan || 0;
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: colors.background }}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      {/* Month navigator */}
-      <View
-        style={[
-          styles.monthNav,
-          { borderBottomColor: colors.border, backgroundColor: colors.card },
-        ]}
-      >
-        <TouchableOpacity
-          onPress={prevMonth}
-          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-        >
-          <Ionicons name='chevron-back' size={22} color={colors.foreground} />
-        </TouchableOpacity>
-        <Text style={[styles.monthTitle, { color: colors.foreground }]}>
-          {MONTH_NAMES[month]} {year}
-        </Text>
-        <TouchableOpacity
-          onPress={nextMonth}
-          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-        >
-          <Ionicons
-            name='chevron-forward'
-            size={22}
-            color={colors.foreground}
-          />
-        </TouchableOpacity>
+    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.background }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <View style={[styles.monthNav, { borderBottomColor: colors.border, backgroundColor: colors.card }]}>
+        <TouchableOpacity onPress={prevMonth}><Ionicons name='chevron-back' size={22} color={colors.foreground} /></TouchableOpacity>
+        <Text style={[styles.monthTitle, { color: colors.foreground }]}>{MONTH_NAMES[month]} {year}</Text>
+        <TouchableOpacity onPress={nextMonth}><Ionicons name='chevron-forward' size={22} color={colors.foreground} /></TouchableOpacity>
       </View>
 
-      {/* Plan Info card */}
-      <View
-        style={[
-          styles.budgetCard,
-          { backgroundColor: colors.card, borderBottomColor: colors.border },
-        ]}
-      >
+      <View style={[styles.budgetCard, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
         <View style={styles.budgetRow}>
-          <View
-            style={[
-              styles.budgetIconWrap,
-              { backgroundColor: colors.primary + '20' },
-            ]}
-          >
-            <Ionicons
-              name='wallet-outline'
-              size={18}
-              color={colors.primary}
-            />
-          </View>
           <View style={styles.budgetInfo}>
-            <Text
-              style={[styles.budgetLabel, { color: colors.mutedForeground }]}
-            >
-              Saldo Disponível
-            </Text>
-            <View style={styles.budgetValueRow}>
-              <Text style={[styles.budgetValue, { color: colors.foreground }]}>
-                {formatCurrency(totalBalance)}
-              </Text>
-            </View>
+            <Text style={[styles.budgetLabel, { color: colors.mutedForeground }]}>Saldo Disponível</Text>
+            <Text style={[styles.budgetValue, { color: colors.foreground }]}>{formatCurrency(totalBalance)}</Text>
           </View>
           <View style={styles.budgetRight}>
-            <Text
-              style={[styles.dailyLabel, { color: colors.mutedForeground }]}
-            >
-              plano por dia
-            </Text>
-            <Text style={[styles.dailyValue, { color: colors.primary }]}>
-              {formatShort(currentDailyPlan)}
-            </Text>
+            <Text style={[styles.dailyLabel, { color: colors.mutedForeground }]}>Plano p/ Hoje</Text>
+            <Text style={[styles.dailyValue, { color: colors.primary }]}>{formatShort(currentDailyPlan)}</Text>
           </View>
         </View>
       </View>
 
-      {/* Summary strip */}
-      <View
-        style={[
-          styles.summaryStrip,
-          {
-            backgroundColor: colors.secondary,
-            borderBottomColor: colors.border,
-          },
-        ]}
-      >
+      <View style={[styles.summaryStrip, { backgroundColor: colors.secondary, borderBottomColor: colors.border }]}>
         <View style={styles.summaryItem}>
-          <Text
-            style={[styles.summaryLabel, { color: colors.mutedForeground }]}
-          >
-            Entradas
-          </Text>
-          <Text style={[styles.summaryValue, { color: colors.success }]}>
-            +{formatShort(totalIncome)}
-          </Text>
+          <Text style={[styles.summaryLabel, { color: colors.mutedForeground }]}>Entradas</Text>
+          <Text style={[styles.summaryValue, { color: colors.success }]}>+{formatShort(totalIncome)}</Text>
         </View>
-        <View
-          style={[styles.summaryDivider, { backgroundColor: colors.border }]}
-        />
+        <View style={[styles.summaryDivider, { backgroundColor: colors.border }]} />
         <View style={styles.summaryItem}>
-          <Text
-            style={[styles.summaryLabel, { color: colors.mutedForeground }]}
-          >
-            Saídas
-          </Text>
-          <Text style={[styles.summaryValue, { color: colors.destructive }]}>
-            -{formatShort(totalExpense)}
-          </Text>
+          <Text style={[styles.summaryLabel, { color: colors.mutedForeground }]}>Saídas</Text>
+          <Text style={[styles.summaryValue, { color: colors.destructive }]}>-{formatShort(totalExpense)}</Text>
         </View>
-        <View
-          style={[styles.summaryDivider, { backgroundColor: colors.border }]}
-        />
+        <View style={[styles.summaryDivider, { backgroundColor: colors.border }]} />
         <View style={styles.summaryItem}>
-          <Text
-            style={[styles.summaryLabel, { color: colors.mutedForeground }]}
-          >
-            Saldo final
-          </Text>
-          <Text
-            style={[
-              styles.summaryValue,
-              { color: endBalance >= 0 ? colors.success : colors.destructive },
-            ]}
-          >
-            {formatShort(endBalance)}
-          </Text>
+          <Text style={[styles.summaryLabel, { color: colors.mutedForeground }]}>Projeção Fim</Text>
+          <Text style={[styles.summaryValue, { color: endBalance >= 0 ? colors.success : colors.destructive }]}>{formatShort(endBalance)}</Text>
         </View>
       </View>
 
-      {/* Table header — 4 colunas */}
-      <View
-        style={[
-          styles.tableHeader,
-          {
-            backgroundColor: colors.secondary,
-            borderBottomColor: colors.border,
-          },
-        ]}
-      >
-        <View style={styles.colDia}>
-          <Text
-            style={[
-              styles.headerText,
-              { color: colors.mutedForeground, textAlign: 'left' },
-            ]}
-          >
-            DIA
-          </Text>
-        </View>
-        <View style={styles.colGasto}>
-          <Text
-            style={[
-              styles.headerText,
-              { color: colors.mutedForeground, textAlign: 'right' },
-            ]}
-          >
-            GASTO
-          </Text>
-        </View>
-        <View style={styles.colPlan}>
-          <Text
-            style={[
-              styles.headerText,
-              { color: colors.mutedForeground, textAlign: 'right' },
-            ]}
-          >
-            PLAN.
-          </Text>
-        </View>
-        <View style={[styles.colSaldo, { paddingRight: 8 }]}>
-          <Text
-            style={[
-              styles.headerText,
-              { color: colors.mutedForeground, textAlign: 'right' },
-            ]}
-          >
-            SALDO
-          </Text>
-        </View>
-      </View>
-
-      {/* Table rows */}
       <ScrollView showsVerticalScrollIndicator={false}>
         {days.map((d, idx) => {
-          const rowBg = d.isToday
-            ? colors.primary + '10'
-            : idx % 2 === 0
-              ? colors.card
-              : colors.background;
+          const rowBg = d.isToday ? colors.primary + '10' : idx % 2 === 0 ? colors.card : colors.background;
 
-          const saldoBg =
-            d.balance >= 0 ? colors.successLight : colors.dangerLight;
-          const saldoColor =
-            d.balance >= 0 ? colors.success : colors.destructive;
+          const economizou = d.dailyPlan > 0 && d.expense < d.dailyPlan;
+          const excedeu = d.isPast && d.expense > d.dailyPlan;
+          const valorDiferenca = Math.abs(d.dailyPlan - d.expense);
+
+          // 👉 NOVA LÓGICA DE VISIBILIDADE DO BADGE
+          // O badge só aparece se for Passado ou se for Hoje. Futuro fica oculto.
+          const mostrarBadge = d.isPast || d.isToday;
+
+          const saldoBg = d.balance >= 0 ? colors.successLight : colors.dangerLight;
+          const saldoColor = d.balance >= 0 ? colors.success : colors.destructive;
 
           return (
-            <View
-              key={d.day}
-              style={[
-                styles.row,
-                { backgroundColor: rowBg, borderBottomColor: colors.border },
-              ]}
-            >
-              {/* DIA */}
-              <View style={[styles.colDia, styles.rowDiaInner]}>
-                {d.isPast ? (
-                  <Ionicons
-                    name='checkmark-circle'
-                    size={26}
-                    color={colors.success}
-                  />
-                ) : d.isToday ? (
-                  <View
-                    style={[
-                      styles.todayCircle,
-                      { borderColor: colors.primary },
-                    ]}
-                  >
-                    <Ionicons name='ellipse' size={8} color={colors.primary} />
+            <View key={d.day} style={[styles.row, { backgroundColor: rowBg, borderBottomColor: colors.border }]}>
+              <View style={[styles.colDia, { backgroundColor: d.isToday ? colors.primary + '15' : 'rgba(0,0,0,0.02)' }]}>
+                <Text style={[styles.dayNumber, { color: colors.foreground }]}>{d.day}</Text>
+                <Text style={[styles.weekDay, { color: colors.mutedForeground }]}>{d.weekDay}</Text>
+              </View>
+
+              <View style={styles.colIndicators}>
+                <View style={styles.indicatorLine}>
+                  <Ionicons name="arrow-up-circle" size={16} color={d.income > 0 ? colors.success : colors.border} />
+                  <Text style={[styles.indicatorText, { color: d.income > 0 ? colors.foreground : colors.mutedForeground }]}>
+                    {formatShort(d.income)}
+                  </Text>
+                </View>
+
+                <View style={styles.indicatorLine}>
+                  <Ionicons name="arrow-down-circle" size={16} color={d.expense > 0 ? colors.destructive : colors.border} />
+                  <Text style={[styles.indicatorText, { color: d.expense > 0 ? colors.foreground : colors.mutedForeground, fontWeight: d.expense > 0 ? '700' : '400' }]}>
+                    {formatShort(d.expense)}
+                  </Text>
+                </View>
+
+                <View style={styles.indicatorLine}>
+                  <View style={[styles.miniBadge, { backgroundColor: colors.primary }]}>
+                    <Text style={styles.miniBadgeText}>D</Text>
                   </View>
-                ) : (
-                  <View
-                    style={[
-                      styles.futureCircle,
-                      { borderColor: colors.border },
-                    ]}
-                  />
-                )}
-                <View>
-                  <Text
-                    style={[
-                      styles.dayNumber,
-                      {
-                        color: colors.foreground,
-                        fontWeight: d.isToday ? '700' : '500',
-                      },
-                    ]}
-                  >
-                    {d.day}
+                  <Text style={[styles.indicatorText, { color: colors.mutedForeground }]}>
+                    {formatShort(d.dailyPlan || 0)}
                   </Text>
-                  <Text
-                    style={[styles.weekDay, { color: colors.mutedForeground }]}
-                  >
-                    {d.weekDay}
-                  </Text>
+
+                  {/* Badge condicional: Só renderiza se mostrarBadge for true */}
+                  {mostrarBadge && (
+                    <>
+                      {economizou && (
+                        <View style={[styles.savingBadge, { backgroundColor: colors.success + '20' }]}>
+                          <Text style={[styles.savingText, { color: colors.success }]}>
+                            {`+ ${formatShort(valorDiferenca)}`}
+                          </Text>
+                        </View>
+                      )}
+                      {excedeu && (
+                        <View style={[styles.savingBadge, { backgroundColor: colors.destructive + '20' }]}>
+                          <Text style={[styles.savingText, { color: colors.destructive }]}>
+                            {`- ${formatShort(valorDiferenca)}`}
+                          </Text>
+                        </View>
+                      )}
+                    </>
+                  )}
                 </View>
               </View>
 
-              {/* GASTO (real) */}
-              <View style={styles.colGasto}>
-                {d.expense > 0 ? (
-                  <Text
-                    style={[styles.cellText, { color: colors.destructive }]}
-                  >
-                    -{formatShort(d.expense)}
-                  </Text>
-                ) : d.income > 0 ? (
-                  <Text style={[styles.cellText, { color: colors.success }]}>
-                    +{formatShort(d.income)}
-                  </Text>
-                ) : (
-                  <Text
-                    style={[styles.cellText, { color: colors.mutedForeground }]}
-                  >
-                    -
-                  </Text>
-                )}
-              </View>
-
-              {/* PLANEJADO (budget diário) */}
-              <View style={styles.colPlan}>
-                {d.dailyPlan > 0 ? (
-                  <Text style={[styles.cellText, { color: colors.warning }]}>
-                    {formatShort(d.dailyPlan)}
-                  </Text>
-                ) : (
-                  <Text style={[styles.cellText, { color: colors.mutedForeground }]}>
-                    -
-                  </Text>
-                )}
-              </View>
-
-              {/* SALDO */}
-              <View style={styles.colSaldo}>
-                <View style={[styles.saldoBadge, { backgroundColor: saldoBg }]}>
-                  <Text
-                    style={[styles.saldoText, { color: saldoColor }]}
-                    numberOfLines={1}
-                  >
-                    {formatShort(d.balance)}
-                  </Text>
-                </View>
+              <View style={[styles.colSaldoVisual, { backgroundColor: saldoBg }]}>
+                <Text style={[styles.saldoTextLarge, { color: saldoColor }]}>{formatShort(d.balance)}</Text>
               </View>
             </View>
           );
         })}
-        <View style={{ height: 32 }} />
+        <View style={{ height: 50 }} />
       </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
-const COL_DIA = 82;
-const COL_GASTO = 80;
-const COL_PLAN = 72;
-
 const styles = StyleSheet.create({
-  monthNav: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 24,
-    paddingVertical: 13,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  monthTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-  },
-
-  // Budget config
-  budgetCard: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  budgetRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  budgetIconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  budgetInfo: {
-    flex: 1,
-    gap: 2,
-  },
-  budgetLabel: {
-    fontSize: 11,
-    fontWeight: '500',
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
-  },
-  budgetValueRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  budgetValueBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  budgetValue: {
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  budgetInput: {
-    fontSize: 18,
-    fontWeight: '700',
-    borderBottomWidth: 2,
-    minWidth: 120,
-    paddingBottom: 2,
-  },
-  budgetRight: {
-    alignItems: 'flex-end',
-    gap: 2,
-  },
-  dailyLabel: {
-    fontSize: 10,
-    fontWeight: '500',
-    textTransform: 'uppercase',
-    letterSpacing: 0.3,
-  },
-  dailyValue: {
-    fontSize: 15,
-    fontWeight: '700',
-  },
-
-  // Summary
-  summaryStrip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  summaryItem: {
-    flex: 1,
-    alignItems: 'center',
-    gap: 1,
-  },
-  summaryLabel: {
-    fontSize: 10,
-    fontWeight: '500',
-    textTransform: 'uppercase',
-    letterSpacing: 0.3,
-  },
-  summaryValue: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  summaryDivider: {
-    width: 1,
-    height: 24,
-  },
-
-  // Table
-  tableHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 7,
-    paddingHorizontal: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  headerText: {
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 0.8,
-    textAlign: 'right',
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    minHeight: 52,
-  },
-
-  // Column widths
-  colDia: {
-    width: COL_DIA,
-    textAlign: 'left',
-  },
-  colGasto: {
-    width: COL_GASTO,
-    alignItems: 'flex-end',
-  },
-  colPlan: {
-    width: COL_PLAN,
-    alignItems: 'flex-end',
-  },
-  colSaldo: {
-    flex: 1,
-    alignItems: 'flex-end',
-  },
-
-  rowDiaInner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  todayCircle: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    borderWidth: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  futureCircle: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    borderWidth: 1.5,
-  },
-  dayNumber: {
-    fontSize: 14,
-    lineHeight: 17,
-  },
-  weekDay: {
-    fontSize: 10,
-    lineHeight: 13,
-  },
-  cellText: {
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  saldoBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 7,
-    minWidth: 80,
-    alignItems: 'center',
-  },
-  saldoText: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
+  monthNav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 24, paddingVertical: 13, borderBottomWidth: StyleSheet.hairlineWidth },
+  monthTitle: { fontSize: 17, fontWeight: '700' },
+  budgetCard: { paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth },
+  budgetRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  budgetInfo: { gap: 2 },
+  budgetLabel: { fontSize: 11, fontWeight: '500', textTransform: 'uppercase', letterSpacing: 0.4 },
+  budgetValue: { fontSize: 20, fontWeight: '700' },
+  budgetRight: { alignItems: 'flex-end', gap: 2 },
+  dailyLabel: { fontSize: 10, fontWeight: '500', textTransform: 'uppercase' },
+  dailyValue: { fontSize: 16, fontWeight: '700' },
+  summaryStrip: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth },
+  summaryItem: { flex: 1, alignItems: 'center', gap: 1 },
+  summaryLabel: { fontSize: 10, fontWeight: '500', textTransform: 'uppercase' },
+  summaryValue: { fontSize: 12, fontWeight: '700' },
+  summaryDivider: { width: 1, height: 20 },
+  row: { flexDirection: 'row', borderBottomWidth: StyleSheet.hairlineWidth, minHeight: 90 },
+  colDia: { width: 55, justifyContent: 'center', alignItems: 'center', borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: 'rgba(0,0,0,0.05)' },
+  dayNumber: { fontSize: 18, fontWeight: '700' },
+  weekDay: { fontSize: 11, textTransform: 'capitalize' },
+  colIndicators: { flex: 1, padding: 12, gap: 6, justifyContent: 'center' },
+  indicatorLine: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  indicatorText: { fontSize: 13 },
+  miniBadge: { width: 16, height: 16, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  miniBadgeText: { color: '#FFF', fontSize: 9, fontWeight: 'bold' },
+  savingBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, marginLeft: 8 },
+  savingText: { fontSize: 11, fontWeight: '700' },
+  colSaldoVisual: { width: 120, justifyContent: 'center', alignItems: 'flex-end', paddingRight: 12 },
+  saldoTextLarge: { fontSize: 15, fontWeight: '700' },
 });
