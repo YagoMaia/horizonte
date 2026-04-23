@@ -14,6 +14,10 @@ import { useTheme } from '@/hooks/useTheme'
 import { formatCurrency } from '@/lib/utils'
 import { useStoreContext } from '@/context/StoreContext'
 
+// Novos imports para exportação
+import * as FileSystem from 'expo-file-system'
+import * as Sharing from 'expo-sharing'
+
 interface MenuItemProps {
   icon: string
   label: string
@@ -29,6 +33,7 @@ function MenuItem({ icon, label, value, onPress, danger, colors }: MenuItemProps
       style={styles.menuItem}
       onPress={onPress}
       activeOpacity={0.7}
+      disabled={!onPress}
     >
       <View style={[styles.menuIcon, { backgroundColor: danger ? colors.dangerLight : colors.secondary }]}>
         <Ionicons
@@ -53,6 +58,71 @@ function MenuItem({ icon, label, value, onPress, danger, colors }: MenuItemProps
 export function MenuScreen() {
   const { colors } = useTheme()
   const { accounts, transactions, tags, totalBalance, clearAllData } = useStoreContext()
+
+  const handleExportData = async () => {
+    try {
+      if (transactions.length === 0) {
+        Alert.alert('Aviso', 'Não há dados para exportar.')
+        return
+      }
+
+      // 1. Definir o BOM (Byte Order Mark) para o Excel reconhecer UTF-8 e acentos corretamente
+      const BOM = '\uFEFF';
+      let csvString = BOM + 'Data;Tipo;Descricao;Valor;Categoria;Conta;Status\n'
+
+      transactions.forEach((tx) => {
+        // Usamos um formato de data ISO simplificado ou DD/MM/YYYY
+        const dateObj = new Date(tx.date)
+        const day = String(dateObj.getDate()).padStart(2, '0')
+        const month = String(dateObj.getMonth() + 1).padStart(2, '0')
+        const year = dateObj.getFullYear()
+        const formattedDate = `${day}/${month}/${year}`
+
+        const type = tx.type === 'receita' ? 'Receita' : 'Despesa'
+        const amount = tx.amount.toFixed(2).replace('.', ',')
+        const category = tags.find((t) => t.id === tx.tagIds[0])?.name || 'Sem Categoria'
+        const account = accounts.find((a) => a.id === tx.accountId)?.name || 'N/A'
+        const status = tx.paid ? 'Pago' : 'Pendente'
+
+        // Substituímos eventuais pontos e vírgulas na descrição para não quebrar as colunas do CSV
+        const cleanDescription = tx.description.replace(/;/g, ',')
+
+        csvString += `${formattedDate};${type};${cleanDescription};${amount};${category};${account};${status}\n`
+      })
+
+      const fileName = `Horizonte_Export_${new Date().getTime()}.csv`
+
+      if (Platform.OS === 'web') {
+        // Criamos o Blob garantindo o encoding correto
+        const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' })
+        const url = URL.createObjectURL(blob)
+        const link = document.createElement('a')
+        link.href = url
+        link.setAttribute('download', fileName)
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        return
+      }
+
+      // Lógica Mobile (iOS/Android)
+      const fileUri = FileSystem.cacheDirectory + fileName
+      await FileSystem.writeAsStringAsync(fileUri, csvString, {
+        encoding: FileSystem.EncodingType.UTF8,
+      })
+
+      await Sharing.shareAsync(fileUri, {
+        mimeType: 'text/csv',
+        dialogTitle: 'Exportar dados Financeiros',
+        UTI: 'public.comma-separated-values-text',
+      })
+
+    } catch (error) {
+      console.error(error)
+      const msg = 'Não foi possível exportar os dados.'
+      Platform.OS === 'web' ? alert(msg) : Alert.alert('Erro', msg)
+    }
+  }
 
   return (
     <ScrollView
@@ -147,6 +217,17 @@ export function MenuScreen() {
         </View>
       </View>
 
+      {/* 👉 SEÇÃO DE DADOS (NOVO) */}
+      <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>DADOS</Text>
+      <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <MenuItem
+          icon="cloud-download-outline"
+          label="Exportar para Excel"
+          onPress={handleExportData}
+          colors={colors}
+        />
+      </View>
+
       {/* About */}
       <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>SOBRE</Text>
       <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -167,7 +248,7 @@ export function MenuScreen() {
       </View>
 
       {/* Danger zone */}
-      <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border, marginTop: 8 }]}>
         <MenuItem
           icon="trash-outline"
           label="Limpar todos os dados"
