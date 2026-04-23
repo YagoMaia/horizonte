@@ -1,6 +1,6 @@
 // constants/types.ts
 
-export type TabType = 'saldos' | 'totais' | 'horizonte' | 'contas' | 'tags' | 'menu'
+export type TabType = 'saldos' | 'totais' | 'horizonte' | 'contas' | 'tags' | 'menu' | 'cartao'
 
 export type TransactionType = 'receita' | 'despesa' | 'transferencia'
 
@@ -20,6 +20,12 @@ export interface Account {
   type: 'corrente' | 'poupanca' | 'investimento' | 'carteira'
   color: string
   icon: string
+}
+
+export interface Transaction {
+  id: string;
+  // ... seus outros campos (amount, date, description, type, etc)
+  paymentMethod?: 'debito' | 'credito'; // 👉 Adicione esta linha
 }
 
 export interface Transaction {

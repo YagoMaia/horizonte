@@ -13,8 +13,6 @@ import { Ionicons } from '@expo/vector-icons'
 import { useTheme } from '@/hooks/useTheme'
 import { formatCurrency } from '@/lib/utils'
 import { useStoreContext } from '@/context/StoreContext'
-
-// Novos imports para exportação
 import * as FileSystem from 'expo-file-system'
 import * as Sharing from 'expo-sharing'
 
@@ -55,10 +53,15 @@ function MenuItem({ icon, label, value, onPress, danger, colors }: MenuItemProps
   )
 }
 
-export function MenuScreen() {
+interface MenuScreenProps {
+  onNavigateToTags: () => void;
+}
+
+export function MenuScreen({ onNavigateToTags }: MenuScreenProps) {
   const { colors } = useTheme()
   const { accounts, transactions, tags, totalBalance, clearAllData } = useStoreContext()
 
+  // --- FUNÇÃO DE EXPORTAÇÃO HÍBRIDA (MOBILE + WEB) ---
   const handleExportData = async () => {
     try {
       if (transactions.length === 0) {
@@ -66,12 +69,10 @@ export function MenuScreen() {
         return
       }
 
-      // 1. Definir o BOM (Byte Order Mark) para o Excel reconhecer UTF-8 e acentos corretamente
       const BOM = '\uFEFF';
       let csvString = BOM + 'Data;Tipo;Descricao;Valor;Categoria;Conta;Status\n'
 
       transactions.forEach((tx) => {
-        // Usamos um formato de data ISO simplificado ou DD/MM/YYYY
         const dateObj = new Date(tx.date)
         const day = String(dateObj.getDate()).padStart(2, '0')
         const month = String(dateObj.getMonth() + 1).padStart(2, '0')
@@ -84,7 +85,6 @@ export function MenuScreen() {
         const account = accounts.find((a) => a.id === tx.accountId)?.name || 'N/A'
         const status = tx.paid ? 'Pago' : 'Pendente'
 
-        // Substituímos eventuais pontos e vírgulas na descrição para não quebrar as colunas do CSV
         const cleanDescription = tx.description.replace(/;/g, ',')
 
         csvString += `${formattedDate};${type};${cleanDescription};${amount};${category};${account};${status}\n`
@@ -93,19 +93,20 @@ export function MenuScreen() {
       const fileName = `Horizonte_Export_${new Date().getTime()}.csv`
 
       if (Platform.OS === 'web') {
-        // Criamos o Blob garantindo o encoding correto
         const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' })
         const url = URL.createObjectURL(blob)
         const link = document.createElement('a')
+
         link.href = url
         link.setAttribute('download', fileName)
+        link.style.visibility = 'hidden'
+
         document.body.appendChild(link)
         link.click()
         document.body.removeChild(link)
         return
       }
 
-      // Lógica Mobile (iOS/Android)
       const fileUri = FileSystem.cacheDirectory + fileName
       await FileSystem.writeAsStringAsync(fileUri, csvString, {
         encoding: FileSystem.EncodingType.UTF8,
@@ -193,12 +194,23 @@ export function MenuScreen() {
       {/* Settings */}
       <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>CONFIGURAÇÕES</Text>
       <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
+
+        {/* 👉 NOVO BOTÃO DE GERENCIAR TAGS */}
         <MenuItem
-          icon="moon-outline"
-          label="Tema escuro"
-          value="Automático"
+          icon="pricetags-outline"
+          label="Gerenciar Tags"
+          onPress={onNavigateToTags}
           colors={colors}
         />
+
+        <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
+          <MenuItem
+            icon="moon-outline"
+            label="Tema escuro"
+            value="Automático"
+            colors={colors}
+          />
+        </View>
         <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
           <MenuItem
             icon="language-outline"
@@ -217,7 +229,7 @@ export function MenuScreen() {
         </View>
       </View>
 
-      {/* 👉 SEÇÃO DE DADOS (NOVO) */}
+      {/* Dados */}
       <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>DADOS</Text>
       <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <MenuItem

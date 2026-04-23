@@ -12,15 +12,19 @@ interface BottomNavigationProps {
   onAddClick: () => void
 }
 
+// 👉 Adicionamos 'cartao' aos LEFT_TABS e mantivemos o equilíbrio
 const LEFT_TABS: { id: TabType; label: string; icon: string }[] = [
   { id: 'saldos', label: 'Saldos', icon: 'wallet-outline' },
-  { id: 'totais', label: 'Totais', icon: 'bar-chart-outline' },
+  { id: 'cartao', label: 'Cartão', icon: 'card-outline' }, // Nova Aba
 ]
 
 const RIGHT_TABS: { id: TabType; label: string; icon: string }[] = [
-  { id: 'tags', label: 'Tags', icon: 'pricetag-outline' },
+  { id: 'totais', label: 'Totais', icon: 'bar-chart-outline' },
   { id: 'menu', label: 'Menu', icon: 'menu-outline' },
 ]
+
+// Nota: Se você ainda precisar da aba 'tags' no futuro, 
+// pode movê-la para dentro da tela de Menu ou Totais.
 
 export function BottomNavigation({ activeTab, onTabChange, onAddClick }: BottomNavigationProps) {
   const { colors } = useTheme()
