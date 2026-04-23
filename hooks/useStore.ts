@@ -94,63 +94,67 @@ export function useStore() {
     setShowPendingState(true)
   }, [])
 
-  // 👉 A MÁGICA DO PARCELAMENTO ACONTECE AQUI
   const addTransaction = useCallback(async (tx: any) => {
     const newTransactions: Transaction[] = []
     let updatedAccounts = [...accounts]
 
-    // Descobre se a conta é um Cartão de Crédito
     const targetAccount = updatedAccounts.find(a => a.id === tx.accountId)
     const isCreditCard = targetAccount?.type === 'cartao_credito'
-
-    // Força como 'credito' no sistema
     const finalizedTxMethod = isCreditCard ? 'credito' : (tx.paymentMethod || 'debito')
 
-    // 1. SE FOR CARTÃO E TIVER PARCELAS (> 1)
-    if (isCreditCard && tx.totalInstallments && tx.totalInstallments > 1) {
+    // Dia de fecho da fatura (padrão 31 se não definido)
+    const closingDay = targetAccount?.closingDay || 31;
+
+    // 1. LÓGICA DE CARTÃO (PARCELADO OU À VISTA)
+    if (isCreditCard) {
       const baseDate = new Date(tx.date)
+      const dayOfPurchase = baseDate.getDate()
 
-      // Divide o valor exato pelas parcelas!
-      const installmentAmount = tx.amount / tx.totalInstallments
+      // 👉 CORREÇÃO AQUI: >= (Maior ou igual). 
+      // Se comprar no próprio dia do fechamento, já pula para a outra fatura.
+      const shiftMonths = dayOfPurchase >= closingDay ? 2 : 1;
 
-      for (let i = 0; i < tx.totalInstallments; i++) {
+      const installmentsCount = tx.totalInstallments && tx.totalInstallments > 1 ? tx.totalInstallments : 1;
+      const installmentAmount = tx.amount / installmentsCount;
+
+      const baseId = Date.now().toString();
+
+      for (let i = 0; i < installmentsCount; i++) {
         const currentDate = new Date(baseDate)
-        currentDate.setMonth(baseDate.getMonth() + i) // Joga para o próximo mês
+
+        // Evita o erro de rollover de meses (ex: 31 de Março -> Abril)
+        currentDate.setDate(1)
+        currentDate.setMonth(baseDate.getMonth() + i + shiftMonths)
+
+        // Ajusta para o dia original ou o último dia possível do mês (ex: 31 -> 28 de Fev)
+        const lastDayOfTargetMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate()
+        currentDate.setDate(Math.min(dayOfPurchase, lastDayOfTargetMonth))
+
+        const descSuffix = installmentsCount > 1 ? ` (${i + 1}/${installmentsCount})` : ''
 
         newTransactions.push({
           ...tx,
-          id: Date.now().toString() + '-' + i,
-          // Adiciona o (1/2), (2/2) no final da descrição automaticamente
-          description: `${tx.description} (${i + 1}/${tx.totalInstallments})`,
-          amount: installmentAmount, // Salva o valor fracionado (Ex: R$ 50)
+          id: `${baseId}-${i}`, // ID Agrupado para permitir eliminação em massa
+          description: `${tx.description}${descSuffix}`,
+          amount: installmentAmount,
           date: currentDate.toISOString(),
-          paid: false, // Faturas do futuro não estão pagas ainda
+          paid: false,
           paymentMethod: finalizedTxMethod,
         })
       }
     }
-    // 2. SE FOR CARTÃO À VISTA (1 Parcela)
-    else if (isCreditCard && (!tx.totalInstallments || tx.totalInstallments === 1)) {
-      const newTx: Transaction = {
-        ...tx,
-        id: Date.now().toString(),
-        paymentMethod: finalizedTxMethod,
-        paid: false // Cartão de crédito só é pago quando a fatura fecha
-      }
-      newTransactions.push(newTx)
-    }
-    // 3. SE FOR DÉBITO RECORRENTE MENSAL (Ex: Netflix)
+    // 2. RECORRÊNCIA MENSAL (Débito/Dinheiro)
     else if (tx.recurrence === 'mensal') {
+      const baseId = Date.now().toString();
       const baseDate = new Date(tx.date)
       for (let i = 0; i < 12; i++) {
         const currentDate = new Date(baseDate)
         currentDate.setMonth(baseDate.getMonth() + i)
-
         const isPaid = i === 0 ? tx.paid : false
 
         newTransactions.push({
           ...tx,
-          id: Date.now().toString() + '-' + i,
+          id: `${baseId}-${i}`,
           date: currentDate.toISOString(),
           paid: isPaid,
           paymentMethod: finalizedTxMethod,
@@ -167,15 +171,10 @@ export function useStore() {
         }
       }
     }
-    // 4. SE FOR COMPRA ÚNICA NO DÉBITO OU DINHEIRO
+    // 3. TRANSAÇÃO ÚNICA
     else {
-      const newTx: Transaction = {
-        ...tx,
-        id: Date.now().toString(),
-        paymentMethod: finalizedTxMethod
-      }
+      const newTx: Transaction = { ...tx, id: Date.now().toString(), paymentMethod: finalizedTxMethod }
       newTransactions.push(newTx)
-
       if (tx.paid) {
         updatedAccounts = updatedAccounts.map(acc => {
           if (acc.id === tx.accountId) {
@@ -190,26 +189,41 @@ export function useStore() {
     const updated = [...newTransactions, ...transactions]
     await saveTransactions(updated)
     await saveAccounts(updatedAccounts)
-
     return newTransactions[0]
   }, [transactions, accounts, saveTransactions, saveAccounts])
 
   const deleteTransaction = useCallback(async (id: string) => {
     const tx = transactions.find(t => t.id === id)
     if (!tx) return
-    const updated = transactions.filter(t => t.id !== id)
+
+    // Lógica de eliminação em massa para parcelas/recorrências
+    let idsToDelete = [id];
+    if (id.includes('-')) {
+      const baseId = id.split('-')[0];
+      const relatedTxs = transactions.filter(t => t.id.startsWith(`${baseId}-`));
+      idsToDelete = relatedTxs.map(t => t.id);
+    }
+
+    const updated = transactions.filter(t => !idsToDelete.includes(t.id))
     await saveTransactions(updated)
 
-    if (tx.paid) {
-      const updatedAccounts = accounts.map(acc => {
-        if (acc.id === tx.accountId) {
-          const delta = tx.type === 'receita' ? -tx.amount : tx.amount
-          return { ...acc, balance: acc.balance + delta }
-        }
-        return acc
-      })
-      await saveAccounts(updatedAccounts)
-    }
+    // Reverte o saldo de todas as transações eliminadas que estavam marcadas como pagas
+    let updatedAccounts = [...accounts]
+    const txsToDelete = transactions.filter(t => idsToDelete.includes(t.id));
+
+    txsToDelete.forEach(deletedTx => {
+      if (deletedTx.paid) {
+        updatedAccounts = updatedAccounts.map(acc => {
+          if (acc.id === deletedTx.accountId) {
+            const delta = deletedTx.type === 'receita' ? -deletedTx.amount : deletedTx.amount
+            return { ...acc, balance: acc.balance + delta }
+          }
+          return acc
+        })
+      }
+    })
+
+    await saveAccounts(updatedAccounts)
   }, [transactions, accounts, saveTransactions, saveAccounts])
 
   const updateTransaction = useCallback(async (updatedTx: Transaction) => {
@@ -217,7 +231,6 @@ export function useStore() {
     if (!oldTx) return
 
     let updatedAccounts = [...accounts]
-
     if (oldTx.paid) {
       updatedAccounts = updatedAccounts.map(acc => {
         if (acc.id === oldTx.accountId) {
@@ -227,7 +240,6 @@ export function useStore() {
         return acc
       })
     }
-
     if (updatedTx.paid) {
       updatedAccounts = updatedAccounts.map(acc => {
         if (acc.id === updatedTx.accountId) {
@@ -237,42 +249,16 @@ export function useStore() {
         return acc
       })
     }
-
-    const updatedTransactions = transactions.map(t =>
-      t.id === updatedTx.id ? updatedTx : t
-    )
-
+    const updatedTransactions = transactions.map(t => t.id === updatedTx.id ? updatedTx : t)
     await saveTransactions(updatedTransactions)
     await saveAccounts(updatedAccounts)
   }, [transactions, accounts, saveTransactions, saveAccounts])
 
   const totalBalance = accounts.reduce((sum, a) => sum + a.balance, 0)
-
-  const monthlyIncome = transactions
-    .filter(t => t.type === 'receita' && t.paid)
-    .reduce((sum, t) => sum + t.amount, 0)
-
-  const monthlyExpense = transactions
-    .filter(t => t.type === 'despesa' && t.paid)
-    .reduce((sum, t) => sum + t.amount, 0)
+  const monthlyIncome = transactions.filter(t => t.type === 'receita' && t.paid).reduce((sum, t) => sum + t.amount, 0)
+  const monthlyExpense = transactions.filter(t => t.type === 'despesa' && t.paid).reduce((sum, t) => sum + t.amount, 0)
 
   return {
-    transactions,
-    accounts,
-    tags,
-    monthlyBudget,
-    showPending,
-    setShowPending,
-    saveMonthlyBudget,
-    loading,
-    totalBalance,
-    monthlyIncome,
-    monthlyExpense,
-    addTransaction,
-    deleteTransaction,
-    updateTransaction,
-    saveAccounts,
-    saveTags,
-    clearAllData,
+    transactions, accounts, tags, monthlyBudget, showPending, setShowPending, saveMonthlyBudget, loading, totalBalance, monthlyIncome, monthlyExpense, addTransaction, deleteTransaction, updateTransaction, saveAccounts, saveTags, clearAllData,
   }
 }
