@@ -6,7 +6,8 @@ import {
   ScrollView,
   StyleSheet,
   TouchableOpacity,
-  Switch, // 👉 Adicionado o Switch
+  Switch,
+  ActivityIndicator, // 👉 Adicionado para o carregamento
 } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { useTheme } from '@/hooks/useTheme'
@@ -18,18 +19,37 @@ import { AddTransactionModal } from '../AddTransactionModal'
 
 export function SaldosScreen() {
   const { colors } = useTheme()
-  const { accounts, tags, transactions, totalBalance, monthlyIncome, monthlyExpense, addTransaction, updateTransaction } = useStoreContext()
+  const {
+    accounts,
+    tags,
+    transactions,
+    totalBalance,
+    monthlyIncome,
+    monthlyExpense,
+    addTransaction,
+    updateTransaction,
+    loading,         // 👉 Puxando o status de carregamento
+    showPending,     // 👉 Puxando a preferência salva
+    setShowPending   // 👉 Puxando a função que salva a preferência
+  } = useStoreContext()
+
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null)
   const [isEditing, setIsEditing] = useState(false)
 
-  // 👉 NOVO ESTADO: Controla se mostramos os pendentes (previstos)
-  const [showPending, setShowPending] = useState(true)
-
-  // 👉 LÓGICA DE FILTRO: Filtra a lista antes de renderizar
+  // 👉 LÓGICA DE FILTRO: Usa a variável que veio do AsyncStorage
   const displayedTransactions = transactions.filter(tx => {
-    if (showPending) return true // Mostra tudo
-    return tx.paid === true      // Mostra apenas os pagos
+    if (showPending) return true
+    return tx.paid === true
   })
+
+  // 👉 SE O APP ESTIVER LENDO A MEMÓRIA, MOSTRA UM CARREGAMENTO
+  if (loading) {
+    return (
+      <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    )
+  }
 
   return (
     <>
@@ -75,8 +95,7 @@ export function SaldosScreen() {
           </View>
         </ScrollView>
 
-        {/* Recent Transactions */}
-        {/* 👉 CABEÇALHO ATUALIZADO COM O SWITCH */}
+        {/* Recent Transactions Header */}
         <View style={styles.sectionHeader}>
           <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Lançamentos</Text>
           <View style={styles.filterToggle}>
@@ -85,16 +104,16 @@ export function SaldosScreen() {
             </Text>
             <Switch
               value={showPending}
-              onValueChange={setShowPending}
+              onValueChange={setShowPending} // Agora salva direto na memória!
               trackColor={{ false: colors.border, true: colors.primary }}
               thumbColor="#ffffff"
-              style={{ transform: [{ scale: 0.8 }] }} // Deixa o Switch um pouco menor para ficar elegante
+              style={{ transform: [{ scale: 0.8 }] }}
             />
           </View>
         </View>
 
+        {/* List */}
         <View style={[styles.txList, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          {/* 👉 USANDO displayedTransactions AQUI EM VEZ DE transactions */}
           {displayedTransactions.length === 0 ? (
             <View style={styles.emptyState}>
               <Ionicons name="receipt-outline" size={40} color={colors.mutedForeground} />
@@ -185,6 +204,7 @@ export function SaldosScreen() {
 }
 
 const styles = StyleSheet.create({
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' }, // Novo estilo de loading
   content: { padding: 16, paddingBottom: 32, gap: 16 },
   balanceCard: { borderRadius: 20, padding: 24, gap: 4 },
   balanceLabel: { color: 'rgba(255,255,255,0.75)', fontSize: 13, fontWeight: '500' },
@@ -193,12 +213,9 @@ const styles = StyleSheet.create({
   balanceStat: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   balanceStatText: { color: 'rgba(255,255,255,0.85)', fontSize: 13, fontWeight: '500' },
   balanceDivider: { width: 1, height: 14, backgroundColor: 'rgba(255,255,255,0.3)' },
-
-  // 👉 NOVOS ESTILOS PARA O CABEÇALHO DO FILTRO
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   filterToggle: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   filterText: { fontSize: 13, fontWeight: '500' },
-
   sectionTitle: { fontSize: 16, fontWeight: '600' },
   accountsRow: { flexDirection: 'row', gap: 12, paddingRight: 16 },
   accountCard: { width: 140, borderRadius: 16, padding: 16, borderWidth: 1, gap: 8 },

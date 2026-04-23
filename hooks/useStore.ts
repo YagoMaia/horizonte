@@ -8,6 +8,7 @@ const STORAGE_KEYS = {
   ACCOUNTS: '@horizonte:accounts',
   TAGS: '@horizonte:tags',
   MONTHLY_BUDGET: '@horizonte:monthly_budget',
+  SHOW_PENDING: '@horizonte:show_pending', // Chave para salvar o filtro
 }
 
 const DEFAULT_TAGS: Tag[] = []
@@ -19,6 +20,7 @@ export function useStore() {
   const [accounts, setAccounts] = useState<Account[]>([])
   const [tags, setTags] = useState<Tag[]>([])
   const [monthlyBudget, setMonthlyBudget] = useState<number>(0)
+  const [showPending, setShowPendingState] = useState<boolean>(true)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -27,16 +29,22 @@ export function useStore() {
 
   const loadData = async () => {
     try {
-      const [txRaw, accRaw, tagsRaw, budgetRaw] = await Promise.all([
+      const [txRaw, accRaw, tagsRaw, budgetRaw, showPendingRaw] = await Promise.all([
         AsyncStorage.getItem(STORAGE_KEYS.TRANSACTIONS),
         AsyncStorage.getItem(STORAGE_KEYS.ACCOUNTS),
         AsyncStorage.getItem(STORAGE_KEYS.TAGS),
         AsyncStorage.getItem(STORAGE_KEYS.MONTHLY_BUDGET),
+        AsyncStorage.getItem(STORAGE_KEYS.SHOW_PENDING),
       ])
+
       setTransactions(txRaw ? JSON.parse(txRaw) : DEFAULT_TRANSACTIONS)
       setAccounts(accRaw ? JSON.parse(accRaw) : DEFAULT_ACCOUNTS)
       setTags(tagsRaw ? JSON.parse(tagsRaw) : DEFAULT_TAGS)
       setMonthlyBudget(budgetRaw ? parseFloat(budgetRaw) : 0)
+
+      if (showPendingRaw !== null) {
+        setShowPendingState(JSON.parse(showPendingRaw))
+      }
     } catch (e) {
       setTransactions(DEFAULT_TRANSACTIONS)
       setAccounts(DEFAULT_ACCOUNTS)
@@ -49,6 +57,11 @@ export function useStore() {
   const saveMonthlyBudget = useCallback(async (value: number) => {
     await AsyncStorage.setItem(STORAGE_KEYS.MONTHLY_BUDGET, String(value))
     setMonthlyBudget(value)
+  }, [])
+
+  const setShowPending = useCallback(async (value: boolean) => {
+    await AsyncStorage.setItem(STORAGE_KEYS.SHOW_PENDING, JSON.stringify(value))
+    setShowPendingState(value)
   }, [])
 
   const saveTransactions = useCallback(async (data: Transaction[]) => {
@@ -72,11 +85,13 @@ export function useStore() {
       STORAGE_KEYS.ACCOUNTS,
       STORAGE_KEYS.TAGS,
       STORAGE_KEYS.MONTHLY_BUDGET,
+      STORAGE_KEYS.SHOW_PENDING,
     ])
     setTransactions(DEFAULT_TRANSACTIONS)
     setAccounts(DEFAULT_ACCOUNTS)
     setTags(DEFAULT_TAGS)
     setMonthlyBudget(0)
+    setShowPendingState(true)
   }, [])
 
   const addTransaction = useCallback(async (tx: Omit<Transaction, 'id'>) => {
@@ -203,6 +218,8 @@ export function useStore() {
     accounts,
     tags,
     monthlyBudget,
+    showPending,
+    setShowPending,
     saveMonthlyBudget,
     loading,
     totalBalance,

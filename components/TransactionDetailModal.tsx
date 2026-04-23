@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   Alert,
   ScrollView,
+  Platform, // 👉 Importação do Platform adicionada
 } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -43,22 +44,33 @@ export function TransactionDetailModal({ transaction, onClose, onEdit }: Transac
   const isTransf = transaction.type === 'transferencia'
   const amountColor = isReceita ? colors.success : isTransf ? colors.primary : colors.destructive
 
-  const handleDelete = () => {
-    Alert.alert(
-      'Excluir lançamento',
-      `Deseja excluir "${transaction.description}"?`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Excluir',
-          style: 'destructive',
-          onPress: async () => {
-            await deleteTransaction(transaction.id)
-            onClose()
+  // 👉 CORREÇÃO APLICADA AQUI
+  const handleDelete = async () => {
+    if (Platform.OS === 'web') {
+      // No navegador, usamos o confirm padrão do Windows/Mac
+      const confirmed = window.confirm(`Deseja excluir "${transaction.description}"?`)
+      if (confirmed) {
+        await deleteTransaction(transaction.id)
+        onClose()
+      }
+    } else {
+      // No celular, usamos o Alert nativo do iOS/Android
+      Alert.alert(
+        'Excluir lançamento',
+        `Deseja excluir "${transaction.description}"?`,
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          {
+            text: 'Excluir',
+            style: 'destructive',
+            onPress: async () => {
+              await deleteTransaction(transaction.id)
+              onClose()
+            },
           },
-        },
-      ]
-    )
+        ]
+      )
+    }
   }
 
   const handleEdit = () => {
