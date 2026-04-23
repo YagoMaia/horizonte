@@ -31,8 +31,10 @@ const ACCOUNT_ICONS: { icon: string; label: string }[] = [
   { icon: 'cash', label: 'Dinheiro' },
 ]
 
+// 👉 ATUALIZAÇÃO AQUI: Adicionado 'cartao_credito'
 const ACCOUNT_TYPES: { value: Account['type']; label: string }[] = [
   { value: 'corrente', label: 'Conta Corrente' },
+  { value: 'cartao_credito', label: 'Cartão de Crédito' },
   { value: 'poupanca', label: 'Poupança' },
   { value: 'investimento', label: 'Investimento' },
   { value: 'carteira', label: 'Carteira' },
@@ -239,7 +241,10 @@ export function ContasScreen() {
               placeholderTextColor={colors.mutedForeground}
             />
 
-            <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Saldo Atual (R$)</Text>
+            {/* Dica visual para Cartão de Crédito */}
+            <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>
+              {type === 'cartao_credito' ? 'Limite do Cartão (R$)' : 'Saldo Atual (R$)'}
+            </Text>
             <TextInput
               style={[styles.input, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.card }]}
               value={balance}

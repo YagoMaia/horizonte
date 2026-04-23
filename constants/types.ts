@@ -16,16 +16,14 @@ export interface Tag {
 export interface Account {
   id: string
   name: string
-  balance: number
-  type: 'corrente' | 'poupanca' | 'investimento' | 'carteira'
+  balance: number // For checking: available money. For credit cards: current invoice total (usually negative or tracked as owed).
+  type: 'corrente' | 'poupanca' | 'investimento' | 'carteira' | 'cartao_credito' // 👉 Added 'cartao_credito'
   color: string
   icon: string
-}
-
-export interface Transaction {
-  id: string;
-  // ... seus outros campos (amount, date, description, type, etc)
-  paymentMethod?: 'debito' | 'credito'; // 👉 Adicione esta linha
+  // Optional specific properties for credit cards
+  creditLimit?: number;
+  closingDay?: number;
+  dueDay?: number;
 }
 
 export interface Transaction {
@@ -40,10 +38,13 @@ export interface Transaction {
   recurrence: RecurrenceType
   paid: boolean
   notes?: string
-  isRecurring?: boolean;
-  recurrenceInterval?: 'diario' | 'semanal' | 'mensal' | 'anual';
-  recurrenceStartDate?: string; // Data de início em formato ISO
-  recurrenceEndDate?: string;   // Data de fim em formato ISO (opcional)
+  paymentMethod?: 'debito' | 'credito' // Tracks the method used
+  installmentNumber?: number // E.g., 1 (for 1/3)
+  totalInstallments?: number // E.g., 3 (for 1/3)
+  isRecurring?: boolean
+  recurrenceInterval?: 'diario' | 'semanal' | 'mensal' | 'anual'
+  recurrenceStartDate?: string
+  recurrenceEndDate?: string
 }
 
 export interface DailyBalance {

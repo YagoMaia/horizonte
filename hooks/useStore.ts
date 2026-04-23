@@ -8,7 +8,7 @@ const STORAGE_KEYS = {
   ACCOUNTS: '@horizonte:accounts',
   TAGS: '@horizonte:tags',
   MONTHLY_BUDGET: '@horizonte:monthly_budget',
-  SHOW_PENDING: '@horizonte:show_pending', // Chave para salvar o filtro
+  SHOW_PENDING: '@horizonte:show_pending',
 }
 
 const DEFAULT_TAGS: Tag[] = []
@@ -94,17 +94,58 @@ export function useStore() {
     setShowPendingState(true)
   }, [])
 
-  const addTransaction = useCallback(async (tx: Omit<Transaction, 'id'>) => {
+  // 👉 A MÁGICA DO PARCELAMENTO ACONTECE AQUI
+  const addTransaction = useCallback(async (tx: any) => {
     const newTransactions: Transaction[] = []
     let updatedAccounts = [...accounts]
 
-    if (tx.recurrence === 'mensal') {
+    // Descobre se a conta é um Cartão de Crédito
+    const targetAccount = updatedAccounts.find(a => a.id === tx.accountId)
+    const isCreditCard = targetAccount?.type === 'cartao_credito'
+
+    // Força como 'credito' no sistema
+    const finalizedTxMethod = isCreditCard ? 'credito' : (tx.paymentMethod || 'debito')
+
+    // 1. SE FOR CARTÃO E TIVER PARCELAS (> 1)
+    if (isCreditCard && tx.totalInstallments && tx.totalInstallments > 1) {
+      const baseDate = new Date(tx.date)
+
+      // Divide o valor exato pelas parcelas!
+      const installmentAmount = tx.amount / tx.totalInstallments
+
+      for (let i = 0; i < tx.totalInstallments; i++) {
+        const currentDate = new Date(baseDate)
+        currentDate.setMonth(baseDate.getMonth() + i) // Joga para o próximo mês
+
+        newTransactions.push({
+          ...tx,
+          id: Date.now().toString() + '-' + i,
+          // Adiciona o (1/2), (2/2) no final da descrição automaticamente
+          description: `${tx.description} (${i + 1}/${tx.totalInstallments})`,
+          amount: installmentAmount, // Salva o valor fracionado (Ex: R$ 50)
+          date: currentDate.toISOString(),
+          paid: false, // Faturas do futuro não estão pagas ainda
+          paymentMethod: finalizedTxMethod,
+        })
+      }
+    }
+    // 2. SE FOR CARTÃO À VISTA (1 Parcela)
+    else if (isCreditCard && (!tx.totalInstallments || tx.totalInstallments === 1)) {
+      const newTx: Transaction = {
+        ...tx,
+        id: Date.now().toString(),
+        paymentMethod: finalizedTxMethod,
+        paid: false // Cartão de crédito só é pago quando a fatura fecha
+      }
+      newTransactions.push(newTx)
+    }
+    // 3. SE FOR DÉBITO RECORRENTE MENSAL (Ex: Netflix)
+    else if (tx.recurrence === 'mensal') {
       const baseDate = new Date(tx.date)
       for (let i = 0; i < 12; i++) {
         const currentDate = new Date(baseDate)
         currentDate.setMonth(baseDate.getMonth() + i)
 
-        // Apenas a primeira parcela pode vir como "paga", as próximas são sempre pendentes
         const isPaid = i === 0 ? tx.paid : false
 
         newTransactions.push({
@@ -112,6 +153,7 @@ export function useStore() {
           id: Date.now().toString() + '-' + i,
           date: currentDate.toISOString(),
           paid: isPaid,
+          paymentMethod: finalizedTxMethod,
         })
 
         if (isPaid) {
@@ -124,8 +166,14 @@ export function useStore() {
           })
         }
       }
-    } else {
-      const newTx: Transaction = { ...tx, id: Date.now().toString() }
+    }
+    // 4. SE FOR COMPRA ÚNICA NO DÉBITO OU DINHEIRO
+    else {
+      const newTx: Transaction = {
+        ...tx,
+        id: Date.now().toString(),
+        paymentMethod: finalizedTxMethod
+      }
       newTransactions.push(newTx)
 
       if (tx.paid) {
@@ -152,7 +200,6 @@ export function useStore() {
     const updated = transactions.filter(t => t.id !== id)
     await saveTransactions(updated)
 
-    // Reverse balance if was paid
     if (tx.paid) {
       const updatedAccounts = accounts.map(acc => {
         if (acc.id === tx.accountId) {
@@ -171,7 +218,6 @@ export function useStore() {
 
     let updatedAccounts = [...accounts]
 
-    // Passo 1: Reverter o impacto no saldo da transação antiga (se ela estava paga)
     if (oldTx.paid) {
       updatedAccounts = updatedAccounts.map(acc => {
         if (acc.id === oldTx.accountId) {
@@ -182,7 +228,6 @@ export function useStore() {
       })
     }
 
-    // Passo 2: Aplicar o impacto no saldo da nova transação (se ela estiver paga)
     if (updatedTx.paid) {
       updatedAccounts = updatedAccounts.map(acc => {
         if (acc.id === updatedTx.accountId) {
@@ -193,12 +238,10 @@ export function useStore() {
       })
     }
 
-    // Passo 3: Substituir a transação antiga pela nova na lista
     const updatedTransactions = transactions.map(t =>
       t.id === updatedTx.id ? updatedTx : t
     )
 
-    // Passo 4: Salvar tudo
     await saveTransactions(updatedTransactions)
     await saveAccounts(updatedAccounts)
   }, [transactions, accounts, saveTransactions, saveAccounts])

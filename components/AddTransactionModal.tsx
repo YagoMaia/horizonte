@@ -1,5 +1,5 @@
 // components/AddTransactionModal.tsx
-import React, { useState } from 'react'
+import React, { useState, useMemo } from 'react'
 import {
   View,
   Text,
@@ -15,7 +15,7 @@ import {
 import { Ionicons } from '@expo/vector-icons'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useTheme } from '@/hooks/useTheme'
-import { Transaction, TransactionType, RecurrenceType } from '@/constants/types'
+import { Transaction, TransactionType, RecurrenceType, Account } from '@/constants/types'
 
 const WEEK_DAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
 const MONTHS = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
@@ -25,7 +25,7 @@ interface AddTransactionModalProps {
   onClose: () => void
   onAdd: (tx: any) => void
   onUpdate?: (tx: any) => void
-  accounts: any[]
+  accounts: Account[]
   tags: any[]
   transactionToEdit?: Transaction | null
 }
@@ -57,6 +57,9 @@ export function AddTransactionModal({ visible, onClose, onAdd, onUpdate, account
   const [recurrence, setRecurrence] = useState<RecurrenceType>('unica')
   const [paid, setPaid] = useState(true)
 
+  // Estado para Parcelamento do Cartão
+  const [installments, setInstallments] = useState(1)
+
   // Estados de Data
   const [date, setDate] = useState(getFormattedDate(0))
   const [recurrenceStart, setRecurrenceStart] = useState(getFormattedDate(0))
@@ -66,6 +69,20 @@ export function AddTransactionModal({ visible, onClose, onAdd, onUpdate, account
   const [calendarTarget, setCalendarTarget] = useState<'main' | 'start' | 'end' | null>(null)
   const [calendarMonth, setCalendarMonth] = useState(new Date())
 
+  // 👉 Detecta se a conta atual é um Cartão de Crédito
+  const isCreditCardSelected = useMemo(() => {
+    const acc = accounts.find(a => a.id === accountId);
+    return acc?.type === 'cartao_credito';
+  }, [accountId, accounts]);
+
+  // Força 'despesa' se mudar para conta de cartão
+  React.useEffect(() => {
+    if (isCreditCardSelected && type !== 'despesa') {
+      setType('despesa');
+      setPaid(false); // Transações de cartão nascem pendentes (você paga na fatura)
+    }
+  }, [isCreditCardSelected, type]);
+
   const resetState = () => {
     setType('despesa')
     setDescription('')
@@ -74,6 +91,7 @@ export function AddTransactionModal({ visible, onClose, onAdd, onUpdate, account
     setSelectedTags([])
     setRecurrence('unica')
     setPaid(true)
+    setInstallments(1)
     setDate(getFormattedDate(0))
     setRecurrenceStart(getFormattedDate(0))
     setRecurrenceEnd('')
@@ -90,6 +108,7 @@ export function AddTransactionModal({ visible, onClose, onAdd, onUpdate, account
         setSelectedTags(transactionToEdit.tagIds)
         setRecurrence(transactionToEdit.recurrence)
         setPaid(transactionToEdit.paid)
+        setInstallments(transactionToEdit.totalInstallments || 1)
         const d = new Date(transactionToEdit.date)
         setDate(`${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`)
       } else {
@@ -98,7 +117,6 @@ export function AddTransactionModal({ visible, onClose, onAdd, onUpdate, account
     }
   }, [visible, transactionToEdit])
 
-  // Lógica de Renderização do Calendário
   const renderCalendar = () => {
     if (!calendarTarget) return null
 
@@ -113,7 +131,6 @@ export function AddTransactionModal({ visible, onClose, onAdd, onUpdate, account
 
     const today = new Date()
 
-    // Pega a data atual do campo selecionado para destacar no calendário
     let currentVal = date
     if (calendarTarget === 'start') currentVal = recurrenceStart
     if (calendarTarget === 'end') currentVal = recurrenceEnd || date
@@ -176,7 +193,6 @@ export function AddTransactionModal({ visible, onClose, onAdd, onUpdate, account
     )
   }
 
-  // Função para alternar a seleção das Tags
   const toggleTag = (tagId: string) => {
     setSelectedTags(prev =>
       prev.includes(tagId) ? prev.filter(id => id !== tagId) : [...prev, tagId]
@@ -192,6 +208,9 @@ export function AddTransactionModal({ visible, onClose, onAdd, onUpdate, account
       return new Date(Number(p[2]), Number(p[1]) - 1, Number(p[0])).toISOString()
     }
 
+    // Se for cartão com parcelas, forçamos "mensal" internamente
+    const finalRecurrence = (isCreditCardSelected && installments > 1) ? 'mensal' : recurrence;
+
     const txData = {
       description: description.trim(),
       amount: parseFloat(amount.replace(',', '.')),
@@ -199,10 +218,13 @@ export function AddTransactionModal({ visible, onClose, onAdd, onUpdate, account
       date: parseToISO(date),
       accountId,
       tagIds: selectedTags,
-      recurrence,
+      recurrence: finalRecurrence,
       paid,
-      recurrenceStartDate: recurrence !== 'unica' ? parseToISO(recurrenceStart) : undefined,
-      recurrenceEndDate: (recurrence !== 'unica' && recurrenceEnd) ? parseToISO(recurrenceEnd) : undefined,
+      recurrenceStartDate: finalRecurrence !== 'unica' ? parseToISO(recurrenceStart) : undefined,
+      recurrenceEndDate: (finalRecurrence !== 'unica' && recurrenceEnd) ? parseToISO(recurrenceEnd) : undefined,
+      // 👉 Dados para o useStore saber que é parcelado
+      totalInstallments: isCreditCardSelected ? installments : 1,
+      paymentMethod: isCreditCardSelected ? 'credito' : 'debito'
     }
 
     if (isEditing && onUpdate) {
@@ -223,14 +245,29 @@ export function AddTransactionModal({ visible, onClose, onAdd, onUpdate, account
         </View>
 
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-          {/* Tipo e Valor */}
-          <View style={[styles.typeSelector, { backgroundColor: colors.secondary }]}>
+          {/* 👉 Seleção de Conta movida para o topo para ditar as regras logo de cara */}
+          <View style={styles.field}>
+            <Text style={[styles.label, { color: colors.mutedForeground }]}>Conta de Origem</Text>
+            <View style={styles.chipRow}>
+              {accounts.map(acc => (
+                <TouchableOpacity key={acc.id} style={[styles.chip, { borderColor: acc.color, backgroundColor: accountId === acc.id ? acc.color : 'transparent' }]} onPress={() => setAccountId(acc.id)}>
+                  <Text style={[styles.chipText, { color: accountId === acc.id ? '#FFF' : acc.color }]}>{acc.name}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
+          {/* Tipo e Valor (Desativado se for cartão) */}
+          <View style={[styles.typeSelector, { backgroundColor: colors.secondary, opacity: isCreditCardSelected ? 0.5 : 1 }]} pointerEvents={isCreditCardSelected ? 'none' : 'auto'}>
             {(['receita', 'despesa', 'transferencia'] as TransactionType[]).map(t => (
               <TouchableOpacity key={t} style={[styles.typeBtn, type === t && { backgroundColor: t === 'receita' ? colors.success : t === 'despesa' ? colors.destructive : colors.primary }]} onPress={() => setType(t)}>
                 <Text style={{ fontSize: 12, fontWeight: '600', color: type === t ? '#FFF' : colors.mutedForeground }}>{t.toUpperCase()}</Text>
               </TouchableOpacity>
             ))}
           </View>
+          {isCreditCardSelected && (
+            <Text style={{ fontSize: 10, color: colors.mutedForeground, textAlign: 'center', marginTop: -15 }}>* Cartões aceitam apenas despesas</Text>
+          )}
 
           <View style={styles.field}>
             <Text style={[styles.label, { color: colors.mutedForeground }]}>Valor</Text>
@@ -242,9 +279,33 @@ export function AddTransactionModal({ visible, onClose, onAdd, onUpdate, account
             <TextInput style={[styles.input, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.card }]} value={description} onChangeText={setDescription} placeholder="O que é?" placeholderTextColor={colors.mutedForeground} />
           </View>
 
-          {/* Seletor de Data Principal */}
+          {/* 👉 UI ESPECÍFICA DE PARCELAMENTO (Só aparece se for Cartão) 👈 */}
+          {isCreditCardSelected && !isEditing && (
+            <View style={styles.field}>
+              <Text style={[styles.label, { color: colors.mutedForeground }]}>Parcelamento</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexDirection: 'row', marginTop: 4 }}>
+                {[1, 2, 3, 4, 5, 6, 10, 12, 24].map((n) => (
+                  <TouchableOpacity
+                    key={n}
+                    style={[styles.instBtn, { borderColor: colors.border }, installments === n && { backgroundColor: colors.primary, borderColor: colors.primary }]}
+                    onPress={() => setInstallments(n)}
+                  >
+                    <Text style={{ color: installments === n ? '#FFF' : colors.foreground, fontWeight: '500' }}>
+                      {n === 1 ? 'À Vista' : `${n}x`}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+              {installments > 1 && amount && (
+                <Text style={{ fontSize: 11, color: colors.mutedForeground, marginTop: 4 }}>
+                  Serão lançadas {installments} parcelas de R$ {(parseFloat(amount.replace(',', '.')) / installments).toFixed(2).replace('.', ',')}
+                </Text>
+              )}
+            </View>
+          )}
+
           <View style={styles.field}>
-            <Text style={[styles.label, { color: colors.mutedForeground }]}>Data do Lançamento</Text>
+            <Text style={[styles.label, { color: colors.mutedForeground }]}>Data da Compra</Text>
             <TouchableOpacity
               style={[styles.dateButton, { borderColor: colors.border, backgroundColor: colors.card }]}
               onPress={() => setCalendarTarget(calendarTarget === 'main' ? null : 'main')}
@@ -255,19 +316,6 @@ export function AddTransactionModal({ visible, onClose, onAdd, onUpdate, account
             {calendarTarget === 'main' && renderCalendar()}
           </View>
 
-          {/* Conta */}
-          <View style={styles.field}>
-            <Text style={[styles.label, { color: colors.mutedForeground }]}>Conta</Text>
-            <View style={styles.chipRow}>
-              {accounts.map(acc => (
-                <TouchableOpacity key={acc.id} style={[styles.chip, { borderColor: acc.color, backgroundColor: accountId === acc.id ? acc.color : 'transparent' }]} onPress={() => setAccountId(acc.id)}>
-                  <Text style={[styles.chipText, { color: accountId === acc.id ? '#FFF' : acc.color }]}>{acc.name}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-
-          {/* 👉 TAGS ADICIONADAS AQUI 👈 */}
           <View style={styles.field}>
             <Text style={[styles.label, { color: colors.mutedForeground }]}>Tags</Text>
             <View style={styles.chipRow}>
@@ -288,50 +336,51 @@ export function AddTransactionModal({ visible, onClose, onAdd, onUpdate, account
             </View>
           </View>
 
-          {/* Recorrência */}
-          <View style={styles.field}>
-            <Text style={[styles.label, { color: colors.mutedForeground }]}>Recorrência</Text>
-            <View style={styles.chipRow}>
-              {RECURRENCE_OPTIONS.map(opt => (
-                <TouchableOpacity key={opt.value} style={[styles.chip, { borderColor: colors.primary, backgroundColor: recurrence === opt.value ? colors.primary : 'transparent' }]} onPress={() => setRecurrence(opt.value)}>
-                  <Text style={[styles.chipText, { color: recurrence === opt.value ? '#FFF' : colors.primary }]}>{opt.label}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-
-          {recurrence !== 'unica' && (
-            <View style={{ gap: 12 }}>
+          {/* Oculta opções genéricas de recorrência se for cartão */}
+          {!isCreditCardSelected && (
+            <>
               <View style={styles.field}>
-                <Text style={[styles.label, { color: colors.mutedForeground }]}>Inicia em</Text>
-                <TouchableOpacity
-                  style={[styles.dateButton, { borderColor: colors.border, backgroundColor: colors.card }]}
-                  onPress={() => setCalendarTarget(calendarTarget === 'start' ? null : 'start')}
-                >
-                  <Text style={{ color: colors.foreground }}>{recurrenceStart}</Text>
-                  <Ionicons name="calendar-outline" size={18} color={colors.primary} />
-                </TouchableOpacity>
-                {calendarTarget === 'start' && renderCalendar()}
+                <Text style={[styles.label, { color: colors.mutedForeground }]}>Recorrência</Text>
+                <View style={styles.chipRow}>
+                  {RECURRENCE_OPTIONS.map(opt => (
+                    <TouchableOpacity key={opt.value} style={[styles.chip, { borderColor: colors.primary, backgroundColor: recurrence === opt.value ? colors.primary : 'transparent' }]} onPress={() => setRecurrence(opt.value)}>
+                      <Text style={[styles.chipText, { color: recurrence === opt.value ? '#FFF' : colors.primary }]}>{opt.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
               </View>
 
-              <View style={styles.field}>
-                <Text style={[styles.label, { color: colors.mutedForeground }]}>Termina em (Opcional)</Text>
-                <TouchableOpacity
-                  style={[styles.dateButton, { borderColor: colors.border, backgroundColor: colors.card }]}
-                  onPress={() => setCalendarTarget(calendarTarget === 'end' ? null : 'end')}
-                >
-                  <Text style={{ color: colors.foreground }}>{recurrenceEnd || 'Não definido'}</Text>
-                  <Ionicons name="calendar-outline" size={18} color={colors.primary} />
-                </TouchableOpacity>
-                {calendarTarget === 'end' && renderCalendar()}
-              </View>
+              {recurrence !== 'unica' && (
+                <View style={{ gap: 12 }}>
+                  <View style={styles.field}>
+                    <Text style={[styles.label, { color: colors.mutedForeground }]}>Inicia em</Text>
+                    <TouchableOpacity style={[styles.dateButton, { borderColor: colors.border, backgroundColor: colors.card }]} onPress={() => setCalendarTarget(calendarTarget === 'start' ? null : 'start')}>
+                      <Text style={{ color: colors.foreground }}>{recurrenceStart}</Text>
+                      <Ionicons name="calendar-outline" size={18} color={colors.primary} />
+                    </TouchableOpacity>
+                    {calendarTarget === 'start' && renderCalendar()}
+                  </View>
+                  <View style={styles.field}>
+                    <Text style={[styles.label, { color: colors.mutedForeground }]}>Termina em (Opcional)</Text>
+                    <TouchableOpacity style={[styles.dateButton, { borderColor: colors.border, backgroundColor: colors.card }]} onPress={() => setCalendarTarget(calendarTarget === 'end' ? null : 'end')}>
+                      <Text style={{ color: colors.foreground }}>{recurrenceEnd || 'Não definido'}</Text>
+                      <Ionicons name="calendar-outline" size={18} color={colors.primary} />
+                    </TouchableOpacity>
+                    {calendarTarget === 'end' && renderCalendar()}
+                  </View>
+                </View>
+              )}
+            </>
+          )}
+
+          {/* Oculta botão de "Pago" se for Cartão (será pago na fatura) */}
+          {!isCreditCardSelected && (
+            <View style={styles.switchRow}>
+              <Text style={{ color: colors.foreground, fontWeight: '500' }}>Pago / Recebido</Text>
+              <Switch value={paid} onValueChange={setPaid} trackColor={{ false: colors.border, true: colors.primary }} />
             </View>
           )}
 
-          <View style={styles.switchRow}>
-            <Text style={{ color: colors.foreground, fontWeight: '500' }}>Pago / Recebido</Text>
-            <Switch value={paid} onValueChange={setPaid} trackColor={{ false: colors.border, true: colors.primary }} />
-          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </Modal>
@@ -355,7 +404,7 @@ const styles = StyleSheet.create({
   chip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, borderWidth: 1 },
   chipText: { fontSize: 13, fontWeight: '500' },
   switchRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, paddingVertical: 10 },
-  // Estilos do Calendário
+  instBtn: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 10, borderWidth: 1, marginRight: 8 },
   calendarBox: { marginTop: 8, borderRadius: 12, padding: 12, borderWidth: 1 },
   calendarHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   calendarMonthText: { fontWeight: '700', fontSize: 14 },
