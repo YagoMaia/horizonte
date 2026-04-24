@@ -36,6 +36,7 @@ export function SaldosScreen() {
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null)
   const [isEditing, setIsEditing] = useState(false)
 
+  // 👉 LÓGICA DE FILTRO E ORDENAÇÃO POR DATA (Descendente)
   const displayedTransactions = transactions
     .filter(tx => {
       if (showPending) return true
@@ -62,7 +63,6 @@ export function SaldosScreen() {
         <View style={[styles.balanceCard, { backgroundColor: colors.primary }]}>
           <Text style={styles.balanceLabel}>Saldo Total</Text>
           <Text style={styles.balanceValue}>{formatCurrency(totalBalance)}</Text>
-          {/* 👉 CORRIGIDO AQUI: de <div> para <View> */}
           <View style={styles.balanceRow}>
             <View style={styles.balanceStat}>
               <Ionicons name="arrow-up-circle" size={16} color="rgba(255,255,255,0.8)" />
@@ -82,10 +82,6 @@ export function SaldosScreen() {
           <View style={styles.accountsRow}>
             {accounts.map((acc: Account) => {
               const isCreditCard = acc.type === 'cartao_credito';
-
-              const totalDebt = transactions
-                .filter(tx => tx.accountId === acc.id && tx.paymentMethod === 'credito' && !tx.paid)
-                .reduce((sum, tx) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount), 0);
 
               let currentInvoice = 0;
 
@@ -107,7 +103,9 @@ export function SaldosScreen() {
               }
 
               const cardLimit = acc.creditLimit || (acc.balance > 0 ? acc.balance : 0);
-              const availableLimit = Math.max(0, cardLimit - totalDebt);
+
+              // 👉 CORREÇÃO: Subtraindo apenas a fatura atual em vez da dívida total
+              const availableLimit = Math.max(0, cardLimit - currentInvoice);
               const mainDisplayValue = isCreditCard ? availableLimit : acc.balance;
 
               return (
@@ -174,18 +172,15 @@ export function SaldosScreen() {
                   onPress={() => setSelectedTx(tx)}
                   activeOpacity={0.7}
                 >
-                  {/* Ícone Redondo */}
                   <View style={[styles.txIcon, { backgroundColor: iconColor + '15' }]}>
                     <Ionicons name={iconName as any} size={18} color={iconColor} />
                   </View>
 
-                  {/* Conteúdo Centralizado */}
                   <View style={styles.txInfo}>
                     <Text style={[styles.txDesc, { color: colors.foreground }]} numberOfLines={1}>
                       {tx.description}
                     </Text>
 
-                    {/* Metadados: Data em destaque + Categoria + Conta */}
                     <View style={styles.txMeta}>
                       <Text style={[styles.txDateText, { color: colors.primary }]}>
                         {formatDateShort(tx.date)}
@@ -205,7 +200,6 @@ export function SaldosScreen() {
                     </View>
                   </View>
 
-                  {/* Lado Direito: Valor e Badges */}
                   <View style={styles.txRight}>
                     <Text style={[styles.txAmount, { color: amountColor }]}>
                       {isReceita ? '+' : tx.type === 'transferencia' ? '' : '-'}{formatCurrency(tx.amount)}
