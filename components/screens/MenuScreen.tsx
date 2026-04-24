@@ -8,13 +8,13 @@ import {
   TouchableOpacity,
   Alert,
   Platform,
+  Share,
 } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { useTheme } from '@/hooks/useTheme'
 import { formatCurrency } from '@/lib/utils'
 import { useStoreContext } from '@/context/StoreContext'
 import * as FileSystem from 'expo-file-system'
-import * as Sharing from 'expo-sharing'
 
 interface MenuItemProps {
   icon: string
@@ -112,11 +112,19 @@ export function MenuScreen({ onNavigateToTags }: MenuScreenProps) {
         encoding: FileSystem.EncodingType.UTF8,
       })
 
-      await Sharing.shareAsync(fileUri, {
-        mimeType: 'text/csv',
-        dialogTitle: 'Exportar dados Financeiros',
-        UTI: 'public.comma-separated-values-text',
-      })
+      const handleShare = async () => {
+        try {
+          // O Share nativo é perfeito para textos curtos, resumos ou links.
+          await Share.share({
+            message: 'Aqui estão os dados do meu app Horizonte!',
+            // Se você estava a tentar compartilhar um arquivo (como CSV), 
+            // o Share nativo no Android pode ser um pouco chato com arquivos locais.
+            // Se for apenas texto, isso vai funcionar perfeitamente.
+          });
+        } catch (error) {
+          console.error("Erro ao compartilhar", error);
+        }
+      };
 
     } catch (error) {
       console.error(error)
