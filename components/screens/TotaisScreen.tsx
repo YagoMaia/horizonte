@@ -14,33 +14,79 @@ import { useStoreContext } from '@/context/StoreContext'
 
 type Period = 'semana' | 'mes' | 'ano'
 
+const MONTH_NAMES = [
+  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
+]
+
 export function TotaisScreen() {
   const { colors } = useTheme()
   const { transactions, tags, showPending } = useStoreContext()
+
   const [period, setPeriod] = useState<Period>('mes')
   const [view, setView] = useState<'despesas' | 'receitas'>('despesas')
 
-  // --- LÓGICA DE FILTRAGEM ---
+  // 👉 NOVO: Estado para controlar a navegação no tempo
+  const [refDate, setRefDate] = useState(new Date())
+
+  // 👉 NOVO: Funções de avançar e retroceder no tempo
+  const handlePrev = () => {
+    const newDate = new Date(refDate)
+    if (period === 'semana') newDate.setDate(newDate.getDate() - 7)
+    else if (period === 'mes') newDate.setMonth(newDate.getMonth() - 1)
+    else if (period === 'ano') newDate.setFullYear(newDate.getFullYear() - 1)
+    setRefDate(newDate)
+  }
+
+  const handleNext = () => {
+    const newDate = new Date(refDate)
+    if (period === 'semana') newDate.setDate(newDate.getDate() + 7)
+    else if (period === 'mes') newDate.setMonth(newDate.getMonth() + 1)
+    else if (period === 'ano') newDate.setFullYear(newDate.getFullYear() + 1)
+    setRefDate(newDate)
+  }
+
+  // Gera o texto bonito para o cabeçalho de navegação
+  const periodLabel = useMemo(() => {
+    if (period === 'ano') return refDate.getFullYear().toString()
+    if (period === 'mes') return `${MONTH_NAMES[refDate.getMonth()]} ${refDate.getFullYear()}`
+
+    // Semana (Calcula o range de 7 dias)
+    const end = new Date(refDate)
+    const start = new Date(refDate)
+    start.setDate(start.getDate() - 6)
+
+    const startStr = `${start.getDate()} ${MONTH_NAMES[start.getMonth()].substring(0, 3)}`
+    const endStr = `${end.getDate()} ${MONTH_NAMES[end.getMonth()].substring(0, 3)}`
+    return `${startStr} - ${endStr}`
+  }, [refDate, period])
+
+
+  // --- LÓGICA DE FILTRAGEM (Atualizada para usar a refDate) ---
   const filtered = useMemo(() => {
-    const now = new Date()
-    const weekAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6, 0, 0, 0, 0)
-    const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
+    const end = new Date(refDate.getFullYear(), refDate.getMonth(), refDate.getDate(), 23, 59, 59, 999)
+    const start = new Date(end)
+
+    if (period === 'semana') {
+      start.setDate(start.getDate() - 6)
+      start.setHours(0, 0, 0, 0)
+    }
 
     return transactions.filter(tx => {
       if (!showPending && !tx.paid) return false
       const txDate = new Date(tx.date)
 
       if (period === 'semana') {
-        return txDate >= weekAgo && txDate <= endOfToday
+        return txDate >= start && txDate <= end
       } else if (period === 'mes') {
-        return txDate.getMonth() === now.getMonth() && txDate.getFullYear() === now.getFullYear()
+        return txDate.getMonth() === refDate.getMonth() && txDate.getFullYear() === refDate.getFullYear()
       } else {
-        return txDate.getFullYear() === now.getFullYear()
+        return txDate.getFullYear() === refDate.getFullYear()
       }
     })
-  }, [transactions, period, showPending])
+  }, [transactions, period, showPending, refDate])
 
-  // --- CÁLCULOS DE PERFORMANCE ---
+  // --- CÁLCULOS DE PERFORMANCE (Atualizada para calcular dias reais passados) ---
   const stats = useMemo(() => {
     const income = filtered.filter(t => t.type === 'receita').reduce((s, t) => s + t.amount, 0)
     const expense = filtered.filter(t => t.type === 'despesa').reduce((s, t) => s + t.amount, 0)
@@ -48,12 +94,29 @@ export function TotaisScreen() {
     const performance = income - expense
     const economizadoPercent = income > 0 ? Math.max(0, (performance / income) * 100) : 0
 
-    // Cálculo do Diário Médio (Baseado em dias passados no período)
+    // Cálculo dinâmico de dias para o "Diário Médio"
     const now = new Date()
     let days = 1
-    if (period === 'semana') days = 7
-    else if (period === 'mes') days = now.getDate()
-    else days = 365 // Simplificado para o ano
+
+    if (period === 'semana') {
+      days = 7
+    } else if (period === 'mes') {
+      const isCurrentMonth = refDate.getMonth() === now.getMonth() && refDate.getFullYear() === now.getFullYear()
+      if (isCurrentMonth) {
+        days = now.getDate() // Mês atual: divide apenas pelos dias que já vivemos
+      } else {
+        days = new Date(refDate.getFullYear(), refDate.getMonth() + 1, 0).getDate() // Mês fechado: total de dias no mês
+      }
+    } else { // Ano
+      const isCurrentYear = refDate.getFullYear() === now.getFullYear()
+      if (isCurrentYear) {
+        const startOfYear = new Date(now.getFullYear(), 0, 0)
+        const diff = now.getTime() - startOfYear.getTime()
+        days = Math.floor(diff / (1000 * 60 * 60 * 24)) || 1
+      } else {
+        days = 365
+      }
+    }
 
     return {
       income,
@@ -62,7 +125,7 @@ export function TotaisScreen() {
       economizadoPercent,
       diarioMedio: expense / days
     }
-  }, [filtered, period])
+  }, [filtered, period, refDate])
 
   // --- AGRUPAMENTO POR TAG ---
   const byTag = useMemo(() => {
@@ -87,7 +150,8 @@ export function TotaisScreen() {
         return {
           tagId,
           name: tag?.name ?? 'Sem tag',
-          color: tag?.color ?? colors.mutedForeground,
+          color: tag?.color ?? colors.border,
+          icon: tag?.icon ?? 'list',
           amount,
           percent: totalView > 0 ? (amount / totalView) * 100 : 0,
         }
@@ -101,13 +165,16 @@ export function TotaisScreen() {
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
     >
-      {/* Seletor de Período */}
+      {/* Seletor de Período (Aba) */}
       <View style={[styles.segmented, { backgroundColor: colors.secondary }]}>
         {(['semana', 'mes', 'ano'] as Period[]).map(p => (
           <TouchableOpacity
             key={p}
             style={[styles.segBtn, period === p && { backgroundColor: colors.card }]}
-            onPress={() => setPeriod(p)}
+            onPress={() => {
+              setPeriod(p)
+              setRefDate(new Date()) // Volta para o presente ao trocar de aba
+            }}
           >
             <Text style={[styles.segBtnText, { color: period === p ? colors.foreground : colors.mutedForeground }]}>
               {p.charAt(0).toUpperCase() + p.slice(1)}
@@ -116,11 +183,21 @@ export function TotaisScreen() {
         ))}
       </View>
 
-      {/* --- NOVOS INDICADORES DE PERFORMANCE --- */}
+      {/* 👉 NOVO: Navegador do Tempo */}
+      <View style={[styles.periodNav, { borderBottomColor: colors.border, backgroundColor: colors.card }]}>
+        <TouchableOpacity onPress={handlePrev} style={styles.navBtn}>
+          <Ionicons name='chevron-back' size={20} color={colors.foreground} />
+        </TouchableOpacity>
+        <Text style={[styles.periodTitle, { color: colors.foreground }]}>{periodLabel}</Text>
+        <TouchableOpacity onPress={handleNext} style={styles.navBtn}>
+          <Ionicons name='chevron-forward' size={20} color={colors.foreground} />
+        </TouchableOpacity>
+      </View>
+
+      {/* INDICADORES DE PERFORMANCE */}
       <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>Cálculos do período</Text>
       <View style={[styles.statsContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
 
-        {/* Performance */}
         <View style={styles.statRow}>
           <View>
             <Text style={[styles.statLabel, { color: colors.foreground }]}>Performance</Text>
@@ -139,7 +216,6 @@ export function TotaisScreen() {
           </View>
         </View>
 
-        {/* Economizado */}
         <View style={[styles.statRow, styles.borderTop, { borderTopColor: colors.border }]}>
           <View>
             <Text style={[styles.statLabel, { color: colors.foreground }]}>Economizado</Text>
@@ -155,7 +231,6 @@ export function TotaisScreen() {
           </View>
         </View>
 
-        {/* Custo de Vida */}
         <View style={[styles.statRow, styles.borderTop, { borderTopColor: colors.border }]}>
           <View>
             <Text style={[styles.statLabel, { color: colors.foreground }]}>Custo de vida</Text>
@@ -171,7 +246,6 @@ export function TotaisScreen() {
           </View>
         </View>
 
-        {/* Diário Médio */}
         <View style={[styles.statRow, styles.borderTop, { borderTopColor: colors.border }]}>
           <View>
             <Text style={[styles.statLabel, { color: colors.foreground }]}>Diário médio</Text>
@@ -202,31 +276,54 @@ export function TotaisScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Gráfico de Categorias */}
+      {/* GRÁFICOS DE CATEGORIAS */}
       {byTag.length === 0 ? (
         <View style={styles.emptyState}>
           <Ionicons name="pie-chart-outline" size={48} color={colors.mutedForeground} />
           <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>Nenhum lançamento</Text>
         </View>
       ) : (
-        <View style={[styles.list, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          {byTag.map((item, idx) => (
-            <View key={item.tagId} style={[styles.listItem, idx < byTag.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }]}>
-              <View style={styles.listItemHeader}>
-                <View style={styles.listItemLeft}>
-                  <View style={[styles.tagDot, { backgroundColor: item.color }]} />
-                  <Text style={[styles.tagName, { color: colors.foreground }]}>{item.name}</Text>
+        <View style={[styles.chartCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+
+          {/* Gráfico 1: Barra Empilhada */}
+          <View style={styles.stackedBarContainer}>
+            {byTag.map(item => (
+              <View
+                key={item.tagId}
+                style={{
+                  width: `${item.percent}%`,
+                  backgroundColor: item.color,
+                  height: '100%',
+                }}
+              />
+            ))}
+          </View>
+
+          {/* Gráfico 2: Lista com Barras Horizontais */}
+          <View style={styles.categoryList}>
+            {byTag.map((item, idx) => (
+              <View key={item.tagId} style={styles.categoryItem}>
+
+                <View style={styles.catHeader}>
+                  <View style={styles.catInfo}>
+                    <View style={[styles.catIcon, { backgroundColor: item.color + '20' }]}>
+                      <Ionicons name={item.icon as any} size={14} color={item.color} />
+                    </View>
+                    <Text style={[styles.catName, { color: colors.foreground }]}>{item.name}</Text>
+                  </View>
+                  <View style={styles.catValues}>
+                    <Text style={[styles.catAmount, { color: colors.foreground }]}>{formatCurrency(item.amount)}</Text>
+                    <Text style={[styles.catPercent, { color: colors.mutedForeground }]}>{item.percent.toFixed(1)}%</Text>
+                  </View>
                 </View>
-                <View style={styles.listItemRight}>
-                  <Text style={[styles.tagAmount, { color: colors.foreground }]}>{formatCurrency(item.amount)}</Text>
-                  <Text style={[styles.tagPercent, { color: colors.mutedForeground }]}>{item.percent.toFixed(1)}%</Text>
+
+                <View style={[styles.progressBarBg, { backgroundColor: colors.border }]}>
+                  <View style={[styles.progressBarFill, { width: `${item.percent}%` as any, backgroundColor: item.color }]} />
                 </View>
+
               </View>
-              <View style={[styles.progressBg, { backgroundColor: colors.border }]}>
-                <View style={[styles.progressFill, { width: `${item.percent}%` as any, backgroundColor: item.color }]} />
-              </View>
-            </View>
-          ))}
+            ))}
+          </View>
         </View>
       )}
     </ScrollView>
@@ -238,9 +335,13 @@ const styles = StyleSheet.create({
   segmented: { flexDirection: 'row', borderRadius: 10, padding: 3 },
   segBtn: { flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center' },
   segBtnText: { fontSize: 13, fontWeight: '600' },
-  sectionTitle: { fontSize: 12, fontWeight: '700', textTransform: 'uppercase', marginLeft: 4, marginTop: 8 },
 
-  // Estilos dos novos indicadores
+  // Estilo do novo Navegador do Tempo
+  periodNav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 12, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth },
+  periodTitle: { fontSize: 16, fontWeight: '700' },
+  navBtn: { padding: 4 },
+
+  sectionTitle: { fontSize: 12, fontWeight: '700', textTransform: 'uppercase', marginLeft: 4, marginTop: 8 },
   statsContainer: { borderRadius: 16, borderWidth: 1, overflow: 'hidden' },
   statRow: { flexDirection: 'row', justifyContent: 'space-between', padding: 16, alignItems: 'center' },
   borderTop: { borderTopWidth: StyleSheet.hairlineWidth },
@@ -252,15 +353,20 @@ const styles = StyleSheet.create({
 
   emptyState: { alignItems: 'center', paddingVertical: 48, gap: 12 },
   emptyText: { fontSize: 14 },
-  list: { borderRadius: 16, borderWidth: 1, overflow: 'hidden' },
-  listItem: { padding: 16, gap: 12 },
-  listItemHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  listItemLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  tagDot: { width: 10, height: 10, borderRadius: 5 },
-  tagName: { fontSize: 14, fontWeight: '500' },
-  listItemRight: { alignItems: 'flex-end' },
-  tagAmount: { fontSize: 14, fontWeight: '600' },
-  tagPercent: { fontSize: 12, marginTop: 2 },
-  progressBg: { height: 4, borderRadius: 2, overflow: 'hidden' },
-  progressFill: { height: 4, borderRadius: 2 },
+
+  chartCard: { padding: 20, borderRadius: 24, borderWidth: StyleSheet.hairlineWidth },
+  stackedBarContainer: { flexDirection: 'row', height: 16, borderRadius: 8, overflow: 'hidden', marginBottom: 24 },
+
+  categoryList: { gap: 20 },
+  categoryItem: { gap: 8 },
+  catHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  catInfo: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  catIcon: { width: 28, height: 28, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  catName: { fontSize: 14, fontWeight: '600' },
+  catValues: { alignItems: 'flex-end' },
+  catAmount: { fontSize: 14, fontWeight: '700' },
+  catPercent: { fontSize: 11, fontWeight: '600', marginTop: 2 },
+
+  progressBarBg: { height: 6, borderRadius: 3, width: '100%', overflow: 'hidden' },
+  progressBarFill: { height: '100%', borderRadius: 3 },
 })
