@@ -8,11 +8,12 @@ import {
   TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
+  Modal, // 👉 Importação adicionada
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/hooks/useTheme';
 import { useStoreContext } from '@/context/StoreContext';
-import { formatCurrency } from '@/lib/utils';
+import { formatCurrency, formatDateShort } from '@/lib/utils'; // 👉 formatDateShort adicionado
 
 const MONTH_NAMES = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -43,6 +44,9 @@ export function HorizonteScreen() {
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth());
+
+  // 👉 NOVO ESTADO: Controla qual dia está selecionado no modal
+  const [selectedDay, setSelectedDay] = useState<any | null>(null);
 
   const prevMonth = () => {
     if (month === 0) {
@@ -88,7 +92,6 @@ export function HorizonteScreen() {
       const isPast = dayDate < new Date(today.getFullYear(), today.getMonth(), today.getDate());
       const isToday = d === today.getDate() && month === today.getMonth() && year === today.getFullYear();
 
-      // Cálculo do plano: Receita de hoje entra no plano de hoje. Despesa só afeta amanhã.
       let balanceForCurrentPlanning = runningBalance + income;
       const remainingDays = daysCount - d + 1;
       let dailyPlan = balanceForCurrentPlanning > 0 ? balanceForCurrentPlanning / remainingDays : 0;
@@ -108,6 +111,8 @@ export function HorizonteScreen() {
         balance: runningBalance,
         isPast,
         isToday,
+        fullDate: dayDate.toISOString(), // Adicionamos a data completa para o Modal usar
+        transactions: dayTxs, // Adicionamos a lista de transações do dia para o Modal
       });
     }
     return result;
@@ -120,12 +125,14 @@ export function HorizonteScreen() {
 
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.background }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      {/* Header do Mês */}
       <View style={[styles.monthNav, { borderBottomColor: colors.border, backgroundColor: colors.card }]}>
         <TouchableOpacity onPress={prevMonth}><Ionicons name='chevron-back' size={22} color={colors.foreground} /></TouchableOpacity>
         <Text style={[styles.monthTitle, { color: colors.foreground }]}>{MONTH_NAMES[month]} {year}</Text>
         <TouchableOpacity onPress={nextMonth}><Ionicons name='chevron-forward' size={22} color={colors.foreground} /></TouchableOpacity>
       </View>
 
+      {/* Cartão de Orçamento */}
       <View style={[styles.budgetCard, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
         <View style={styles.budgetRow}>
           <View style={styles.budgetInfo}>
@@ -139,6 +146,7 @@ export function HorizonteScreen() {
         </View>
       </View>
 
+      {/* Tira de Resumo */}
       <View style={[styles.summaryStrip, { backgroundColor: colors.secondary, borderBottomColor: colors.border }]}>
         <View style={styles.summaryItem}>
           <Text style={[styles.summaryLabel, { color: colors.mutedForeground }]}>Entradas</Text>
@@ -156,23 +164,25 @@ export function HorizonteScreen() {
         </View>
       </View>
 
+      {/* Lista de Dias */}
       <ScrollView showsVerticalScrollIndicator={false}>
         {days.map((d, idx) => {
           const rowBg = d.isToday ? colors.primary + '10' : idx % 2 === 0 ? colors.card : colors.background;
-
           const economizou = d.dailyPlan > 0 && d.expense < d.dailyPlan;
           const excedeu = d.isPast && d.expense > d.dailyPlan;
           const valorDiferenca = Math.abs(d.dailyPlan - d.expense);
-
-          // 👉 NOVA LÓGICA DE VISIBILIDADE DO BADGE
-          // O badge só aparece se for Passado ou se for Hoje. Futuro fica oculto.
           const mostrarBadge = d.isPast || d.isToday;
-
           const saldoBg = d.balance >= 0 ? colors.successLight : colors.dangerLight;
           const saldoColor = d.balance >= 0 ? colors.success : colors.destructive;
 
           return (
-            <View key={d.day} style={[styles.row, { backgroundColor: rowBg, borderBottomColor: colors.border }]}>
+            // 👉 AQUI A LINHA VIRA CLICÁVEL E ABRE O MODAL
+            <TouchableOpacity
+              key={d.day}
+              activeOpacity={0.7}
+              onPress={() => setSelectedDay(d)}
+              style={[styles.row, { backgroundColor: rowBg, borderBottomColor: colors.border }]}
+            >
               <View style={[styles.colDia, { backgroundColor: d.isToday ? colors.primary + '15' : 'rgba(0,0,0,0.02)' }]}>
                 <Text style={[styles.dayNumber, { color: colors.foreground }]}>{d.day}</Text>
                 <Text style={[styles.weekDay, { color: colors.mutedForeground }]}>{d.weekDay}</Text>
@@ -201,7 +211,6 @@ export function HorizonteScreen() {
                     {formatShort(d.dailyPlan || 0)}
                   </Text>
 
-                  {/* Badge condicional: Só renderiza se mostrarBadge for true */}
                   {mostrarBadge && (
                     <>
                       {economizou && (
@@ -226,11 +235,81 @@ export function HorizonteScreen() {
               <View style={[styles.colSaldoVisual, { backgroundColor: saldoBg }]}>
                 <Text style={[styles.saldoTextLarge, { color: saldoColor }]}>{formatShort(d.balance)}</Text>
               </View>
-            </View>
+            </TouchableOpacity>
           );
         })}
         <View style={{ height: 50 }} />
       </ScrollView>
+
+      {/* 👉 O MODAL COM OS DETALHES DO DIA (Desliza de baixo para cima) */}
+      <Modal
+        visible={!!selectedDay}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setSelectedDay(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
+
+            {/* Header do Modal */}
+            <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+              <View>
+                <Text style={[styles.modalTitle, { color: colors.foreground }]}>
+                  Detalhes do Dia
+                </Text>
+                <Text style={[styles.modalDate, { color: colors.mutedForeground }]}>
+                  {selectedDay ? formatDateShort(selectedDay.fullDate) : ''}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setSelectedDay(null)} style={[styles.closeBtn, { backgroundColor: colors.background }]}>
+                <Ionicons name="close" size={20} color={colors.foreground} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Lista Interna de Lançamentos */}
+            <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
+              {!selectedDay?.transactions || selectedDay.transactions.length === 0 ? (
+                <View style={styles.emptyModal}>
+                  <Ionicons name="calendar-clear-outline" size={32} color={colors.border} />
+                  <Text style={[styles.emptyModalText, { color: colors.mutedForeground }]}>
+                    Nenhuma movimentação neste dia.
+                  </Text>
+                </View>
+              ) : (
+                selectedDay.transactions.map((tx: any, idx: number) => {
+                  const isReceita = tx.type === 'receita'
+                  const isCredito = tx.paymentMethod === 'credito'
+                  const amountColor = isReceita ? colors.success : tx.type === 'transferencia' ? colors.primary : colors.destructive
+                  const bgColor = isReceita ? colors.successLight : tx.type === 'transferencia' ? colors.primary + '15' : colors.dangerLight
+
+                  return (
+                    <View key={tx.id} style={[styles.modalTxItem, idx !== selectedDay.transactions.length - 1 && { borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth }]}>
+                      <View style={[styles.modalTxIcon, { backgroundColor: bgColor }]}>
+                        <Ionicons name={isReceita ? 'arrow-up' : tx.type === 'transferencia' ? 'swap-horizontal' : 'arrow-down'} size={16} color={amountColor} />
+                      </View>
+
+                      <View style={styles.modalTxInfo}>
+                        <Text style={[styles.modalTxDesc, { color: colors.foreground }]} numberOfLines={1}>{tx.description}</Text>
+                        {isCredito && (
+                          <View style={[styles.modalCreditBadge, { backgroundColor: colors.secondary }]}>
+                            <Text style={[styles.modalCreditText, { color: colors.mutedForeground }]}>CRÉDITO</Text>
+                          </View>
+                        )}
+                      </View>
+
+                      <Text style={[styles.modalTxAmount, { color: amountColor }]}>
+                        {isReceita ? '+' : tx.type === 'transferencia' ? '' : '-'}{formatCurrency(tx.amount)}
+                      </Text>
+                    </View>
+                  )
+                })
+              )}
+            </ScrollView>
+
+          </View>
+        </View>
+      </Modal>
+
     </KeyboardAvoidingView>
   );
 }
@@ -264,4 +343,43 @@ const styles = StyleSheet.create({
   savingText: { fontSize: 11, fontWeight: '700' },
   colSaldoVisual: { width: 120, justifyContent: 'center', alignItems: 'flex-end', paddingRight: 12 },
   saldoTextLarge: { fontSize: 15, fontWeight: '700' },
+
+  // 👉 ESTILOS DO MODAL
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    borderTopWidth: 1,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    padding: 24,
+    paddingBottom: 40,
+    maxHeight: '80%',
+    minHeight: '40%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingBottom: 16,
+    marginBottom: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  modalTitle: { fontSize: 18, fontWeight: '700', letterSpacing: -0.5 },
+  modalDate: { fontSize: 13, fontWeight: '500', marginTop: 2 },
+  closeBtn: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  modalScroll: { flexGrow: 1, marginTop: 8 },
+  emptyModal: { alignItems: 'center', justifyContent: 'center', paddingVertical: 50, gap: 12 },
+  emptyModalText: { fontSize: 14, fontWeight: '500' },
+  modalTxItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, gap: 12 },
+  modalTxIcon: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  modalTxInfo: { flex: 1, gap: 4, alignItems: 'flex-start' },
+  modalTxDesc: { fontSize: 15, fontWeight: '600' },
+  modalTxAmount: { fontSize: 15, fontWeight: '700' },
+  modalCreditBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
+  modalCreditText: { fontSize: 9, fontWeight: '800' },
 });
