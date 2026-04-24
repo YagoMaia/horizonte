@@ -1,5 +1,5 @@
 // components/screens/HorizonteScreen.tsx
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,12 +8,13 @@ import {
   TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
-  Modal, // 👉 Importação adicionada
+  Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/hooks/useTheme';
 import { useStoreContext } from '@/context/StoreContext';
-import { formatCurrency, formatDateShort } from '@/lib/utils'; // 👉 formatDateShort adicionado
+import { formatCurrency, formatDateShort } from '@/lib/utils';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const MONTH_NAMES = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -45,8 +46,37 @@ export function HorizonteScreen() {
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth());
 
-  // 👉 NOVO ESTADO: Controla qual dia está selecionado no modal
   const [selectedDay, setSelectedDay] = useState<any | null>(null);
+
+  const [configModalVisible, setConfigModalVisible] = useState(false);
+  const [activeAccountIds, setActiveAccountIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    const loadConfig = async () => {
+      try {
+        const saved = await AsyncStorage.getItem('@horizonte:active_accounts');
+        if (saved) {
+          setActiveAccountIds(JSON.parse(saved));
+        } else {
+          setActiveAccountIds(accounts.map(a => a.id));
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    };
+    loadConfig();
+  }, [accounts]);
+
+  const toggleAccount = async (id: string) => {
+    let newIds;
+    if (activeAccountIds.includes(id)) {
+      newIds = activeAccountIds.filter(aId => aId !== id);
+    } else {
+      newIds = [...activeAccountIds, id];
+    }
+    setActiveAccountIds(newIds);
+    await AsyncStorage.setItem('@horizonte:active_accounts', JSON.stringify(newIds));
+  };
 
   const prevMonth = () => {
     if (month === 0) {
@@ -59,7 +89,32 @@ export function HorizonteScreen() {
     } else setMonth((m) => m + 1);
   };
 
-  const totalBalance = accounts.reduce((s, a) => s + a.balance, 0);
+  // 👉 CÁLCULO ATUALIZADO: Usar currentInvoice em vez de totalDebt
+  const activeBalance = accounts
+    .filter(a => activeAccountIds.includes(a.id))
+    .reduce((s, a) => {
+      if (a.type === 'cartao_credito') {
+        const currentDate = new Date();
+        const closingDay = a.closingDay || 31;
+        let targetMonth = currentDate.getMonth() + 1;
+        let targetYear = currentDate.getFullYear();
+        if (currentDate.getDate() >= closingDay) targetMonth += 1;
+        if (targetMonth > 11) { targetMonth -= 12; targetYear += 1; }
+
+        const currentInvoice = transactions
+          .filter(tx => {
+            if (tx.accountId !== a.id || tx.paymentMethod !== 'credito' || tx.paid) return false;
+            const txDate = new Date(tx.date);
+            return txDate.getMonth() === targetMonth && txDate.getFullYear() === targetYear;
+          })
+          .reduce((sum, tx) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount), 0);
+
+        const cardLimit = a.creditLimit || (a.balance > 0 ? a.balance : 0);
+        const availableLimit = Math.max(0, cardLimit - currentInvoice);
+        return s + availableLimit;
+      }
+      return s + a.balance;
+    }, 0);
 
   const days = useMemo(() => {
     const daysCount = getDaysInMonth(year, month);
@@ -73,7 +128,7 @@ export function HorizonteScreen() {
       return (d.getFullYear() > year || (d.getFullYear() === year && d.getMonth() >= month));
     });
 
-    let openingBalance = totalBalance;
+    let openingBalance = activeBalance;
     thisPlusAfterTxs.forEach((tx) => {
       if (!tx.paid) return;
       if (tx.type === 'receita') openingBalance -= tx.amount;
@@ -111,33 +166,44 @@ export function HorizonteScreen() {
         balance: runningBalance,
         isPast,
         isToday,
-        fullDate: dayDate.toISOString(), // Adicionamos a data completa para o Modal usar
-        transactions: dayTxs, // Adicionamos a lista de transações do dia para o Modal
+        fullDate: dayDate.toISOString(),
+        transactions: dayTxs,
       });
     }
     return result;
-  }, [transactions, accounts, year, month, totalBalance]);
+  }, [transactions, activeBalance, year, month]);
 
   const totalIncome = days.reduce((s, d) => s + d.income, 0);
   const totalExpense = days.reduce((s, d) => s + d.expense, 0);
-  const endBalance = days.length > 0 ? days[days.length - 1].balance : totalBalance;
+  const endBalance = days.length > 0 ? days[days.length - 1].balance : activeBalance;
   const currentDailyPlan = days.find(d => d.isToday || !d.isPast)?.dailyPlan || 0;
 
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.background }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      {/* Header do Mês */}
       <View style={[styles.monthNav, { borderBottomColor: colors.border, backgroundColor: colors.card }]}>
-        <TouchableOpacity onPress={prevMonth}><Ionicons name='chevron-back' size={22} color={colors.foreground} /></TouchableOpacity>
-        <Text style={[styles.monthTitle, { color: colors.foreground }]}>{MONTH_NAMES[month]} {year}</Text>
-        <TouchableOpacity onPress={nextMonth}><Ionicons name='chevron-forward' size={22} color={colors.foreground} /></TouchableOpacity>
+        <TouchableOpacity onPress={prevMonth} style={{ padding: 8 }}>
+          <Ionicons name='chevron-back' size={22} color={colors.foreground} />
+        </TouchableOpacity>
+
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <Text style={[styles.monthTitle, { color: colors.foreground }]}>{MONTH_NAMES[month]} {year}</Text>
+          <TouchableOpacity onPress={() => setConfigModalVisible(true)} style={[styles.configBtn, { backgroundColor: colors.secondary }]}>
+            <Ionicons name="options" size={16} color={colors.foreground} />
+          </TouchableOpacity>
+        </View>
+
+        <TouchableOpacity onPress={nextMonth} style={{ padding: 8 }}>
+          <Ionicons name='chevron-forward' size={22} color={colors.foreground} />
+        </TouchableOpacity>
       </View>
 
-      {/* Cartão de Orçamento */}
       <View style={[styles.budgetCard, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
         <View style={styles.budgetRow}>
           <View style={styles.budgetInfo}>
-            <Text style={[styles.budgetLabel, { color: colors.mutedForeground }]}>Saldo Disponível</Text>
-            <Text style={[styles.budgetValue, { color: colors.foreground }]}>{formatCurrency(totalBalance)}</Text>
+            <Text style={[styles.budgetLabel, { color: colors.mutedForeground }]}>
+              Saldo Disponível {activeAccountIds.length > 0 && `(${activeAccountIds.length})`}
+            </Text>
+            <Text style={[styles.budgetValue, { color: colors.foreground }]}>{formatCurrency(activeBalance)}</Text>
           </View>
           <View style={styles.budgetRight}>
             <Text style={[styles.dailyLabel, { color: colors.mutedForeground }]}>Plano p/ Hoje</Text>
@@ -146,7 +212,6 @@ export function HorizonteScreen() {
         </View>
       </View>
 
-      {/* Tira de Resumo */}
       <View style={[styles.summaryStrip, { backgroundColor: colors.secondary, borderBottomColor: colors.border }]}>
         <View style={styles.summaryItem}>
           <Text style={[styles.summaryLabel, { color: colors.mutedForeground }]}>Entradas</Text>
@@ -164,7 +229,6 @@ export function HorizonteScreen() {
         </View>
       </View>
 
-      {/* Lista de Dias */}
       <ScrollView showsVerticalScrollIndicator={false}>
         {days.map((d, idx) => {
           const rowBg = d.isToday ? colors.primary + '10' : idx % 2 === 0 ? colors.card : colors.background;
@@ -176,7 +240,6 @@ export function HorizonteScreen() {
           const saldoColor = d.balance >= 0 ? colors.success : colors.destructive;
 
           return (
-            // 👉 AQUI A LINHA VIRA CLICÁVEL E ABRE O MODAL
             <TouchableOpacity
               key={d.day}
               activeOpacity={0.7}
@@ -241,22 +304,106 @@ export function HorizonteScreen() {
         <View style={{ height: 50 }} />
       </ScrollView>
 
-      {/* 👉 O MODAL COM OS DETALHES DO DIA (Desliza de baixo para cima) */}
+      {/* Modal de Configuração de Contas */}
+      <Modal
+        visible={configModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setConfigModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.configModalContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+              <View>
+                <Text style={[styles.modalTitle, { color: colors.foreground }]}>Contas no Planejamento</Text>
+                <Text style={[styles.modalDate, { color: colors.mutedForeground }]}>Selecione quais contas compõem seu saldo livre.</Text>
+              </View>
+            </View>
+
+            <ScrollView style={{ maxHeight: 300 }} showsVerticalScrollIndicator={false}>
+              {accounts.map(acc => {
+                const isActive = activeAccountIds.includes(acc.id);
+                const isCreditCard = acc.type === 'cartao_credito';
+
+                let displayBalance = acc.balance;
+                if (isCreditCard) {
+                  // 👉 CORREÇÃO AQUI NO MODAL: Usa currentInvoice
+                  const currentDate = new Date();
+                  const closingDay = acc.closingDay || 31;
+                  let targetMonth = currentDate.getMonth() + 1;
+                  let targetYear = currentDate.getFullYear();
+                  if (currentDate.getDate() >= closingDay) targetMonth += 1;
+                  if (targetMonth > 11) { targetMonth -= 12; targetYear += 1; }
+
+                  const currentInvoice = transactions
+                    .filter(tx => {
+                      if (tx.accountId !== acc.id || tx.paymentMethod !== 'credito' || tx.paid) return false;
+                      const txDate = new Date(tx.date);
+                      return txDate.getMonth() === targetMonth && txDate.getFullYear() === targetYear;
+                    })
+                    .reduce((sum, tx) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount), 0);
+
+                  const cardLimit = acc.creditLimit || (acc.balance > 0 ? acc.balance : 0);
+                  displayBalance = Math.max(0, cardLimit - currentInvoice);
+                }
+
+                return (
+                  <TouchableOpacity
+                    key={acc.id}
+                    activeOpacity={0.7}
+                    onPress={() => toggleAccount(acc.id)}
+                    style={[
+                      styles.accountOption,
+                      {
+                        backgroundColor: isActive ? colors.primary + '15' : colors.background,
+                        borderColor: isActive ? colors.primary : colors.border
+                      }
+                    ]}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                      <View style={[styles.accountOptionIcon, { backgroundColor: acc.color + '20' }]}>
+                        <Ionicons name={acc.icon as any} size={16} color={acc.color} />
+                      </View>
+                      <View>
+                        <Text style={[styles.accountOptionName, { color: colors.foreground }]}>{acc.name}</Text>
+                        <Text style={[styles.accountOptionBalance, { color: colors.mutedForeground }]}>
+                          {isCreditCard ? 'Disp. ' : ''}{formatCurrency(displayBalance)}
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={[styles.checkbox, {
+                      borderColor: isActive ? colors.primary : colors.border,
+                      backgroundColor: isActive ? colors.primary : 'transparent'
+                    }]}>
+                      {isActive && <Ionicons name="checkmark" size={14} color="#FFF" />}
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            <TouchableOpacity
+              style={[styles.saveBtn, { backgroundColor: colors.foreground }]}
+              onPress={() => setConfigModalVisible(false)}
+            >
+              <Text style={[styles.saveBtnText, { color: colors.background }]}>Concluir</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal de Detalhes do Dia */}
       <Modal
         visible={!!selectedDay}
         transparent={true}
         animationType="slide"
         onRequestClose={() => setSelectedDay(null)}
       >
-        <View style={styles.modalOverlay}>
+        <View style={styles.modalOverlayBottom}>
           <View style={[styles.modalContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
-
-            {/* Header do Modal */}
             <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
               <View>
-                <Text style={[styles.modalTitle, { color: colors.foreground }]}>
-                  Detalhes do Dia
-                </Text>
+                <Text style={[styles.modalTitle, { color: colors.foreground }]}>Detalhes do Dia</Text>
                 <Text style={[styles.modalDate, { color: colors.mutedForeground }]}>
                   {selectedDay ? formatDateShort(selectedDay.fullDate) : ''}
                 </Text>
@@ -266,14 +413,11 @@ export function HorizonteScreen() {
               </TouchableOpacity>
             </View>
 
-            {/* Lista Interna de Lançamentos */}
             <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
               {!selectedDay?.transactions || selectedDay.transactions.length === 0 ? (
                 <View style={styles.emptyModal}>
                   <Ionicons name="calendar-clear-outline" size={32} color={colors.border} />
-                  <Text style={[styles.emptyModalText, { color: colors.mutedForeground }]}>
-                    Nenhuma movimentação neste dia.
-                  </Text>
+                  <Text style={[styles.emptyModalText, { color: colors.mutedForeground }]}>Nenhuma movimentação neste dia.</Text>
                 </View>
               ) : (
                 selectedDay.transactions.map((tx: any, idx: number) => {
@@ -287,7 +431,6 @@ export function HorizonteScreen() {
                       <View style={[styles.modalTxIcon, { backgroundColor: bgColor }]}>
                         <Ionicons name={isReceita ? 'arrow-up' : tx.type === 'transferencia' ? 'swap-horizontal' : 'arrow-down'} size={16} color={amountColor} />
                       </View>
-
                       <View style={styles.modalTxInfo}>
                         <Text style={[styles.modalTxDesc, { color: colors.foreground }]} numberOfLines={1}>{tx.description}</Text>
                         {isCredito && (
@@ -296,7 +439,6 @@ export function HorizonteScreen() {
                           </View>
                         )}
                       </View>
-
                       <Text style={[styles.modalTxAmount, { color: amountColor }]}>
                         {isReceita ? '+' : tx.type === 'transferencia' ? '' : '-'}{formatCurrency(tx.amount)}
                       </Text>
@@ -305,7 +447,6 @@ export function HorizonteScreen() {
                 })
               )}
             </ScrollView>
-
           </View>
         </View>
       </Modal>
@@ -315,8 +456,9 @@ export function HorizonteScreen() {
 }
 
 const styles = StyleSheet.create({
-  monthNav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 24, paddingVertical: 13, borderBottomWidth: StyleSheet.hairlineWidth },
-  monthTitle: { fontSize: 17, fontWeight: '700' },
+  monthNav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth },
+  monthTitle: { fontSize: 18, fontWeight: '700' },
+  configBtn: { padding: 6, borderRadius: 12 },
   budgetCard: { paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth },
   budgetRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   budgetInfo: { gap: 2 },
@@ -344,31 +486,11 @@ const styles = StyleSheet.create({
   colSaldoVisual: { width: 120, justifyContent: 'center', alignItems: 'flex-end', paddingRight: 12 },
   saldoTextLarge: { fontSize: 15, fontWeight: '700' },
 
-  // 👉 ESTILOS DO MODAL
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.65)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    borderTopWidth: 1,
-    borderLeftWidth: 1,
-    borderRightWidth: 1,
-    padding: 24,
-    paddingBottom: 40,
-    maxHeight: '80%',
-    minHeight: '40%',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingBottom: 16,
-    marginBottom: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
+  modalOverlayBottom: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.65)', justifyContent: 'flex-end' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.65)', justifyContent: 'center', padding: 24 },
+  modalContent: { borderTopLeftRadius: 28, borderTopRightRadius: 28, borderTopWidth: 1, borderLeftWidth: 1, borderRightWidth: 1, padding: 24, paddingBottom: 40, maxHeight: '80%', minHeight: '40%' },
+  configModalContent: { borderRadius: 24, borderWidth: 1, padding: 24, maxHeight: '80%' },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 16, marginBottom: 8, borderBottomWidth: StyleSheet.hairlineWidth },
   modalTitle: { fontSize: 18, fontWeight: '700', letterSpacing: -0.5 },
   modalDate: { fontSize: 13, fontWeight: '500', marginTop: 2 },
   closeBtn: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
@@ -382,4 +504,12 @@ const styles = StyleSheet.create({
   modalTxAmount: { fontSize: 15, fontWeight: '700' },
   modalCreditBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
   modalCreditText: { fontSize: 9, fontWeight: '800' },
+
+  accountOption: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 12, borderRadius: 16, borderWidth: 1, marginBottom: 8 },
+  accountOptionIcon: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  accountOptionName: { fontSize: 14, fontWeight: '600' },
+  accountOptionBalance: { fontSize: 12 },
+  checkbox: { width: 22, height: 22, borderRadius: 6, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  saveBtn: { padding: 16, borderRadius: 16, alignItems: 'center', marginTop: 16 },
+  saveBtnText: { fontSize: 15, fontWeight: '700' }
 });
