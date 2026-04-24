@@ -57,29 +57,24 @@ export function AddTransactionModal({ visible, onClose, onAdd, onUpdate, account
   const [recurrence, setRecurrence] = useState<RecurrenceType>('unica')
   const [paid, setPaid] = useState(true)
 
-  // Estado para Parcelamento do Cartão
   const [installments, setInstallments] = useState(1)
 
-  // Estados de Data
   const [date, setDate] = useState(getFormattedDate(0))
   const [recurrenceStart, setRecurrenceStart] = useState(getFormattedDate(0))
   const [recurrenceEnd, setRecurrenceEnd] = useState('')
 
-  // Controle do Calendário
   const [calendarTarget, setCalendarTarget] = useState<'main' | 'start' | 'end' | null>(null)
   const [calendarMonth, setCalendarMonth] = useState(new Date())
 
-  // 👉 Detecta se a conta atual é um Cartão de Crédito
   const isCreditCardSelected = useMemo(() => {
     const acc = accounts.find(a => a.id === accountId);
     return acc?.type === 'cartao_credito';
   }, [accountId, accounts]);
 
-  // Força 'despesa' se mudar para conta de cartão
   React.useEffect(() => {
     if (isCreditCardSelected && type !== 'despesa') {
       setType('despesa');
-      setPaid(false); // Transações de cartão nascem pendentes (você paga na fatura)
+      setPaid(false);
     }
   }, [isCreditCardSelected, type]);
 
@@ -208,21 +203,19 @@ export function AddTransactionModal({ visible, onClose, onAdd, onUpdate, account
       return new Date(Number(p[2]), Number(p[1]) - 1, Number(p[0])).toISOString()
     }
 
-    // Se for cartão com parcelas, forçamos "mensal" internamente
     const finalRecurrence = (isCreditCardSelected && installments > 1) ? 'mensal' : recurrence;
 
     const txData = {
       description: description.trim(),
       amount: parseFloat(amount.replace(',', '.')),
       type,
-      date: parseToISO(date),
+      date: finalRecurrence === 'unica' ? parseToISO(date) : parseToISO(recurrenceStart), // Se for recorrente, a 'date' oficial é a de início
       accountId,
       tagIds: selectedTags,
       recurrence: finalRecurrence,
       paid,
       recurrenceStartDate: finalRecurrence !== 'unica' ? parseToISO(recurrenceStart) : undefined,
       recurrenceEndDate: (finalRecurrence !== 'unica' && recurrenceEnd) ? parseToISO(recurrenceEnd) : undefined,
-      // 👉 Dados para o useStore saber que é parcelado
       totalInstallments: isCreditCardSelected ? installments : 1,
       paymentMethod: isCreditCardSelected ? 'credito' : 'debito'
     }
@@ -245,7 +238,6 @@ export function AddTransactionModal({ visible, onClose, onAdd, onUpdate, account
         </View>
 
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-          {/* 👉 Seleção de Conta movida para o topo para ditar as regras logo de cara */}
           <View style={styles.field}>
             <Text style={[styles.label, { color: colors.mutedForeground }]}>Conta de Origem</Text>
             <View style={styles.chipRow}>
@@ -257,7 +249,6 @@ export function AddTransactionModal({ visible, onClose, onAdd, onUpdate, account
             </View>
           </View>
 
-          {/* Tipo e Valor (Desativado se for cartão) */}
           <View style={[styles.typeSelector, { backgroundColor: colors.secondary, opacity: isCreditCardSelected ? 0.5 : 1 }]} pointerEvents={isCreditCardSelected ? 'none' : 'auto'}>
             {(['receita', 'despesa', 'transferencia'] as TransactionType[]).map(t => (
               <TouchableOpacity key={t} style={[styles.typeBtn, type === t && { backgroundColor: t === 'receita' ? colors.success : t === 'despesa' ? colors.destructive : colors.primary }]} onPress={() => setType(t)}>
@@ -279,7 +270,6 @@ export function AddTransactionModal({ visible, onClose, onAdd, onUpdate, account
             <TextInput style={[styles.input, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.card }]} value={description} onChangeText={setDescription} placeholder="O que é?" placeholderTextColor={colors.mutedForeground} />
           </View>
 
-          {/* 👉 UI ESPECÍFICA DE PARCELAMENTO (Só aparece se for Cartão) 👈 */}
           {isCreditCardSelected && !isEditing && (
             <View style={styles.field}>
               <Text style={[styles.label, { color: colors.mutedForeground }]}>Parcelamento</Text>
@@ -305,18 +295,6 @@ export function AddTransactionModal({ visible, onClose, onAdd, onUpdate, account
           )}
 
           <View style={styles.field}>
-            <Text style={[styles.label, { color: colors.mutedForeground }]}>Data da Compra</Text>
-            <TouchableOpacity
-              style={[styles.dateButton, { borderColor: colors.border, backgroundColor: colors.card }]}
-              onPress={() => setCalendarTarget(calendarTarget === 'main' ? null : 'main')}
-            >
-              <Text style={{ color: colors.foreground }}>{date}</Text>
-              <Ionicons name="calendar-outline" size={20} color={colors.primary} />
-            </TouchableOpacity>
-            {calendarTarget === 'main' && renderCalendar()}
-          </View>
-
-          <View style={styles.field}>
             <Text style={[styles.label, { color: colors.mutedForeground }]}>Tags</Text>
             <View style={styles.chipRow}>
               {tags.map(tag => (
@@ -336,7 +314,6 @@ export function AddTransactionModal({ visible, onClose, onAdd, onUpdate, account
             </View>
           </View>
 
-          {/* Oculta opções genéricas de recorrência se for cartão */}
           {!isCreditCardSelected && (
             <>
               <View style={styles.field}>
@@ -349,31 +326,45 @@ export function AddTransactionModal({ visible, onClose, onAdd, onUpdate, account
                   ))}
                 </View>
               </View>
-
-              {recurrence !== 'unica' && (
-                <View style={{ gap: 12 }}>
-                  <View style={styles.field}>
-                    <Text style={[styles.label, { color: colors.mutedForeground }]}>Inicia em</Text>
-                    <TouchableOpacity style={[styles.dateButton, { borderColor: colors.border, backgroundColor: colors.card }]} onPress={() => setCalendarTarget(calendarTarget === 'start' ? null : 'start')}>
-                      <Text style={{ color: colors.foreground }}>{recurrenceStart}</Text>
-                      <Ionicons name="calendar-outline" size={18} color={colors.primary} />
-                    </TouchableOpacity>
-                    {calendarTarget === 'start' && renderCalendar()}
-                  </View>
-                  <View style={styles.field}>
-                    <Text style={[styles.label, { color: colors.mutedForeground }]}>Termina em (Opcional)</Text>
-                    <TouchableOpacity style={[styles.dateButton, { borderColor: colors.border, backgroundColor: colors.card }]} onPress={() => setCalendarTarget(calendarTarget === 'end' ? null : 'end')}>
-                      <Text style={{ color: colors.foreground }}>{recurrenceEnd || 'Não definido'}</Text>
-                      <Ionicons name="calendar-outline" size={18} color={colors.primary} />
-                    </TouchableOpacity>
-                    {calendarTarget === 'end' && renderCalendar()}
-                  </View>
-                </View>
-              )}
             </>
           )}
 
-          {/* Oculta botão de "Pago" se for Cartão (será pago na fatura) */}
+          {/* 👉 LÓGICA CONDICIONAL DE DATAS ATUALIZADA 👈 */}
+          {recurrence === 'unica' ? (
+            // Lançamento Único: Mostra a "Data da Compra" normal
+            <View style={styles.field}>
+              <Text style={[styles.label, { color: colors.mutedForeground }]}>Data da Compra</Text>
+              <TouchableOpacity
+                style={[styles.dateButton, { borderColor: colors.border, backgroundColor: colors.card }]}
+                onPress={() => setCalendarTarget(calendarTarget === 'main' ? null : 'main')}
+              >
+                <Text style={{ color: colors.foreground }}>{date}</Text>
+                <Ionicons name="calendar-outline" size={20} color={colors.primary} />
+              </TouchableOpacity>
+              {calendarTarget === 'main' && renderCalendar()}
+            </View>
+          ) : (
+            // Lançamento Recorrente: Mostra "Inicia em" e "Termina em"
+            <View style={{ gap: 12 }}>
+              <View style={styles.field}>
+                <Text style={[styles.label, { color: colors.mutedForeground }]}>Inicia em</Text>
+                <TouchableOpacity style={[styles.dateButton, { borderColor: colors.border, backgroundColor: colors.card }]} onPress={() => setCalendarTarget(calendarTarget === 'start' ? null : 'start')}>
+                  <Text style={{ color: colors.foreground }}>{recurrenceStart}</Text>
+                  <Ionicons name="calendar-outline" size={20} color={colors.primary} />
+                </TouchableOpacity>
+                {calendarTarget === 'start' && renderCalendar()}
+              </View>
+              <View style={styles.field}>
+                <Text style={[styles.label, { color: colors.mutedForeground }]}>Termina em (Opcional)</Text>
+                <TouchableOpacity style={[styles.dateButton, { borderColor: colors.border, backgroundColor: colors.card }]} onPress={() => setCalendarTarget(calendarTarget === 'end' ? null : 'end')}>
+                  <Text style={{ color: colors.foreground }}>{recurrenceEnd || 'Não definido'}</Text>
+                  <Ionicons name="calendar-outline" size={20} color={colors.primary} />
+                </TouchableOpacity>
+                {calendarTarget === 'end' && renderCalendar()}
+              </View>
+            </View>
+          )}
+
           {!isCreditCardSelected && (
             <View style={styles.switchRow}>
               <Text style={{ color: colors.foreground, fontWeight: '500' }}>Pago / Recebido</Text>
