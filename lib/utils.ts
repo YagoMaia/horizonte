@@ -1,4 +1,5 @@
-// lib/utils.ts
+import { Account, Transaction } from '@/constants/types';
+
 export function formatCurrency(value: number): string {
   return new Intl.NumberFormat('pt-BR', {
     style: 'currency',
@@ -51,4 +52,48 @@ export function generateDailyProjection(
   }
 
   return days
+}
+
+export function calculateCreditCardInvoice(
+  account: Account,
+  transactions: Transaction[],
+  baseDate: Date = new Date()
+): number {
+  if (account.type !== 'cartao_credito') return 0;
+
+  const closingDay = account.closingDay || 31;
+  let targetMonth = baseDate.getMonth() + 1;
+  let targetYear = baseDate.getFullYear();
+
+  // Se a data atual já passou do fechamento, a fatura atual é a do próximo mês
+  if (baseDate.getDate() >= closingDay) {
+    targetMonth += 1;
+  }
+  
+  // Ajuste de virada de ano
+  if (targetMonth > 11) {
+    targetMonth -= 12;
+    targetYear += 1;
+  }
+
+  return transactions
+    .filter((tx) => {
+      if (
+        tx.accountId !== account.id ||
+        tx.paymentMethod !== 'credito' ||
+        tx.paid
+      ) {
+        return false;
+      }
+      
+      const txDate = new Date(tx.date);
+      return (
+        txDate.getMonth() === targetMonth &&
+        txDate.getFullYear() === targetYear
+      );
+    })
+    .reduce(
+      (sum, tx) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount),
+      0
+    );
 }

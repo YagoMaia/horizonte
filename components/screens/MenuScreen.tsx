@@ -8,13 +8,15 @@ import {
   TouchableOpacity,
   Alert,
   Platform,
-  Share,
 } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { useTheme } from '@/hooks/useTheme'
 import { formatCurrency } from '@/lib/utils'
 import { useStoreContext } from '@/context/StoreContext'
 import * as FileSystem from 'expo-file-system'
+import * as Sharing from 'expo-sharing'
+import * as DocumentPicker from 'expo-document-picker'
+import AsyncStorage from '@react-native-async-storage/async-storage'
 
 interface MenuItemProps {
   icon: string
@@ -59,10 +61,11 @@ interface MenuScreenProps {
 
 export function MenuScreen({ onNavigateToTags }: MenuScreenProps) {
   const { colors } = useTheme()
-  const { accounts, transactions, tags, totalBalance, clearAllData } = useStoreContext()
+  // Puxamos a função 'monthlyBudgets' caso você a tenha exportado no StoreContext
+  const { accounts, transactions, tags, monthlyBudgets, totalBalance, clearAllData } = useStoreContext()
 
-  // --- FUNÇÃO DE EXPORTAÇÃO HÍBRIDA (MOBILE + WEB) ---
-  const handleExportData = async () => {
+  // --- EXPORTAR PARA EXCEL (CSV) ---
+  const handleExportCSV = async () => {
     try {
       if (transactions.length === 0) {
         Alert.alert('Aviso', 'Não há dados para exportar.')
@@ -90,46 +93,151 @@ export function MenuScreen({ onNavigateToTags }: MenuScreenProps) {
         csvString += `${formattedDate};${type};${cleanDescription};${amount};${category};${account};${status}\n`
       })
 
-      const fileName = `Horizonte_Export_${new Date().getTime()}.csv`
+      const fileName = `Horizonte_Relatorio_${new Date().getTime()}.csv`
 
       if (Platform.OS === 'web') {
         const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' })
         const url = URL.createObjectURL(blob)
         const link = document.createElement('a')
-
         link.href = url
         link.setAttribute('download', fileName)
         link.style.visibility = 'hidden'
-
         document.body.appendChild(link)
         link.click()
         document.body.removeChild(link)
         return
       }
 
-      const fileUri = FileSystem.cacheDirectory + fileName
+      const fileUri = FileSystem.documentDirectory + fileName
       await FileSystem.writeAsStringAsync(fileUri, csvString, {
         encoding: FileSystem.EncodingType.UTF8,
       })
 
-      const handleShare = async () => {
-        try {
-          // O Share nativo é perfeito para textos curtos, resumos ou links.
-          await Share.share({
-            message: 'Aqui estão os dados do meu app Horizonte!',
-            // Se você estava a tentar compartilhar um arquivo (como CSV), 
-            // o Share nativo no Android pode ser um pouco chato com arquivos locais.
-            // Se for apenas texto, isso vai funcionar perfeitamente.
-          });
-        } catch (error) {
-          console.error("Erro ao compartilhar", error);
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(fileUri, { mimeType: 'text/csv', dialogTitle: 'Exportar Relatório Excel' })
+      }
+    } catch (error) {
+      console.error(error)
+      Alert.alert('Erro', 'Não foi possível exportar os dados para CSV.')
+    }
+  }
+
+  // --- CRIAR BACKUP (JSON COMPLETO) ---
+  const handleCreateBackup = async () => {
+    try {
+      // Reúne todos os dados estruturais do aplicativo
+      const backupData = {
+        version: "1.0",
+        timestamp: new Date().toISOString(),
+        data: {
+          accounts,
+          transactions,
+          tags,
+          monthlyBudgets: monthlyBudgets || {}
         }
       };
 
+      const jsonString = JSON.stringify(backupData);
+      const fileName = `Horizonte_Backup_${new Date().getTime()}.json`;
+
+      if (Platform.OS === 'web') {
+        const blob = new Blob([jsonString], { type: 'application/json;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', fileName);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        return;
+      }
+
+      // Usa documentDirectory para arquivos que o usuário deve ter acesso/compartilhar
+      const fileUri = FileSystem.documentDirectory + fileName;
+      await FileSystem.writeAsStringAsync(fileUri, jsonString, { encoding: FileSystem.EncodingType.UTF8 });
+
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(fileUri, { mimeType: 'application/json', dialogTitle: 'Salvar Backup Seguro' });
+      } else {
+        Alert.alert('Aviso', 'O compartilhamento de arquivos não está disponível neste dispositivo.');
+      }
     } catch (error) {
-      console.error(error)
-      const msg = 'Não foi possível exportar os dados.'
-      Platform.OS === 'web' ? alert(msg) : Alert.alert('Erro', msg)
+      console.error(error);
+      Alert.alert('Erro', 'Falha ao criar o arquivo de backup.');
+    }
+  }
+
+  // --- RESTAURAR BACKUP (LÊ JSON E SOBRESCREVE) ---
+  const handleRestoreBackup = async () => {
+    try {
+      if (Platform.OS === 'web') {
+        alert('A restauração de backup via arquivo ainda não está suportada na web.');
+        return;
+      }
+
+      // 1. Pede para o usuário escolher o arquivo
+      const result = await DocumentPicker.getDocumentAsync({
+        type: 'application/json',
+        copyToCacheDirectory: true,
+      });
+
+      if (result.canceled) return;
+
+      const fileUri = result.assets[0].uri;
+      const fileContent = await FileSystem.readAsStringAsync(fileUri);
+      
+      // 2. Faz o parse do JSON
+      let parsedData;
+      try {
+        parsedData = JSON.parse(fileContent);
+      } catch (e) {
+        Alert.alert('Erro', 'O arquivo selecionado não é um backup válido do Horizonte.');
+        return;
+      }
+
+      // 3. Valida a estrutura básica do arquivo
+      const extractedData = parsedData.data ? parsedData.data : parsedData; // Compatibilidade legada
+      if (!extractedData.accounts || !extractedData.transactions) {
+        Alert.alert('Erro', 'O arquivo de backup está corrompido ou incompleto.');
+        return;
+      }
+
+      // 4. Confirmação crítica de substituição
+      Alert.alert(
+        'Restaurar Dados',
+        `Isso irá apagar todos os dados atuais e restaurar o backup com ${extractedData.transactions.length} lançamentos. Tem certeza?`,
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          {
+            text: 'Sim, Restaurar',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                // Gravamos diretamente no AsyncStorage para garantir integridade estrutural
+                await AsyncStorage.setItem('@horizonte:accounts', JSON.stringify(extractedData.accounts));
+                await AsyncStorage.setItem('@horizonte:transactions', JSON.stringify(extractedData.transactions));
+                if (extractedData.tags) {
+                  await AsyncStorage.setItem('@horizonte:tags', JSON.stringify(extractedData.tags));
+                }
+                if (extractedData.monthlyBudgets) {
+                  await AsyncStorage.setItem('@horizonte:monthly_budgets', JSON.stringify(extractedData.monthlyBudgets));
+                }
+
+                // Exige recarregamento para que os React Hooks puxem a nova base limpa
+                Alert.alert(
+                  'Sucesso!', 
+                  'Backup restaurado. Por favor, feche e abra o aplicativo novamente para carregar os novos dados.'
+                );
+              } catch (err) {
+                Alert.alert('Erro', 'Falha ao gravar os dados restaurados no dispositivo.');
+              }
+            }
+          }
+        ]
+      );
+    } catch (error) {
+      console.error(error);
+      Alert.alert('Erro', 'Ocorreu um problema ao tentar ler o arquivo de backup.');
     }
   }
 
@@ -202,61 +310,49 @@ export function MenuScreen({ onNavigateToTags }: MenuScreenProps) {
       {/* Settings */}
       <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>CONFIGURAÇÕES</Text>
       <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
-
-        {/* 👉 NOVO BOTÃO DE GERENCIAR TAGS */}
-        <MenuItem
-          icon="pricetags-outline"
-          label="Gerenciar Tags"
-          onPress={onNavigateToTags}
-          colors={colors}
-        />
-
+        <MenuItem icon="pricetags-outline" label="Gerenciar Tags" onPress={onNavigateToTags} colors={colors} />
         <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
-          <MenuItem
-            icon="moon-outline"
-            label="Tema escuro"
-            value="Automático"
-            colors={colors}
-          />
+          <MenuItem icon="moon-outline" label="Tema escuro" value="Automático" colors={colors} />
         </View>
         <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
-          <MenuItem
-            icon="language-outline"
-            label="Idioma"
-            value="Português (BR)"
-            colors={colors}
-          />
+          <MenuItem icon="language-outline" label="Idioma" value="Português (BR)" colors={colors} />
         </View>
         <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
-          <MenuItem
-            icon="cash-outline"
-            label="Moeda"
-            value="BRL (R$)"
-            colors={colors}
-          />
+          <MenuItem icon="cash-outline" label="Moeda" value="BRL (R$)" colors={colors} />
         </View>
       </View>
 
-      {/* Dados */}
-      <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>DADOS</Text>
+      {/* Dados e Backup (NOVA SESSÃO) */}
+      <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>BACKUP E EXPORTAÇÃO</Text>
       <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <MenuItem
-          icon="cloud-download-outline"
-          label="Exportar para Excel"
-          onPress={handleExportData}
+          icon="download-outline"
+          label="Criar Backup de Segurança"
+          onPress={handleCreateBackup}
           colors={colors}
         />
+        <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
+          <MenuItem
+            icon="push-outline"
+            label="Restaurar Backup"
+            onPress={handleRestoreBackup}
+            colors={colors}
+          />
+        </View>
+        <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
+          <MenuItem
+            icon="document-text-outline"
+            label="Exportar para Excel (CSV)"
+            onPress={handleExportCSV}
+            colors={colors}
+          />
+        </View>
       </View>
 
       {/* About */}
       <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>SOBRE</Text>
       <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <MenuItem
-          icon="information-circle-outline"
-          label="Versão"
-          value="1.0.0"
-          colors={colors}
-        />
+        <MenuItem icon="information-circle-outline" label="Versão" value="1.1.0" colors={colors} />
         <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
           <MenuItem
             icon="star-outline"
@@ -274,16 +370,16 @@ export function MenuScreen({ onNavigateToTags }: MenuScreenProps) {
           label="Limpar todos os dados"
           onPress={() => {
             if (Platform.OS === 'web') {
-              if (window.confirm('Atenção: Isso irá apagar todos os seus dados permanentemente. Tem certeza?')) {
+              if (window.confirm('Atenção: Isso irá apagar todos os dados permanentemente. Tem certeza?')) {
                 clearAllData()
               }
             } else {
               Alert.alert(
-                'Atenção',
-                'Isso irá apagar todos os seus dados permanentemente. Tem certeza?',
+                'Atenção Crítica',
+                'Isso irá apagar todos os seus dados permanentemente e não pode ser desfeito. Faça um backup antes. Tem certeza?',
                 [
                   { text: 'Cancelar', style: 'cancel' },
-                  { text: 'Apagar', style: 'destructive', onPress: clearAllData }
+                  { text: 'Apagar Tudo', style: 'destructive', onPress: clearAllData }
                 ]
               )
             }
@@ -296,101 +392,27 @@ export function MenuScreen({ onNavigateToTags }: MenuScreenProps) {
       <Text style={[styles.footer, { color: colors.mutedForeground }]}>
         Horizonte · Gestão Financeira Pessoal
       </Text>
+      <View style={{ height: 20 }} />
     </ScrollView>
   )
 }
 
 const styles = StyleSheet.create({
-  content: {
-    padding: 16,
-    paddingBottom: 32,
-    gap: 8,
-  },
-  profileCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    borderRadius: 16,
-    borderWidth: 1,
-    padding: 16,
-    marginBottom: 8,
-  },
-  avatar: {
-    width: 52,
-    height: 52,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarText: {
-    color: '#FFF',
-    fontSize: 22,
-    fontWeight: '700',
-  },
-  profileName: {
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  profileSub: {
-    fontSize: 13,
-    marginTop: 2,
-  },
-  statsRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 8,
-  },
-  statCard: {
-    flex: 1,
-    alignItems: 'center',
-    borderRadius: 12,
-    borderWidth: 1,
-    paddingVertical: 14,
-    gap: 2,
-  },
-  statValue: {
-    fontSize: 22,
-    fontWeight: '700',
-  },
-  statLabel: {
-    fontSize: 11,
-  },
-  sectionTitle: {
-    fontSize: 11,
-    fontWeight: '600',
-    letterSpacing: 0.8,
-    marginTop: 8,
-    marginLeft: 4,
-  },
-  section: {
-    borderRadius: 16,
-    borderWidth: 1,
-    overflow: 'hidden',
-  },
-  menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 14,
-    gap: 12,
-  },
-  menuIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  menuLabel: {
-    flex: 1,
-    fontSize: 15,
-    fontWeight: '400',
-  },
-  menuValue: {
-    fontSize: 14,
-  },
-  footer: {
-    textAlign: 'center',
-    fontSize: 12,
-    marginTop: 8,
-  },
+  content: { padding: 16, paddingBottom: 32, gap: 8 },
+  profileCard: { flexDirection: 'row', alignItems: 'center', gap: 14, borderRadius: 16, borderWidth: 1, padding: 16, marginBottom: 8 },
+  avatar: { width: 52, height: 52, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  avatarText: { color: '#FFF', fontSize: 22, fontWeight: '700' },
+  profileName: { fontSize: 18, fontWeight: '700' },
+  profileSub: { fontSize: 13, marginTop: 2 },
+  statsRow: { flexDirection: 'row', gap: 10, marginBottom: 8 },
+  statCard: { flex: 1, alignItems: 'center', borderRadius: 12, borderWidth: 1, paddingVertical: 14, gap: 2 },
+  statValue: { fontSize: 22, fontWeight: '700' },
+  statLabel: { fontSize: 11 },
+  sectionTitle: { fontSize: 11, fontWeight: '600', letterSpacing: 0.8, marginTop: 8, marginLeft: 4 },
+  section: { borderRadius: 16, borderWidth: 1, overflow: 'hidden' },
+  menuItem: { flexDirection: 'row', alignItems: 'center', padding: 14, gap: 12 },
+  menuIcon: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  menuLabel: { flex: 1, fontSize: 15, fontWeight: '400' },
+  menuValue: { fontSize: 14 },
+  footer: { textAlign: 'center', fontSize: 12, marginTop: 8 },
 })
