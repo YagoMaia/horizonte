@@ -85,6 +85,7 @@ export function AddTransactionModal({
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [recurrence, setRecurrence] = useState<RecurrenceType>('unica');
   const [paid, setPaid] = useState(true);
+  const [targetAccountId, setTargetAccountId] = useState('');
 
   const [installments, setInstallments] = useState(1);
 
@@ -122,6 +123,7 @@ export function AddTransactionModal({
     setRecurrenceStart(getFormattedDate(0));
     setRecurrenceEnd('');
     setCalendarTarget(null);
+    setTargetAccountId('');
   };
 
   React.useEffect(() => {
@@ -270,6 +272,10 @@ export function AddTransactionModal({
   const handleSubmit = () => {
     // Adicionada validação de hasAccounts para evitar envio forçado
     if (!hasAccounts || !amount || !accountId) return;
+    if (type === 'transferencia' && !targetAccountId) {
+      alert("Selecione uma conta de destino para a transferência.");
+      return;
+    }
 
     const parseToISO = (str: string) => {
       const p = str.split('/');
@@ -304,6 +310,7 @@ export function AddTransactionModal({
           : undefined,
       totalInstallments: isCreditCardSelected ? installments : 1,
       paymentMethod: isCreditCardSelected ? 'credito' : 'debito',
+      targetAccountId: type === 'transferencia' ? targetAccountId : undefined
     };
 
     if (isEditing && onUpdate) {
@@ -442,6 +449,58 @@ export function AddTransactionModal({
               </Text>
             )}
 
+            {type === 'transferencia' && (
+              <View style={styles.field}>
+                <Text style={[styles.label, { color: colors.mutedForeground }]}>
+                  Conta de Destino
+                </Text>
+                <View style={styles.chipRow}>
+                  {accounts
+                    .filter(
+                      (acc) =>
+                        acc.id !== accountId && acc.type !== 'cartao_credito',
+                    ) // Não pode transferir para a própria conta nem para cartão
+                    .map((acc) => (
+                      <TouchableOpacity
+                        key={acc.id}
+                        style={[
+                          styles.chip,
+                          {
+                            borderColor: acc.color,
+                            backgroundColor:
+                              targetAccountId === acc.id
+                                ? acc.color
+                                : 'transparent',
+                          },
+                        ]}
+                        onPress={() => setTargetAccountId(acc.id)}
+                      >
+                        <Text
+                          style={[
+                            styles.chipText,
+                            {
+                              color:
+                                targetAccountId === acc.id ? '#FFF' : acc.color,
+                            },
+                          ]}
+                        >
+                          {acc.name}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                </View>
+                {accounts.filter(
+                  (acc) =>
+                    acc.id !== accountId && acc.type !== 'cartao_credito',
+                ).length === 0 && (
+                  <Text style={{ fontSize: 11, color: colors.destructive }}>
+                    Não tem outras contas disponíveis para receber a
+                    transferência.
+                  </Text>
+                )}
+              </View>
+            )}
+
             <View style={styles.field}>
               <Text style={[styles.label, { color: colors.mutedForeground }]}>
                 Valor
@@ -477,7 +536,7 @@ export function AddTransactionModal({
                 ]}
                 value={description}
                 onChangeText={setDescription}
-                placeholder="Ex: Almoço, Uber... (Opcional)"
+                placeholder='Ex: Almoço, Uber... (Opcional)'
                 placeholderTextColor={colors.mutedForeground}
               />
             </View>

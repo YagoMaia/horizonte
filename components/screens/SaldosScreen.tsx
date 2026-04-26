@@ -313,14 +313,28 @@ export function SaldosScreen() {
 
     const tag =
       tx.tagIds?.length > 0 ? tags.find((t) => t.id === tx.tagIds[0]) : null;
+
+    // 👉 NOVO: Buscamos as DUAS contas (Origem e Destino)
     const account = accounts.find((a) => a.id === tx.accountId);
+    const targetAccount =
+      tx.type === 'transferencia'
+        ? accounts.find((a) => a.id === tx.targetAccountId)
+        : null;
 
     const iconColor = tag
       ? tag.color
       : isReceita
         ? colors.success
-        : colors.destructive;
-    const iconName = tag ? tag.icon : isReceita ? 'arrow-up' : 'arrow-down';
+        : tx.type === 'transferencia'
+          ? colors.primary
+          : colors.destructive;
+    const iconName = tag
+      ? tag.icon
+      : isReceita
+        ? 'arrow-up'
+        : tx.type === 'transferencia'
+          ? 'swap-horizontal'
+          : 'arrow-down';
 
     // O corpo principal do item (a parte branca que desliza)
     const ItemContent = () => (
@@ -359,11 +373,15 @@ export function SaldosScreen() {
               {tag?.name || 'Sem categoria'}
             </Text>
             <View style={[styles.txDot, { backgroundColor: colors.border }]} />
+
+            {/* 👉 NOVO: Renderização condicional para Transferências */}
             <Text
               style={[styles.txMetaText, { color: colors.mutedForeground }]}
               numberOfLines={1}
             >
-              {account?.name || 'Conta externa'}
+              {tx.type === 'transferencia' && targetAccount
+                ? `${account?.name} ➔ ${targetAccount.name}`
+                : account?.name || 'Conta externa'}
             </Text>
           </View>
         </View>

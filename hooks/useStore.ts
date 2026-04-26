@@ -120,7 +120,7 @@ export function useStore() {
 
         // 👉 CORREÇÃO AQUI: >= (Maior ou igual).
         // Se comprar no próprio dia do fechamento, já pula para a outra fatura.
-        const shiftMonths = dayOfPurchase >= closingDay ? 2 : 1;
+        const shiftMonths = dayOfPurchase >= closingDay ? 1 : 0;
 
         const installmentsCount =
           tx.totalInstallments && tx.totalInstallments > 1
@@ -195,11 +195,17 @@ export function useStore() {
           paymentMethod: finalizedTxMethod,
         };
         newTransactions.push(newTx);
+
         if (tx.paid) {
           updatedAccounts = updatedAccounts.map((acc) => {
+            // Conta de Origem (Perde dinheiro se for despesa/transferencia, ganha se for receita)
             if (acc.id === tx.accountId) {
               const delta = tx.type === 'receita' ? tx.amount : -tx.amount;
               return { ...acc, balance: acc.balance + delta };
+            }
+            // Conta de Destino (Ganha dinheiro apenas na transferência)
+            if (tx.type === 'transferencia' && acc.id === tx.targetAccountId) {
+              return { ...acc, balance: acc.balance + tx.amount };
             }
             return acc;
           });
@@ -241,12 +247,20 @@ export function useStore() {
       txsToDelete.forEach((deletedTx) => {
         if (deletedTx.paid) {
           updatedAccounts = updatedAccounts.map((acc) => {
+            // Reverte a Origem
             if (acc.id === deletedTx.accountId) {
               const delta =
                 deletedTx.type === 'receita'
                   ? -deletedTx.amount
                   : deletedTx.amount;
               return { ...acc, balance: acc.balance + delta };
+            }
+            // Reverte o Destino (Tira o dinheiro que tinha entrado na transferência)
+            if (
+              deletedTx.type === 'transferencia' &&
+              acc.id === deletedTx.targetAccountId
+            ) {
+              return { ...acc, balance: acc.balance - deletedTx.amount };
             }
             return acc;
           });
@@ -264,18 +278,31 @@ export function useStore() {
       if (!oldTx) return;
 
       let updatedAccounts = [...accounts];
+
+      // TEMPO 1: DESFAZER O PASSADO (Reverter oldTx)
       if (oldTx.paid) {
         updatedAccounts = updatedAccounts.map((acc) => {
+          // Reverte a Origem
           if (acc.id === oldTx.accountId) {
             const delta =
               oldTx.type === 'receita' ? -oldTx.amount : oldTx.amount;
             return { ...acc, balance: acc.balance + delta };
           }
+          // Reverte o Destino (Arranca o dinheiro da conta de destino antiga)
+          if (
+            oldTx.type === 'transferencia' &&
+            acc.id === oldTx.targetAccountId
+          ) {
+            return { ...acc, balance: acc.balance - oldTx.amount };
+          }
           return acc;
         });
       }
+
+      // TEMPO 2: CONSTRUIR O FUTURO (Aplicar updatedTx)
       if (updatedTx.paid) {
         updatedAccounts = updatedAccounts.map((acc) => {
+          // Aplica na Nova Origem
           if (acc.id === updatedTx.accountId) {
             const delta =
               updatedTx.type === 'receita'
@@ -283,9 +310,17 @@ export function useStore() {
                 : -updatedTx.amount;
             return { ...acc, balance: acc.balance + delta };
           }
+          // Aplica no Novo Destino (Injeta o dinheiro na conta de destino nova)
+          if (
+            updatedTx.type === 'transferencia' &&
+            acc.id === updatedTx.targetAccountId
+          ) {
+            return { ...acc, balance: acc.balance + updatedTx.amount };
+          }
           return acc;
         });
       }
+
       const updatedTransactions = transactions.map((t) =>
         t.id === updatedTx.id ? updatedTx : t,
       );
@@ -328,13 +363,91 @@ export function useStore() {
     [monthlyBudgets],
   );
 
-  const totalBalance = accounts.reduce((sum, a) => sum + a.balance, 0);
+  const totalBalance = accounts.reduce((sum, a) => {
+    if (a.type === 'cartao_credito') {
+      return sum;
+    }
+    return sum + a.balance;
+  }, 0);
   const monthlyIncome = transactions
     .filter((t) => t.type === 'receita' && t.paid)
     .reduce((sum, t) => sum + t.amount, 0);
   const monthlyExpense = transactions
     .filter((t) => t.type === 'despesa' && t.paid)
     .reduce((sum, t) => sum + t.amount, 0);
+
+  const payCreditCardInvoice = useCallback(
+    async (
+      creditCardId: string,
+      sourceAccountId: string,
+      targetMonth: number, // Agora recebe 0 a 11
+      targetYear: number,
+    ) => {
+      const cardAccount = accounts.find((a) => a.id === creditCardId);
+      if (!cardAccount || cardAccount.type !== 'cartao_credito') return;
+
+      // 1. Isolar transações que compõem a fatura específica
+      const invoiceTxs = transactions.filter((tx) => {
+        if (
+          tx.accountId !== creditCardId ||
+          tx.paymentMethod !== 'credito' ||
+          tx.paid
+        )
+          return false;
+        const txDate = new Date(tx.date);
+        // 👉 CORREÇÃO: Removido o "- 1". Agora ambos usam o padrão 0-11 nativo do JS.
+        return (
+          txDate.getMonth() === targetMonth &&
+          txDate.getFullYear() === targetYear
+        );
+      });
+
+      if (invoiceTxs.length === 0) return;
+
+      // 2. Calcular o total exato da fatura
+      const invoiceTotal = invoiceTxs.reduce(
+        (sum, tx) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount),
+        0,
+      );
+
+      // 3. Atualizar o lote inteiro para 'Pago'
+      const invoiceTxIds = invoiceTxs.map((t) => t.id);
+      const updatedTransactions = transactions.map((tx) => {
+        if (invoiceTxIds.includes(tx.id)) {
+          return { ...tx, paid: true };
+        }
+        return tx;
+      });
+
+      // 4. Criar transação de Transferência (Para manter o rastro do dinheiro sem duplicar despesa)
+      const paymentTx: Transaction = {
+        id: Date.now().toString(),
+        description: `Pagamento Fatura - ${cardAccount.name}`,
+        amount: invoiceTotal,
+        type: 'transferencia',
+        date: new Date().toISOString(),
+        accountId: sourceAccountId,
+        tagIds: [], // Pode criar uma Tag "Fatura" futuramente se desejar
+        paymentMethod: 'debito',
+        paid: true,
+        recurrence: 'unica',
+      };
+
+      const finalTransactions = [paymentTx, ...updatedTransactions];
+
+      // 5. Efetuar o débito na conta corrente
+      const updatedAccounts = accounts.map((acc) => {
+        if (acc.id === sourceAccountId) {
+          return { ...acc, balance: acc.balance - invoiceTotal };
+        }
+        return acc;
+      });
+
+      await saveTransactions(finalTransactions);
+      await saveAccounts(updatedAccounts);
+    },
+    [transactions, accounts, saveTransactions, saveAccounts],
+  );
 
   return {
     transactions,
@@ -356,5 +469,6 @@ export function useStore() {
     saveAccounts,
     saveTags,
     clearAllData,
+    payCreditCardInvoice,
   };
 }

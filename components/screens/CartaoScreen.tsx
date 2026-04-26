@@ -1,285 +1,651 @@
 // components/screens/CartaoScreen.tsx
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
-    View,
-    Text,
-    ScrollView,
-    StyleSheet,
-    TouchableOpacity,
-    Dimensions,
-    Modal,
-    Platform,
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ScrollView,
+  FlatList,
+  Modal,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/hooks/useTheme';
 import { useStoreContext } from '@/context/StoreContext';
-import { formatCurrency } from '@/lib/utils';
-import { Transaction } from '@/constants/types';
-import { AddTransactionModal } from '@/components/AddTransactionModal';
-
-const MONTH_NAMES = [
-    'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
-    'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
-];
+import {
+  calculateCreditCardInvoice,
+  formatCurrency,
+  formatDateShort,
+  getCreditCardTargetMonth,
+} from '@/lib/utils';
+import { Account, Transaction } from '@/constants/types';
 
 export function CartaoScreen() {
-    const { colors } = useTheme();
-    const { transactions, tags, accounts, deleteTransaction, updateTransaction } = useStoreContext();
+  const { colors } = useTheme();
+  const {
+    accounts,
+    transactions,
+    payCreditCardInvoice, // 👉 GARANTA QUE ISTO ESTÁ EXPORTADO NO SEU CONTEXTO
+  } = useStoreContext();
 
-    const today = useMemo(() => new Date(), []);
-    const [selectedCardId, setSelectedCardId] = useState<string>('all');
+  // Filtra apenas os cartões de crédito
+  const creditCards = useMemo(
+    () => accounts.filter((a) => a.type === 'cartao_credito'),
+    [accounts],
+  );
 
-    // Lógica para descobrir qual é a fatura aberta atual
-    const openInvoice = useMemo(() => {
-        const activeCard = accounts.find(acc => acc.id === selectedCardId);
-        const closingDay = activeCard?.closingDay || 31;
-        const currentDay = today.getDate();
+  const [selectedCardId, setSelectedCardId] = useState<string | null>(
+    creditCards.length > 0 ? creditCards[0].id : null,
+  );
 
-        let targetMonth = today.getMonth() + 1;
-        let targetYear = today.getFullYear();
+  const selectedCard = useMemo(
+    () => creditCards.find((c) => c.id === selectedCardId) || null,
+    [creditCards, selectedCardId],
+  );
 
-        if (currentDay >= closingDay) {
-            targetMonth += 1;
-        }
+  // Estado para o Modal de Pagamento
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [sourceAccountId, setSourceAccountId] = useState<string>('');
 
-        if (targetMonth > 11) {
-            targetMonth -= 12;
-            targetYear += 1;
-        }
+  // 👉 CÁLCULOS DO MÊS ALVO E DA FATURA ATUAL
+  const {
+    currentInvoice,
+    targetMonth,
+    targetYear,
+    invoiceTransactions,
+    limit,
+    availableLimit,
+    limitUsagePercent,
+  } = useMemo(() => {
+    if (!selectedCard)
+      return {
+        currentInvoice: 0,
+        targetMonth: 0,
+        targetYear: 2024,
+        invoiceTransactions: [],
+        limit: 0,
+        availableLimit: 0,
+        limitUsagePercent: 0,
+      };
 
-        return { month: targetMonth, year: targetYear, value: targetYear * 100 + targetMonth };
-    }, [selectedCardId, accounts, today]);
+    const today = new Date();
 
-    const [viewYear, setViewYear] = useState(openInvoice.year);
-    const [viewMonth, setViewMonth] = useState(openInvoice.month);
+    // 🔥 Agora usamos a fonte da verdade do utils.ts
+    const { targetMonth: tMonth, targetYear: tYear } = getCreditCardTargetMonth(
+      selectedCard,
+      today,
+    );
+    const invoiceValue = calculateCreditCardInvoice(
+      selectedCard,
+      transactions,
+      today,
+    );
 
-    useEffect(() => {
-        setViewMonth(openInvoice.month);
-        setViewYear(openInvoice.year);
-    }, [openInvoice.month, openInvoice.year]);
+    const invTxs = transactions
+      .filter((tx) => {
+        if (
+          tx.accountId !== selectedCard.id ||
+          tx.paymentMethod !== 'credito' ||
+          tx.paid
+        )
+          return false;
+        const txDate = new Date(tx.date);
+        return txDate.getMonth() === tMonth && txDate.getFullYear() === tYear;
+      })
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-    const [optionsModalVisible, setOptionsModalVisible] = useState(false);
-    const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
-    const [editModalVisible, setEditModalVisible] = useState(false);
-    const [txToEdit, setTxToEdit] = useState<Transaction | null>(null);
+    const cLimit = selectedCard.creditLimit || 0;
+    const aLimit = Math.max(0, cLimit - invoiceValue);
+    const percent =
+      cLimit > 0 ? Math.min((invoiceValue / cLimit) * 100, 100) : 0;
 
-    const nextMonth = () => {
-        if (viewMonth === 11) {
-            setViewMonth(0); setViewYear((v) => v + 1);
-        } else setViewMonth((v) => v + 1);
+    return {
+      currentInvoice: invoiceValue,
+      targetMonth: tMonth, // Passa o índice correto (0-11) para o payCreditCardInvoice
+      targetYear: tYear,
+      invoiceTransactions: invTxs,
+      limit: cLimit,
+      availableLimit: aLimit,
+      limitUsagePercent: percent,
     };
+  }, [selectedCard, transactions]);
 
-    const prevMonth = () => {
-        if (viewMonth === 0) {
-            setViewMonth(11); setViewYear((v) => v - 1);
-        } else setViewMonth((v) => v - 1);
-    };
+  // Contas disponíveis para pagar a fatura (exclui cartões de crédito)
+  const debitAccounts = useMemo(
+    () => accounts.filter((a) => a.type !== 'cartao_credito'),
+    [accounts],
+  );
 
-    const creditCards = useMemo(() => accounts.filter(acc => acc.type === 'cartao_credito'), [accounts]);
+  const handlePayInvoice = () => {
+    if (debitAccounts.length === 0) {
+      Alert.alert(
+        'Aviso',
+        'Não tem nenhuma conta corrente cadastrada para pagar esta fatura.',
+      );
+      return;
+    }
+    setSourceAccountId(debitAccounts[0].id);
+    setIsPaymentModalOpen(true);
+  };
 
-    const billTransactions = useMemo(() => {
-        return transactions.filter((tx) => {
-            const d = new Date(tx.date);
-            const matchesMonth = d.getFullYear() === viewYear && d.getMonth() === viewMonth;
-            const isCredit = tx.type === 'despesa' && tx.paymentMethod === 'credito';
-            const matchesCard = selectedCardId === 'all' || tx.accountId === selectedCardId;
-            return matchesMonth && isCredit && matchesCard;
-        });
-    }, [transactions, viewYear, viewMonth, selectedCardId]);
+  const confirmPayment = async () => {
+    if (!selectedCard || !sourceAccountId) return;
 
-    const totalBill = billTransactions.reduce((acc, tx) => acc + tx.amount, 0);
+    try {
+      await payCreditCardInvoice(
+        selectedCard.id,
+        sourceAccountId,
+        targetMonth,
+        targetYear,
+      );
+      setIsPaymentModalOpen(false);
+      Alert.alert('Sucesso', 'Fatura paga e limite libertado!');
+    } catch (e) {
+      Alert.alert('Erro', 'Não foi possível processar o pagamento.');
+    }
+  };
 
-    const activeCardInfo = selectedCardId === 'all'
-        ? { name: 'TODOS OS CARTÕES', color: colors.primary, balance: 0 }
-        : creditCards.find(c => c.id === selectedCardId) || { name: 'CARTÃO', color: colors.primary, balance: 0 };
+  if (creditCards.length === 0) {
+    return (
+      <View
+        style={[styles.emptyContainer, { backgroundColor: colors.background }]}
+      >
+        <Ionicons name='card-outline' size={64} color={colors.border} />
+        <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
+          Nenhum cartão de crédito registado.
+        </Text>
+      </View>
+    );
+  }
 
-    const isClosed = (viewYear * 100 + viewMonth) < openInvoice.value;
-    const cardStatusText = isClosed ? 'FATURA FECHADA' : 'FATURA EM ABERTO';
-
-    const handleTransactionPress = (tx: Transaction) => {
-        setSelectedTx(tx);
-        setOptionsModalVisible(true);
-    };
-
-    const handleEdit = () => {
-        setOptionsModalVisible(false);
-        setTxToEdit(selectedTx);
-        setEditModalVisible(true);
-    };
-
-    const handleDelete = () => {
-        if (!selectedTx) return;
-        if (Platform.OS === 'web') {
-            if (window.confirm(`Deseja realmente excluir "${selectedTx.description}"?`)) {
-                deleteTransaction(selectedTx.id);
-                setOptionsModalVisible(false);
-            }
-        } else {
-            deleteTransaction(selectedTx.id);
-            setOptionsModalVisible(false);
-        }
-    };
+  const renderTransaction = ({ item: tx }: { item: Transaction }) => {
+    const isReceita = tx.type === 'receita';
+    const amountColor = isReceita ? colors.success : colors.foreground;
 
     return (
-        <View style={{ flex: 1, backgroundColor: colors.background }}>
-            {/* Header Navegação */}
-            <View style={[styles.navHeader, { borderBottomColor: colors.border, backgroundColor: colors.card }]}>
-                <TouchableOpacity onPress={prevMonth}><Ionicons name="chevron-back" size={24} color={colors.primary} /></TouchableOpacity>
-                <View style={styles.monthInfo}>
-                    <Text style={[styles.monthLabel, { color: colors.mutedForeground }]}>Fatura de</Text>
-                    <Text style={[styles.monthValue, { color: colors.foreground }]}>{MONTH_NAMES[viewMonth]} {viewYear}</Text>
-                </View>
-                <TouchableOpacity onPress={nextMonth}><Ionicons name="chevron-forward" size={24} color={colors.primary} /></TouchableOpacity>
+      <View style={[styles.txItem, { borderBottomColor: colors.border }]}>
+        <View style={styles.txInfo}>
+          <Text
+            style={[styles.txDesc, { color: colors.foreground }]}
+            numberOfLines={1}
+          >
+            {tx.description}
+          </Text>
+          <Text style={[styles.txDate, { color: colors.mutedForeground }]}>
+            {formatDateShort(tx.date)}
+          </Text>
+        </View>
+        <Text style={[styles.txAmount, { color: amountColor }]}>
+          {isReceita ? '+' : '-'}
+          {formatCurrency(tx.amount)}
+        </Text>
+      </View>
+    );
+  };
+
+  return (
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      {/* SELETOR DE CARTÕES (CARROSSEL) */}
+      <View
+        style={[
+          styles.carouselContainer,
+          { borderBottomColor: colors.border, backgroundColor: colors.card },
+        ]}
+      >
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.carouselContent}
+        >
+          {creditCards.map((card) => {
+            const isSelected = card.id === selectedCardId;
+            return (
+              <TouchableOpacity
+                key={card.id}
+                onPress={() => setSelectedCardId(card.id)}
+                style={[
+                  styles.cardSelectorItem,
+                  {
+                    backgroundColor: isSelected ? card.color : 'transparent',
+                    borderColor: isSelected ? card.color : colors.border,
+                  },
+                ]}
+              >
+                <Ionicons
+                  name={card.icon as any}
+                  size={16}
+                  color={isSelected ? '#FFF' : card.color}
+                  style={{ marginRight: 6 }}
+                />
+                <Text
+                  style={{
+                    fontSize: 13,
+                    fontWeight: '600',
+                    color: isSelected ? '#FFF' : colors.foreground,
+                  }}
+                >
+                  {card.name}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
+
+      {selectedCard && (
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.content}
+        >
+          {/* O CARTÃO FÍSICO VISUAL */}
+          <View
+            style={[
+              styles.creditCardVisual,
+              { backgroundColor: selectedCard.color },
+            ]}
+          >
+            <View style={styles.cardHeader}>
+              <Text style={styles.cardName}>{selectedCard.name}</Text>
+              <Ionicons
+                name='wifi'
+                size={24}
+                color='rgba(255,255,255,0.7)'
+                style={{ transform: [{ rotate: '90deg' }] }}
+              />
+            </View>
+            <View style={styles.cardBody}>
+              <Text style={styles.invoiceLabel}>
+                Fatura Atual ({String(targetMonth + 1).padStart(2, '0')}/
+                {targetYear})
+              </Text>
+              <Text style={styles.invoiceValue}>
+                {formatCurrency(currentInvoice)}
+              </Text>
+            </View>
+            <View style={styles.cardFooter}>
+              <Text style={styles.cardInfoText}>
+                Fecha dia {selectedCard.closingDay || 31}
+              </Text>
+              <Text style={styles.cardInfoText}>
+                Vence dia {selectedCard.dueDay || 5}
+              </Text>
+            </View>
+          </View>
+
+          {/* BARRA DE LIMITE */}
+          <View
+            style={[
+              styles.limitSection,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+          >
+            <View style={styles.limitHeader}>
+              <Text style={[styles.limitTitle, { color: colors.foreground }]}>
+                Limite do Cartão
+              </Text>
+              <Text
+                style={[styles.limitTotal, { color: colors.mutedForeground }]}
+              >
+                {formatCurrency(limit)}
+              </Text>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+            <View
+              style={[
+                styles.progressBarBackground,
+                { backgroundColor: colors.border },
+              ]}
+            >
+              <View
+                style={[
+                  styles.progressBarFill,
+                  {
+                    backgroundColor:
+                      limitUsagePercent > 90
+                        ? colors.destructive
+                        : selectedCard.color,
+                    width: `${limitUsagePercent}%`,
+                  },
+                ]}
+              />
+            </View>
 
-                {/* Filtros de Cartão */}
-                {creditCards.length > 0 && (
-                    <View style={styles.filterContainer}>
-                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, gap: 10 }}>
-                            <TouchableOpacity
-                                style={[styles.filterChip, { borderColor: colors.border, backgroundColor: selectedCardId === 'all' ? colors.foreground : colors.card }]}
-                                onPress={() => setSelectedCardId('all')}
-                            >
-                                <Text style={{ color: selectedCardId === 'all' ? colors.background : colors.foreground, fontWeight: '600' }}>Todos</Text>
-                            </TouchableOpacity>
-                            {creditCards.map(card => (
-                                <TouchableOpacity
-                                    key={card.id}
-                                    style={[styles.filterChip, { borderColor: card.color, backgroundColor: selectedCardId === card.id ? card.color : colors.card }]}
-                                    onPress={() => setSelectedCardId(card.id)}
-                                >
-                                    <Text style={{ color: selectedCardId === card.id ? '#FFF' : card.color, fontWeight: '600' }}>{card.name}</Text>
-                                </TouchableOpacity>
-                            ))}
-                        </ScrollView>
-                    </View>
-                )}
+            <View style={styles.limitDetails}>
+              <View>
+                <Text
+                  style={[
+                    styles.limitSubLabel,
+                    { color: colors.mutedForeground },
+                  ]}
+                >
+                  Disponível
+                </Text>
+                <Text style={[styles.limitSubValue, { color: colors.success }]}>
+                  {formatCurrency(availableLimit)}
+                </Text>
+              </View>
+              <View style={{ alignItems: 'flex-end' }}>
+                <Text
+                  style={[
+                    styles.limitSubLabel,
+                    { color: colors.mutedForeground },
+                  ]}
+                >
+                  Utilizado
+                </Text>
+                <Text
+                  style={[styles.limitSubValue, { color: colors.foreground }]}
+                >
+                  {formatCurrency(currentInvoice)}
+                </Text>
+              </View>
+            </View>
+          </View>
 
-                {/* Cartão Visual com BARRA DE LIMITE */}
-                <View style={[styles.cardVisual, { backgroundColor: activeCardInfo.color }]}>
-                    <View style={styles.cardHeader}>
-                        <Ionicons name="card" size={28} color="#FFF" />
-                        <Text style={styles.cardBrand}>{activeCardInfo.name.toUpperCase()}</Text>
-                    </View>
-                    <View style={styles.cardBody}>
-                        <Text style={styles.cardLabel}>Valor total da fatura</Text>
-                        <Text style={styles.cardAmount}>{formatCurrency(totalBill)}</Text>
+          {/* BOTÃO DE PAGAMENTO */}
+          <TouchableOpacity
+            style={[
+              styles.payButton,
+              {
+                backgroundColor:
+                  currentInvoice > 0 ? colors.primary : colors.border,
+              },
+            ]}
+            disabled={currentInvoice <= 0}
+            onPress={handlePayInvoice}
+          >
+            <Ionicons
+              name='checkmark-circle-outline'
+              size={20}
+              color={currentInvoice > 0 ? '#FFF' : colors.mutedForeground}
+            />
+            <Text
+              style={[
+                styles.payButtonText,
+                { color: currentInvoice > 0 ? '#FFF' : colors.mutedForeground },
+              ]}
+            >
+              {currentInvoice > 0 ? 'Pagar Fatura' : 'Fatura Zerada'}
+            </Text>
+          </TouchableOpacity>
 
-                        {selectedCardId !== 'all' && (
-                            <View style={styles.limitContainer}>
-                                <View style={styles.limitBarBackground}>
-                                    <View style={[styles.limitBarFill, { width: `${Math.min(100, (totalBill / (activeCardInfo.balance || 1)) * 100)}%` }]} />
-                                </View>
-                                <View style={styles.limitInfo}>
-                                    <Text style={styles.limitText}>Disponível: {formatCurrency(Math.max(0, (activeCardInfo.balance || 0) - totalBill))}</Text>
-                                    <Text style={styles.limitText}>Limite: {formatCurrency(activeCardInfo.balance || 0)}</Text>
-                                </View>
-                            </View>
-                        )}
-                    </View>
-                    <View style={styles.cardFooter}>
-                        <View style={styles.chip} />
-                        <Text style={styles.cardStatus}>{cardStatusText}</Text>
-                    </View>
-                </View>
-
-                {/* Lista de Itens */}
-                <View style={styles.sectionHeader}>
-                    <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>ITENS DA FATURA</Text>
-                    <Text style={[styles.itemCount, { color: colors.mutedForeground }]}>{billTransactions.length} itens</Text>
-                </View>
-
-                <View style={[styles.listContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                    {billTransactions.map((tx, idx) => {
-                        const tag = tags.find((t) => t.id === tx.tagIds[0]);
-                        const cardOfTx = creditCards.find(c => c.id === tx.accountId);
-                        return (
-                            <TouchableOpacity key={tx.id} activeOpacity={0.7} onPress={() => handleTransactionPress(tx)} style={[styles.txRow, idx < billTransactions.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }]}>
-                                <View style={[styles.iconBox, { backgroundColor: tag?.color + '15' }]}><Ionicons name={(tag?.icon as any) || 'basket-outline'} size={20} color={tag?.color || colors.primary} /></View>
-                                <View style={styles.txInfo}>
-                                    <Text style={[styles.txDesc, { color: colors.foreground }]}>{tx.description}</Text>
-                                    <View style={styles.txSubRow}>
-                                        <Text style={[styles.txDate, { color: colors.mutedForeground }]}>{new Date(tx.date).toLocaleDateString('pt-BR')}</Text>
-                                        {selectedCardId === 'all' && cardOfTx && <><Text style={{ color: colors.mutedForeground, fontSize: 10 }}> • </Text><Text style={{ color: cardOfTx.color, fontSize: 11, fontWeight: '600' }}>{cardOfTx.name}</Text></>}
-                                    </View>
-                                </View>
-                                <Text style={[styles.txValue, { color: colors.foreground }]}>{formatCurrency(tx.amount)}</Text>
-                            </TouchableOpacity>
-                        );
-                    })}
-                </View>
-            </ScrollView>
-
-            {/* Modal Opções */}
-            <Modal visible={optionsModalVisible} transparent animationType="fade">
-                <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setOptionsModalVisible(false)}>
-                    <View style={[styles.optionsMenu, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                        <Text style={[styles.optionsTitle, { color: colors.foreground }]}>{selectedTx?.description}</Text>
-                        <TouchableOpacity style={styles.optionBtn} onPress={handleEdit}>
-                            <Ionicons name="pencil-outline" size={20} color={colors.primary} /><Text style={[styles.optionText, { color: colors.foreground }]}>Editar Lançamento</Text>
-                        </TouchableOpacity>
-                        <View style={[styles.divider, { backgroundColor: colors.border }]} />
-                        <TouchableOpacity style={styles.optionBtn} onPress={handleDelete}>
-                            <Ionicons name="trash-outline" size={20} color={colors.destructive} /><Text style={[styles.optionText, { color: colors.destructive }]}>Excluir Lançamento</Text>
-                        </TouchableOpacity>
-                    </View>
-                </TouchableOpacity>
-            </Modal>
-
-            {txToEdit && (
-                <AddTransactionModal
-                    visible={editModalVisible}
-                    onClose={() => { setEditModalVisible(false); setTxToEdit(null); }}
-                    onAdd={() => { }}
-                    onUpdate={(updatedTx) => { updateTransaction(updatedTx); setEditModalVisible(false); setTxToEdit(null); }}
-                    accounts={accounts}
-                    tags={tags}
-                    transactionToEdit={txToEdit}
-                />
+          {/* LISTA DE DESPESAS DA FATURA */}
+          <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
+            Lançamentos da Fatura
+          </Text>
+          <View
+            style={[
+              styles.txContainer,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+          >
+            {invoiceTransactions.length === 0 ? (
+              <Text
+                style={[styles.emptyTxText, { color: colors.mutedForeground }]}
+              >
+                Nenhum gasto nesta fatura.
+              </Text>
+            ) : (
+              <FlatList
+                data={invoiceTransactions}
+                keyExtractor={(item) => item.id}
+                renderItem={renderTransaction}
+                scrollEnabled={false}
+              />
             )}
+          </View>
+        </ScrollView>
+      )}
+
+      {/* MODAL DE PAGAMENTO DA FATURA */}
+      <Modal visible={isPaymentModalOpen} transparent animationType='slide'>
+        <View style={styles.modalOverlay}>
+          <View
+            style={[
+              styles.modalContent,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+          >
+            <Text style={[styles.modalTitle, { color: colors.foreground }]}>
+              Pagar Fatura
+            </Text>
+            <Text
+              style={[styles.modalSubtitle, { color: colors.mutedForeground }]}
+            >
+              O valor de {formatCurrency(currentInvoice)} será debitado da conta
+              selecionada abaixo:
+            </Text>
+
+            <View style={styles.accountSelection}>
+              {debitAccounts.map((acc) => (
+                <TouchableOpacity
+                  key={acc.id}
+                  style={[
+                    styles.accountOption,
+                    {
+                      borderColor:
+                        sourceAccountId === acc.id
+                          ? colors.primary
+                          : colors.border,
+                      backgroundColor:
+                        sourceAccountId === acc.id
+                          ? colors.primary + '10'
+                          : 'transparent',
+                    },
+                  ]}
+                  onPress={() => setSourceAccountId(acc.id)}
+                >
+                  <Ionicons
+                    name={acc.icon as any}
+                    size={20}
+                    color={acc.color}
+                  />
+                  <Text
+                    style={[
+                      styles.accountOptionName,
+                      { color: colors.foreground },
+                    ]}
+                  >
+                    {acc.name}
+                  </Text>
+                  {sourceAccountId === acc.id && (
+                    <Ionicons
+                      name='checkmark'
+                      size={18}
+                      color={colors.primary}
+                      style={{ marginLeft: 'auto' }}
+                    />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.cancelBtn}
+                onPress={() => setIsPaymentModalOpen(false)}
+              >
+                <Text
+                  style={[
+                    styles.cancelBtnText,
+                    { color: colors.mutedForeground },
+                  ]}
+                >
+                  Cancelar
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.confirmBtn, { backgroundColor: colors.primary }]}
+                onPress={confirmPayment}
+              >
+                <Text style={styles.confirmBtnText}>Confirmar Pagamento</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         </View>
-    );
+      </Modal>
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
-    navHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 15, borderBottomWidth: StyleSheet.hairlineWidth },
-    monthInfo: { alignItems: 'center' },
-    monthLabel: { fontSize: 10, textTransform: 'uppercase', fontWeight: '700', letterSpacing: 1 },
-    monthValue: { fontSize: 18, fontWeight: '700' },
-    scrollContent: { paddingBottom: 40 },
-    filterContainer: { marginTop: 16, marginBottom: -4 },
-    filterChip: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, borderWidth: 1 },
-    cardVisual: { margin: 20, padding: 25, borderRadius: 24, height: 210, justifyContent: 'space-between', elevation: 8 },
-    cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-    cardBrand: { color: '#FFF', fontSize: 12, fontWeight: '900', letterSpacing: 2 },
-    cardBody: { marginTop: 10 },
-    cardLabel: { color: '#FFF', fontSize: 14, opacity: 0.8 },
-    cardAmount: { color: '#FFF', fontSize: 32, fontWeight: '800' },
-    limitContainer: { marginTop: 12, gap: 5 },
-    limitBarBackground: { height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.3)', overflow: 'hidden' },
-    limitBarFill: { height: '100%', backgroundColor: '#FFF' },
-    limitInfo: { flexDirection: 'row', justifyContent: 'space-between' },
-    limitText: { color: '#FFF', fontSize: 10, fontWeight: '600' },
-    cardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-    chip: { width: 40, height: 30, backgroundColor: '#FFD700', borderRadius: 6, opacity: 0.5 },
-    cardStatus: { color: '#FFF', fontSize: 10, fontWeight: '700', backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 },
-    sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 24, marginBottom: 10 },
-    sectionTitle: { fontSize: 12, fontWeight: '700' },
-    itemCount: { fontSize: 12 },
-    listContainer: { marginHorizontal: 20, borderRadius: 20, borderWidth: 1, overflow: 'hidden' },
-    txRow: { flexDirection: 'row', alignItems: 'center', padding: 16, gap: 12 },
-    iconBox: { width: 42, height: 42, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-    txInfo: { flex: 1 },
-    txDesc: { fontSize: 15, fontWeight: '600' },
-    txSubRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
-    txDate: { fontSize: 12 },
-    txValue: { fontSize: 15, fontWeight: '700' },
-    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
-    optionsMenu: { width: '80%', maxWidth: 350, borderRadius: 16, padding: 20, borderWidth: 1 },
-    optionsTitle: { fontSize: 16, fontWeight: '700', marginBottom: 16, textAlign: 'center' },
-    optionBtn: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, gap: 12 },
-    optionText: { fontSize: 16, fontWeight: '500' },
-    divider: { height: StyleSheet.hairlineWidth, marginVertical: 4 },
+  emptyContainer: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  emptyText: { marginTop: 16, fontSize: 16, fontWeight: '500' },
+  carouselContainer: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    paddingVertical: 12,
+  },
+  carouselContent: { paddingHorizontal: 16, gap: 12 },
+  cardSelectorItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  content: { padding: 16, paddingBottom: 40, gap: 20 },
+
+  creditCardVisual: {
+    borderRadius: 20,
+    padding: 24,
+    height: 200,
+    justifyContent: 'space-between',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  cardName: {
+    color: '#FFF',
+    fontSize: 18,
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
+  cardBody: { gap: 4 },
+  invoiceLabel: {
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: 13,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  invoiceValue: {
+    color: '#FFF',
+    fontSize: 36,
+    fontWeight: '800',
+    letterSpacing: -1,
+  },
+  cardFooter: { flexDirection: 'row', justifyContent: 'space-between' },
+  cardInfoText: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 11,
+    fontWeight: '500',
+  },
+
+  limitSection: {
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 16,
+    gap: 12,
+  },
+  limitHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  limitTitle: { fontSize: 14, fontWeight: '600' },
+  limitTotal: { fontSize: 14, fontWeight: '700' },
+  progressBarBackground: {
+    height: 8,
+    borderRadius: 4,
+    width: '100%',
+    overflow: 'hidden',
+  },
+  progressBarFill: { height: '100%', borderRadius: 4 },
+  limitDetails: { flexDirection: 'row', justifyContent: 'space-between' },
+  limitSubLabel: { fontSize: 11, textTransform: 'uppercase', marginBottom: 2 },
+  limitSubValue: { fontSize: 15, fontWeight: '700' },
+
+  payButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    borderRadius: 16,
+    gap: 8,
+  },
+  payButtonText: { fontSize: 16, fontWeight: '700' },
+
+  sectionTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    marginLeft: 4,
+    marginTop: 8,
+  },
+  txContainer: {
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    overflow: 'hidden',
+  },
+  emptyTxText: { padding: 24, textAlign: 'center', fontSize: 14 },
+  txItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  txInfo: { flex: 1, gap: 4 },
+  txDesc: { fontSize: 15, fontWeight: '500' },
+  txDate: { fontSize: 12 },
+  txAmount: { fontSize: 15, fontWeight: '700' },
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    paddingBottom: 40,
+    borderWidth: 1,
+  },
+  modalTitle: { fontSize: 20, fontWeight: '700', marginBottom: 8 },
+  modalSubtitle: { fontSize: 14, lineHeight: 20, marginBottom: 24 },
+  accountSelection: { gap: 12, marginBottom: 32 },
+  accountOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 12,
+  },
+  accountOptionName: { fontSize: 15, fontWeight: '600' },
+  modalActions: { flexDirection: 'row', gap: 12 },
+  cancelBtn: {
+    flex: 1,
+    paddingVertical: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+  },
+  cancelBtnText: { fontSize: 15, fontWeight: '600' },
+  confirmBtn: {
+    flex: 1,
+    paddingVertical: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+  },
+  confirmBtnText: { color: '#FFF', fontSize: 15, fontWeight: '700' },
 });

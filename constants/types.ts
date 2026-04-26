@@ -45,6 +45,7 @@ export interface Transaction {
   recurrenceInterval?: 'diario' | 'semanal' | 'mensal' | 'anual'
   recurrenceStartDate?: string
   recurrenceEndDate?: string
+  targetAccountId?: string
 }
 
 export interface DailyBalance {

@@ -138,22 +138,9 @@ export function HorizonteScreen() {
   const activeBalance = accounts
     .filter((a) => activeAccountIds.includes(a.id))
     .reduce((s, a) => {
+      // Cartão de crédito não soma no saldo de liquidez real
       if (a.type === 'cartao_credito') {
-        const currentDate = new Date();
-        const closingDay = a.closingDay || 31;
-        let targetMonth = currentDate.getMonth() + 1;
-        let targetYear = currentDate.getFullYear();
-        if (currentDate.getDate() >= closingDay) targetMonth += 1;
-        if (targetMonth > 11) {
-          targetMonth -= 12;
-          targetYear += 1;
-        }
-
-        const currentInvoice = calculateCreditCardInvoice(a, transactions);
-
-        const cardLimit = a.creditLimit || (a.balance > 0 ? a.balance : 0);
-        const availableLimit = Math.max(0, cardLimit - currentInvoice);
-        return s + availableLimit;
+        return s;
       }
       return s + a.balance;
     }, 0);
@@ -184,6 +171,7 @@ export function HorizonteScreen() {
     const result = [];
 
     // 👉 LÓGICA ATUALIZADA: Calcular despesas do mês até o dia atual
+    let frozenFutureDailyPlan = 0;
     let accumulatedMonthlyExpense = 0;
 
     const txsByDay: Record<number, any[]> = {};
@@ -218,22 +206,38 @@ export function HorizonteScreen() {
 
       // 👉 NOVO CÁLCULO DE DAILY PLAN
       let dailyPlan = 0;
-      if (currentBudget > 0) {
-        const remainingBudgetForMonth =
-          currentBudget - accumulatedMonthlyExpense;
-        const remainingDays = daysCount - d + 1;
 
-        // Se ainda tem orçamento, divide pelos dias. Se não, é 0.
-        dailyPlan =
-          remainingBudgetForMonth > 0
-            ? remainingBudgetForMonth / remainingDays
-            : 0;
+      if (currentBudget > 0) {
+        // Só recalcula dinamicamente se for o passado ou o dia de HOJE
+        if (isPast || isToday) {
+          const remainingBudgetForMonth =
+            currentBudget - accumulatedMonthlyExpense;
+          const remainingDays = daysCount - d + 1;
+          dailyPlan =
+            remainingBudgetForMonth > 0
+              ? remainingBudgetForMonth / remainingDays
+              : 0;
+
+          // Se for hoje, congela este número para usar no resto do mês
+          if (isToday) {
+            frozenFutureDailyPlan = dailyPlan;
+          }
+        }
+        // Se for um dia no futuro (d > hoje), usa o valor travado!
+        else {
+          // Falha mitigada: Se estivermos a olhar para um mês futuro inteiro, usa o valor base
+          const isFutureMonth =
+            month > today.getMonth() || year > today.getFullYear();
+          dailyPlan = isFutureMonth
+            ? currentBudget / daysCount
+            : frozenFutureDailyPlan;
+        }
       }
 
       if (isPast) {
         runningBalance += income - expense;
       } else {
-        runningBalance += income - expense - dailyPlan; // Subtrai a meta para simular o gasto
+        runningBalance += income - expense - dailyPlan;
       }
 
       result.push({
