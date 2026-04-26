@@ -1,5 +1,5 @@
 // components/screens/CartaoScreen.tsx
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -14,22 +14,42 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/hooks/useTheme';
 import { useStoreContext } from '@/context/StoreContext';
 import {
-  calculateCreditCardInvoice,
+  getCreditCardTargetMonth,
   formatCurrency,
   formatDateShort,
-  getCreditCardTargetMonth,
 } from '@/lib/utils';
 import { Account, Transaction } from '@/constants/types';
+
+// 👉 IMPORT DOS MODAIS DE EDIÇÃO
+import { TransactionDetailModal } from '../TransactionDetailModal';
+import { AddTransactionModal } from '../AddTransactionModal';
+
+const MONTH_NAMES = [
+  'Janeiro',
+  'Fevereiro',
+  'Março',
+  'Abril',
+  'Maio',
+  'Junho',
+  'Julho',
+  'Agosto',
+  'Setembro',
+  'Outubro',
+  'Novembro',
+  'Dezembro',
+];
 
 export function CartaoScreen() {
   const { colors } = useTheme();
   const {
     accounts,
     transactions,
-    payCreditCardInvoice, // 👉 GARANTA QUE ISTO ESTÁ EXPORTADO NO SEU CONTEXTO
+    tags,
+    payCreditCardInvoice,
+    addTransaction,
+    updateTransaction,
   } = useStoreContext();
 
-  // Filtra apenas os cartões de crédito
   const creditCards = useMemo(
     () => accounts.filter((a) => a.type === 'cartao_credito'),
     [accounts],
@@ -44,74 +64,126 @@ export function CartaoScreen() {
     [creditCards, selectedCardId],
   );
 
-  // Estado para o Modal de Pagamento
+  // 👉 1. NOVO ESTADO: MÁQUINA DO TEMPO
+  const [monthOffset, setMonthOffset] = useState(0);
+
+  // Reseta a máquina do tempo ao trocar de cartão
+  useEffect(() => {
+    setMonthOffset(0);
+  }, [selectedCardId]);
+
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [sourceAccountId, setSourceAccountId] = useState<string>('');
 
-  // 👉 CÁLCULOS DO MÊS ALVO E DA FATURA ATUAL
+  // Estados de Edição
+  const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+
+  // 👉 2. MOTOR DE CÁLCULO (SEPARANDO O GLOBAL DO LOCAL)
   const {
-    currentInvoice,
+    totalInvoice, // Total bruto gasto neste mês específico (histórico)
+    pendingInvoice, // Quanto DESSA fatura específica ainda não foi pago
     targetMonth,
     targetYear,
     invoiceTransactions,
     limit,
     availableLimit,
     limitUsagePercent,
+    invoiceStatus,
+    statusColor,
   } = useMemo(() => {
     if (!selectedCard)
       return {
-        currentInvoice: 0,
+        totalInvoice: 0,
+        pendingInvoice: 0,
         targetMonth: 0,
         targetYear: 2024,
         invoiceTransactions: [],
         limit: 0,
         availableLimit: 0,
         limitUsagePercent: 0,
+        invoiceStatus: 'ZERADA',
+        statusColor: colors.mutedForeground,
       };
 
-    const today = new Date();
+    // A data base para os cálculos viaja no tempo usando o offset
+    const baseDate = new Date();
+    baseDate.setMonth(baseDate.getMonth() + monthOffset);
 
-    // 🔥 Agora usamos a fonte da verdade do utils.ts
+    // Descobre qual é o mês/ano faturado desta data no tempo
     const { targetMonth: tMonth, targetYear: tYear } = getCreditCardTargetMonth(
       selectedCard,
-      today,
-    );
-    const invoiceValue = calculateCreditCardInvoice(
-      selectedCard,
-      transactions,
-      today,
+      baseDate,
     );
 
+    // FILTRO LOCAL: Pega TODAS as transações desta fatura no tempo (pagas ou não)
     const invTxs = transactions
       .filter((tx) => {
-        if (
-          tx.accountId !== selectedCard.id ||
-          tx.paymentMethod !== 'credito' ||
-          tx.paid
-        )
+        if (tx.accountId !== selectedCard.id || tx.paymentMethod !== 'credito')
           return false;
         const txDate = new Date(tx.date);
         return txDate.getMonth() === tMonth && txDate.getFullYear() === tYear;
       })
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
+    const tInvoice = invTxs.reduce(
+      (sum, tx) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount),
+      0,
+    );
+    const pInvoice = invTxs
+      .filter((t) => !t.paid)
+      .reduce(
+        (sum, tx) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount),
+        0,
+      );
+
+    // FILTRO GLOBAL: O limite do cartão independe do mês atual. Ele olha toda a dívida não paga da história.
+    const globalPendingDebt = transactions
+      .filter(
+        (tx) =>
+          tx.accountId === selectedCard.id &&
+          tx.paymentMethod === 'credito' &&
+          !tx.paid,
+      )
+      .reduce(
+        (sum, tx) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount),
+        0,
+      );
+
     const cLimit = selectedCard.creditLimit || 0;
-    const aLimit = Math.max(0, cLimit - invoiceValue);
+    const aLimit = Math.max(0, cLimit - globalPendingDebt);
     const percent =
-      cLimit > 0 ? Math.min((invoiceValue / cLimit) * 100, 100) : 0;
+      cLimit > 0 ? Math.min((globalPendingDebt / cLimit) * 100, 100) : 0;
+
+    // Lógica visual de Status
+    let status = 'ABERTA';
+    let color = colors.primary;
+
+    if (monthOffset < 0 && pInvoice <= 0 && tInvoice > 0) {
+      status = 'PAGA';
+      color = colors.success;
+    } else if (monthOffset > 0) {
+      status = 'FUTURA';
+      color = colors.warning;
+    } else if (tInvoice <= 0) {
+      status = 'ZERADA';
+      color = colors.mutedForeground;
+    }
 
     return {
-      currentInvoice: invoiceValue,
-      targetMonth: tMonth, // Passa o índice correto (0-11) para o payCreditCardInvoice
+      totalInvoice: tInvoice,
+      pendingInvoice: pInvoice,
+      targetMonth: tMonth,
       targetYear: tYear,
       invoiceTransactions: invTxs,
       limit: cLimit,
       availableLimit: aLimit,
       limitUsagePercent: percent,
+      invoiceStatus: status,
+      statusColor: color,
     };
-  }, [selectedCard, transactions]);
+  }, [selectedCard, transactions, monthOffset, colors]);
 
-  // Contas disponíveis para pagar a fatura (exclui cartões de crédito)
   const debitAccounts = useMemo(
     () => accounts.filter((a) => a.type !== 'cartao_credito'),
     [accounts],
@@ -131,7 +203,6 @@ export function CartaoScreen() {
 
   const confirmPayment = async () => {
     if (!selectedCard || !sourceAccountId) return;
-
     try {
       await payCreditCardInvoice(
         selectedCard.id,
@@ -140,7 +211,7 @@ export function CartaoScreen() {
         targetYear,
       );
       setIsPaymentModalOpen(false);
-      Alert.alert('Sucesso', 'Fatura paga e limite libertado!');
+      Alert.alert('Sucesso', 'Fatura paga com sucesso!');
     } catch (e) {
       Alert.alert('Erro', 'Não foi possível processar o pagamento.');
     }
@@ -164,14 +235,29 @@ export function CartaoScreen() {
     const amountColor = isReceita ? colors.success : colors.foreground;
 
     return (
-      <View style={[styles.txItem, { borderBottomColor: colors.border }]}>
+      // 👉 3. HABILITADA A EDIÇÃO NA TELA DO CARTÃO
+      <TouchableOpacity
+        style={[styles.txItem, { borderBottomColor: colors.border }]}
+        onPress={() => setSelectedTx(tx)}
+        activeOpacity={0.7}
+      >
         <View style={styles.txInfo}>
-          <Text
-            style={[styles.txDesc, { color: colors.foreground }]}
-            numberOfLines={1}
-          >
-            {tx.description}
-          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Text
+              style={[styles.txDesc, { color: colors.foreground }]}
+              numberOfLines={1}
+            >
+              {tx.description}
+            </Text>
+            {/* Indicador visual se a compra específica já foi paga (Ex: Faturas antigas) */}
+            {tx.paid && (
+              <Ionicons
+                name='checkmark-circle'
+                size={14}
+                color={colors.success}
+              />
+            )}
+          </View>
           <Text style={[styles.txDate, { color: colors.mutedForeground }]}>
             {formatDateShort(tx.date)}
           </Text>
@@ -180,7 +266,7 @@ export function CartaoScreen() {
           {isReceita ? '+' : '-'}
           {formatCurrency(tx.amount)}
         </Text>
-      </View>
+      </TouchableOpacity>
     );
   };
 
@@ -238,6 +324,47 @@ export function CartaoScreen() {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.content}
         >
+          {/* 👉 4. NAVEGAÇÃO DA FATURA (MÁQUINA DO TEMPO) */}
+          <View style={styles.monthNav}>
+            <TouchableOpacity
+              onPress={() => setMonthOffset((m) => m - 1)}
+              style={styles.navBtn}
+            >
+              <Ionicons
+                name='chevron-back'
+                size={24}
+                color={colors.foreground}
+              />
+            </TouchableOpacity>
+
+            <View style={{ alignItems: 'center' }}>
+              <Text style={[styles.monthTitle, { color: colors.foreground }]}>
+                {MONTH_NAMES[targetMonth]} {targetYear}
+              </Text>
+              <View
+                style={[
+                  styles.statusBadge,
+                  { backgroundColor: statusColor + '20' },
+                ]}
+              >
+                <Text style={[styles.statusText, { color: statusColor }]}>
+                  {invoiceStatus}
+                </Text>
+              </View>
+            </View>
+
+            <TouchableOpacity
+              onPress={() => setMonthOffset((m) => m + 1)}
+              style={styles.navBtn}
+            >
+              <Ionicons
+                name='chevron-forward'
+                size={24}
+                color={colors.foreground}
+              />
+            </TouchableOpacity>
+          </View>
+
           {/* O CARTÃO FÍSICO VISUAL */}
           <View
             style={[
@@ -255,12 +382,9 @@ export function CartaoScreen() {
               />
             </View>
             <View style={styles.cardBody}>
-              <Text style={styles.invoiceLabel}>
-                Fatura Atual ({String(targetMonth + 1).padStart(2, '0')}/
-                {targetYear})
-              </Text>
+              <Text style={styles.invoiceLabel}>Total da Fatura</Text>
               <Text style={styles.invoiceValue}>
-                {formatCurrency(currentInvoice)}
+                {formatCurrency(totalInvoice)}
               </Text>
             </View>
             <View style={styles.cardFooter}>
@@ -273,7 +397,7 @@ export function CartaoScreen() {
             </View>
           </View>
 
-          {/* BARRA DE LIMITE */}
+          {/* BARRA DE LIMITE GLOBAL */}
           <View
             style={[
               styles.limitSection,
@@ -282,7 +406,7 @@ export function CartaoScreen() {
           >
             <View style={styles.limitHeader}>
               <Text style={[styles.limitTitle, { color: colors.foreground }]}>
-                Limite do Cartão
+                Limite Global
               </Text>
               <Text
                 style={[styles.limitTotal, { color: colors.mutedForeground }]}
@@ -325,54 +449,45 @@ export function CartaoScreen() {
                   {formatCurrency(availableLimit)}
                 </Text>
               </View>
-              <View style={{ alignItems: 'flex-end' }}>
-                <Text
-                  style={[
-                    styles.limitSubLabel,
-                    { color: colors.mutedForeground },
-                  ]}
-                >
-                  Utilizado
-                </Text>
-                <Text
-                  style={[styles.limitSubValue, { color: colors.foreground }]}
-                >
-                  {formatCurrency(currentInvoice)}
-                </Text>
-              </View>
             </View>
           </View>
 
-          {/* BOTÃO DE PAGAMENTO */}
+          {/* BOTÃO DE PAGAMENTO (Baseado na Dívida Pendente da fatura visível) */}
           <TouchableOpacity
             style={[
               styles.payButton,
               {
                 backgroundColor:
-                  currentInvoice > 0 ? colors.primary : colors.border,
+                  pendingInvoice > 0 ? colors.primary : colors.border,
               },
             ]}
-            disabled={currentInvoice <= 0}
+            disabled={pendingInvoice <= 0}
             onPress={handlePayInvoice}
           >
             <Ionicons
-              name='checkmark-circle-outline'
+              name={
+                pendingInvoice > 0
+                  ? 'wallet-outline'
+                  : 'checkmark-circle-outline'
+              }
               size={20}
-              color={currentInvoice > 0 ? '#FFF' : colors.mutedForeground}
+              color={pendingInvoice > 0 ? '#FFF' : colors.mutedForeground}
             />
             <Text
               style={[
                 styles.payButtonText,
-                { color: currentInvoice > 0 ? '#FFF' : colors.mutedForeground },
+                { color: pendingInvoice > 0 ? '#FFF' : colors.mutedForeground },
               ]}
             >
-              {currentInvoice > 0 ? 'Pagar Fatura' : 'Fatura Zerada'}
+              {pendingInvoice > 0
+                ? `Pagar ${formatCurrency(pendingInvoice)}`
+                : 'Fatura sem pendências'}
             </Text>
           </TouchableOpacity>
 
           {/* LISTA DE DESPESAS DA FATURA */}
           <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
-            Lançamentos da Fatura
+            Lançamentos
           </Text>
           <View
             style={[
@@ -413,7 +528,7 @@ export function CartaoScreen() {
             <Text
               style={[styles.modalSubtitle, { color: colors.mutedForeground }]}
             >
-              O valor de {formatCurrency(currentInvoice)} será debitado da conta
+              O valor de {formatCurrency(pendingInvoice)} será debitado da conta
               selecionada abaixo:
             </Text>
 
@@ -479,12 +594,34 @@ export function CartaoScreen() {
                 style={[styles.confirmBtn, { backgroundColor: colors.primary }]}
                 onPress={confirmPayment}
               >
-                <Text style={styles.confirmBtnText}>Confirmar Pagamento</Text>
+                <Text style={styles.confirmBtnText}>Confirmar</Text>
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
+
+      {/* MODAIS DE EDIÇÃO DA TRANSAÇÃO */}
+      <TransactionDetailModal
+        transaction={isEditing ? null : selectedTx}
+        onClose={() => setSelectedTx(null)}
+        onEdit={() => setIsEditing(true)}
+      />
+
+      {isEditing && selectedTx && (
+        <AddTransactionModal
+          visible={isEditing}
+          onClose={() => {
+            setIsEditing(false);
+            setSelectedTx(null);
+          }}
+          onAdd={addTransaction}
+          onUpdate={updateTransaction}
+          accounts={accounts}
+          tags={tags}
+          transactionToEdit={selectedTx}
+        />
+      )}
     </View>
   );
 }
@@ -506,6 +643,23 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   content: { padding: 16, paddingBottom: 40, gap: 20 },
+
+  // 👉 ESTILOS DA NAVEGAÇÃO DA FATURA
+  monthNav: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 8,
+  },
+  navBtn: { padding: 8 },
+  monthTitle: { fontSize: 18, fontWeight: '700' },
+  statusBadge: {
+    marginTop: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  statusText: { fontSize: 10, fontWeight: '800' },
 
   creditCardVisual: {
     borderRadius: 20,

@@ -2,13 +2,13 @@
   "expo": {
     "name": "Horizonte",
     "slug": "horizonte",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "splash": {
       "image": "./assets/images/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#1E1E1E"
     },
     "scheme": "horizonte",
     "userInterfaceStyle": "automatic",
@@ -20,7 +20,7 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#FF7043"
       },
       "package": "com.horizonte.financas"
     },
