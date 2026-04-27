@@ -43,7 +43,7 @@ interface AddTransactionModalProps {
   visible: boolean;
   onClose: () => void;
   onAdd: (tx: any) => void;
-  onUpdate?: (tx: any, mode: string ) => void;
+  onUpdate?: (tx: any, mode: string) => void;
   accounts: Account[];
   tags: any[];
   transactionToEdit?: Transaction | null;
@@ -70,7 +70,6 @@ export function AddTransactionModal({
   const insets = useSafeAreaInsets();
   const isEditing = !!transactionToEdit;
 
-  // Variável para facilitar a verificação se existem contas
   const hasAccounts = accounts.length > 0;
 
   const getFormattedDate = (offsetDays = 0) => {
@@ -183,7 +182,6 @@ export function AddTransactionModal({
               { backgroundColor: colors.card, borderColor: colors.border },
             ]}
           >
-            {/* O cabeçalho do calendário que já existe */}
             <View style={styles.calendarHeader}>
               <TouchableOpacity
                 onPress={() => setCalendarMonth(new Date(year, month - 1, 1))}
@@ -209,66 +207,66 @@ export function AddTransactionModal({
                 />
               </TouchableOpacity>
             </View>
-          </View>
 
-          <View style={styles.calendarGrid}>
-            {WEEK_DAYS.map((wd, i) => (
-              <View key={`wd-${i}`} style={styles.calendarDayCell}>
-                <Text style={{ fontSize: 10, color: colors.mutedForeground }}>
-                  {wd[0]}
-                </Text>
-              </View>
-            ))}
-            {days.map((d, i) => {
-              if (!d)
+            <View style={styles.calendarGrid}>
+              {WEEK_DAYS.map((wd, i) => (
+                <View key={`wd-${i}`} style={styles.calendarDayCell}>
+                  <Text style={{ fontSize: 10, color: colors.mutedForeground }}>
+                    {wd[0]}
+                  </Text>
+                </View>
+              ))}
+              {days.map((d, i) => {
+                if (!d)
+                  return (
+                    <View key={`empty-${i}`} style={styles.calendarDayCell} />
+                  );
+
+                const isSelected =
+                  parsedCurrentDate.getDate() === d &&
+                  parsedCurrentDate.getMonth() === month &&
+                  parsedCurrentDate.getFullYear() === year;
+                const isToday =
+                  today.getDate() === d &&
+                  today.getMonth() === month &&
+                  today.getFullYear() === year;
+
                 return (
-                  <View key={`empty-${i}`} style={styles.calendarDayCell} />
-                );
-
-              const isSelected =
-                parsedCurrentDate.getDate() === d &&
-                parsedCurrentDate.getMonth() === month &&
-                parsedCurrentDate.getFullYear() === year;
-              const isToday =
-                today.getDate() === d &&
-                today.getMonth() === month &&
-                today.getFullYear() === year;
-
-              return (
-                <TouchableOpacity
-                  key={`day-${d}`}
-                  style={styles.calendarDayCell}
-                  onPress={() => {
-                    const newDate = `${String(d).padStart(2, '0')}/${String(month + 1).padStart(2, '0')}/${year}`;
-                    if (calendarTarget === 'main') setDate(newDate);
-                    if (calendarTarget === 'start') setRecurrenceStart(newDate);
-                    if (calendarTarget === 'end') setRecurrenceEnd(newDate);
-                    setCalendarTarget(null);
-                  }}
-                >
-                  <View
-                    style={[
-                      styles.dayInner,
-                      isSelected && { backgroundColor: colors.primary },
-                      isToday &&
+                  <TouchableOpacity
+                    key={`day-${d}`}
+                    style={styles.calendarDayCell}
+                    onPress={() => {
+                      const newDate = `${String(d).padStart(2, '0')}/${String(month + 1).padStart(2, '0')}/${year}`;
+                      if (calendarTarget === 'main') setDate(newDate);
+                      if (calendarTarget === 'start') setRecurrenceStart(newDate);
+                      if (calendarTarget === 'end') setRecurrenceEnd(newDate);
+                      setCalendarTarget(null);
+                    }}
+                  >
+                    <View
+                      style={[
+                        styles.dayInner,
+                        isSelected && { backgroundColor: colors.primary },
+                        isToday &&
                         !isSelected && {
                           borderWidth: 1,
                           borderColor: colors.primary,
                         },
-                    ]}
-                  >
-                    <Text
-                      style={{
-                        color: isSelected ? '#FFF' : colors.foreground,
-                        fontSize: 13,
-                      }}
+                      ]}
                     >
-                      {d}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
+                      <Text
+                        style={{
+                          color: isSelected ? '#FFF' : colors.foreground,
+                          fontSize: 13,
+                        }}
+                      >
+                        {d}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
             <TouchableOpacity
               style={styles.calendarCloseBtn}
               onPress={() => setCalendarTarget(null)}
@@ -292,7 +290,6 @@ export function AddTransactionModal({
   };
 
   const handleSubmit = () => {
-    // Adicionada validação de hasAccounts para evitar envio forçado
     if (!hasAccounts || !amount || !accountId) return;
     if (type === 'transferencia' && !targetAccountId) {
       alert('Selecione uma conta de destino para a transferência.');
@@ -336,7 +333,6 @@ export function AddTransactionModal({
     };
 
     if (isEditing && onUpdate) {
-      // 👉 A INTERCEPTAÇÃO DO DNA
       const isFamily =
         transactionToEdit.groupId || transactionToEdit.id.includes('-');
 
@@ -364,7 +360,6 @@ export function AddTransactionModal({
         style={{ flex: 1, backgroundColor: colors.background }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        {/* CABEÇALHO */}
         <View
           style={[
             styles.header,
@@ -378,7 +373,6 @@ export function AddTransactionModal({
             {isEditing ? 'Editar' : 'Novo Lançamento'}
           </Text>
 
-          {/* Oculta botão salvar se não houver contas */}
           {hasAccounts ? (
             <TouchableOpacity
               onPress={handleSubmit}
@@ -387,11 +381,10 @@ export function AddTransactionModal({
               <Text style={styles.saveBtnText}>Salvar</Text>
             </TouchableOpacity>
           ) : (
-            <View style={{ width: 60 }} /> // Espaçador para manter o título centralizado
+            <View style={{ width: 60 }} />
           )}
         </View>
 
-        {/* VERIFICAÇÃO DE CONTAS EXISTENTES */}
         {hasAccounts ? (
           <ScrollView
             contentContainerStyle={styles.content}
@@ -491,7 +484,7 @@ export function AddTransactionModal({
                     .filter(
                       (acc) =>
                         acc.id !== accountId && acc.type !== 'cartao_credito',
-                    ) // Não pode transferir para a própria conta nem para cartão
+                    )
                     .map((acc) => (
                       <TouchableOpacity
                         key={acc.id}
@@ -525,11 +518,11 @@ export function AddTransactionModal({
                   (acc) =>
                     acc.id !== accountId && acc.type !== 'cartao_credito',
                 ).length === 0 && (
-                  <Text style={{ fontSize: 11, color: colors.destructive }}>
-                    Não tem outras contas disponíveis para receber a
-                    transferência.
-                  </Text>
-                )}
+                    <Text style={{ fontSize: 11, color: colors.destructive }}>
+                      Não tem outras contas disponíveis para receber a
+                      transferência.
+                    </Text>
+                  )}
               </View>
             )}
 
@@ -761,7 +754,6 @@ export function AddTransactionModal({
                       color={colors.primary}
                     />
                   </TouchableOpacity>
-                  {calendarTarget === 'start' && renderCalendar()}
                 </View>
                 <View style={styles.field}>
                   <Text
@@ -790,7 +782,6 @@ export function AddTransactionModal({
                       color={colors.primary}
                     />
                   </TouchableOpacity>
-                  {calendarTarget === 'end' && renderCalendar()}
                 </View>
               </View>
             )}
@@ -809,7 +800,6 @@ export function AddTransactionModal({
             )}
           </ScrollView>
         ) : (
-          /* MENSAGEM QUANDO NÃO HÁ CONTAS */
           <View style={styles.emptyStateContainer}>
             <Ionicons
               name='wallet-outline'
@@ -830,6 +820,7 @@ export function AddTransactionModal({
             </Text>
           </View>
         )}
+        {/* Renderiza o modal de calendário se estiver ativo */}
         {renderCalendar()}
         <RecurrenceActionModal
           visible={recurrenceActionVisible}
@@ -839,7 +830,7 @@ export function AddTransactionModal({
             setRecurrenceActionVisible(false);
             if (onUpdate && pendingTxData) {
               onUpdate(pendingTxData, mode);
-              onClose(); // Fecha o AddTransactionModal também
+              onClose();
             }
           }}
         />
@@ -912,7 +903,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     marginRight: 8,
   },
-  // calendarBox: { marginTop: 8, borderRadius: 12, padding: 12, borderWidth: 1 },
   calendarHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -934,7 +924,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // Estilos da mensagem de erro
   emptyStateContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -949,26 +938,28 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   emptyStateText: { fontSize: 14, textAlign: 'center', lineHeight: 20 },
+
+  // 👉 Estilos Adicionados para forçar o Calendário a aparecer por cima
   calendarOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   calendarBox: {
-    width: '85%',
+    width: '90%',
     borderRadius: 20,
     padding: 20,
     borderWidth: 1,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
+    shadowOpacity: 0.3,
     shadowRadius: 10,
-    elevation: 8,
+    elevation: 10,
   },
   calendarCloseBtn: {
-    marginTop: 16,
+    marginTop: 20,
     alignItems: 'center',
-    paddingVertical: 10,
+    paddingVertical: 12,
   },
 });

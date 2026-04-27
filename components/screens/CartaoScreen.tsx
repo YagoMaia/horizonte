@@ -616,7 +616,7 @@ export function CartaoScreen() {
             setSelectedTx(null);
           }}
           onAdd={addTransaction}
-          onUpdate={updateTransaction}
+          onUpdate={(updatedTx: any, mode: any) => updateTransaction(updatedTx, mode)}
           accounts={accounts}
           tags={tags}
           transactionToEdit={selectedTx}
