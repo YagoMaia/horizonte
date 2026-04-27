@@ -21,7 +21,6 @@ import {
 } from '@/lib/utils';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// ... (keep MONTH_NAMES, WEEK_DAYS, getDaysInMonth, getWeekDay, formatShort)
 const MONTH_NAMES = [
   'Janeiro',
   'Fevereiro',
@@ -82,7 +81,6 @@ export function HorizonteScreen() {
         } else {
           setActiveAccountIds(accounts.map((a) => a.id));
         }
-        // Nota: O orçamento mensal não é mais carregado aqui, o useStore já fez isso.
       } catch (e) {
         console.error(e);
       }
@@ -90,7 +88,6 @@ export function HorizonteScreen() {
     loadConfig();
   }, [accounts]);
 
-  // Preenche o input do modal com o orçamento efetivo ao abrir
   useEffect(() => {
     if (configModalVisible) {
       setBudgetInput(
@@ -113,7 +110,6 @@ export function HorizonteScreen() {
     );
   };
 
-  // 👉 3. Usa a função do Store para salvar, passando o ano e mês
   const saveBudget = async () => {
     const value = parseFloat(budgetInput.replace(',', '.'));
     if (!isNaN(value)) {
@@ -138,7 +134,6 @@ export function HorizonteScreen() {
   const activeBalance = accounts
     .filter((a) => activeAccountIds.includes(a.id))
     .reduce((s, a) => {
-      // Cartão de crédito não soma no saldo de liquidez real
       if (a.type === 'cartao_credito') {
         return s;
       }
@@ -147,12 +142,16 @@ export function HorizonteScreen() {
 
   const days = useMemo(() => {
     const daysCount = getDaysInMonth(year, month);
-    const monthTxs = transactions.filter((tx) => {
+
+    // 👉 CORREÇÃO: Filtramos primeiro TODAS as transações para usar apenas as das contas ativas
+    const activeTransactions = transactions.filter(tx => activeAccountIds.includes(tx.accountId));
+
+    const monthTxs = activeTransactions.filter((tx) => {
       const d = new Date(tx.date);
       return d.getFullYear() === year && d.getMonth() === month;
     });
 
-    const thisPlusAfterTxs = transactions.filter((tx) => {
+    const thisPlusAfterTxs = activeTransactions.filter((tx) => {
       const d = new Date(tx.date);
       return (
         d.getFullYear() > year ||
@@ -170,7 +169,6 @@ export function HorizonteScreen() {
     let runningBalance = openingBalance;
     const result = [];
 
-    // 👉 LÓGICA ATUALIZADA: Calcular despesas do mês até o dia atual
     let frozenFutureDailyPlan = 0;
     let accumulatedMonthlyExpense = 0;
 
@@ -199,16 +197,13 @@ export function HorizonteScreen() {
         month === today.getMonth() &&
         year === today.getFullYear();
 
-      // Atualiza despesa acumulada do mês
       if (isPast) {
         accumulatedMonthlyExpense += expense;
       }
 
-      // 👉 NOVO CÁLCULO DE DAILY PLAN
       let dailyPlan = 0;
 
       if (currentBudget > 0) {
-        // Só recalcula dinamicamente se for o passado ou o dia de HOJE
         if (isPast || isToday) {
           const remainingBudgetForMonth =
             currentBudget - accumulatedMonthlyExpense;
@@ -218,14 +213,11 @@ export function HorizonteScreen() {
               ? remainingBudgetForMonth / remainingDays
               : 0;
 
-          // Se for hoje, congela este número para usar no resto do mês
           if (isToday) {
             frozenFutureDailyPlan = dailyPlan;
           }
         }
-        // Se for um dia no futuro (d > hoje), usa o valor travado!
         else {
-          // Falha mitigada: Se estivermos a olhar para um mês futuro inteiro, usa o valor base
           const isFutureMonth =
             month > today.getMonth() || year > today.getFullYear();
           dailyPlan = isFutureMonth
@@ -254,7 +246,8 @@ export function HorizonteScreen() {
       });
     }
     return result;
-  }, [transactions, activeBalance, year, month, currentBudget]);
+    // 👉 Adicionado activeAccountIds como dependência para a tela atualizar ao salvar a configuração
+  }, [transactions, activeBalance, year, month, currentBudget, activeAccountIds]);
 
   const totalIncome = days.reduce((s, d) => s + d.income, 0);
   const totalExpense = days.reduce((s, d) => s + d.expense, 0);
@@ -269,7 +262,6 @@ export function HorizonteScreen() {
       style={{ flex: 1, backgroundColor: colors.background }}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      {/* ... (Header Month Nav) ... */}
       <View
         style={[
           styles.monthNav,
@@ -301,7 +293,6 @@ export function HorizonteScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* ... (Budget Card) ... */}
       <View
         style={[
           styles.budgetCard,
@@ -346,7 +337,6 @@ export function HorizonteScreen() {
         </View>
       </View>
 
-      {/* ... (Summary Strip) ... */}
       <View
         style={[
           styles.summaryStrip,
@@ -406,7 +396,6 @@ export function HorizonteScreen() {
             : idx % 2 === 0
               ? colors.card
               : colors.background;
-          // Atualiza a lógica de economia: tem que ter um dailyPlan ativo (>0)
           const economizou =
             currentBudget > 0 && d.dailyPlan > 0 && d.expense < d.dailyPlan;
           const excedeu =
@@ -611,7 +600,6 @@ export function HorizonteScreen() {
                 style={{ maxHeight: 350 }}
                 showsVerticalScrollIndicator={false}
               >
-                {/* 👉 NOVO INPUT: Orçamento Mensal */}
                 <View style={{ marginBottom: 20 }}>
                   <Text
                     style={[styles.configLabel, { color: colors.foreground }]}
@@ -843,7 +831,7 @@ export function HorizonteScreen() {
               showsVerticalScrollIndicator={false}
             >
               {!selectedDay?.transactions ||
-              selectedDay.transactions.length === 0 ? (
+                selectedDay.transactions.length === 0 ? (
                 <View style={styles.emptyModal}>
                   <Ionicons
                     name='calendar-clear-outline'
@@ -1145,7 +1133,6 @@ const styles = StyleSheet.create({
   },
   saveBtnText: { fontSize: 15, fontWeight: '700' },
 
-  // Novos Estilos
   configLabel: { fontSize: 14, fontWeight: '700' },
   budgetInputContainer: {
     flexDirection: 'row',
