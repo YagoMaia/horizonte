@@ -10,6 +10,7 @@ import {
   FlatList,
   ScrollView,
   Alert,
+  Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/hooks/useTheme';
@@ -19,15 +20,14 @@ import {
   formatDateShort,
 } from '@/lib/utils';
 import { useStoreContext } from '@/context/StoreContext';
-import { Transaction, Account } from '@/constants/types';
+import { Transaction, Account, TransactionType } from '@/constants/types';
 import { TransactionDetailModal } from '../TransactionDetailModal';
 import { AddTransactionModal } from '../AddTransactionModal';
-
-// 👉 IMPORTAÇÕES NOVAS PARA O SWIPE
 import {
   GestureHandlerRootView,
   Swipeable,
 } from 'react-native-gesture-handler';
+import { RecurrenceActionModal } from '../RecurrenceActionModal';
 
 export function SaldosScreen() {
   const { colors } = useTheme();
@@ -40,7 +40,7 @@ export function SaldosScreen() {
     monthlyExpense,
     addTransaction,
     updateTransaction,
-    deleteTransaction, // 👉 PRECISAMOS DESSA FUNÇÃO PARA O SWIPE DE DELETAR
+    deleteTransaction,
     loading,
     showPending,
     setShowPending,
@@ -49,9 +49,26 @@ export function SaldosScreen() {
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [displayLimit, setDisplayLimit] = useState(20);
+  const [recurrenceDeleteData, setRecurrenceDeleteData] = useState<
+    string | null
+  >(null);
 
-  // 👉 CONTROLE DOS SWIPES ABERTOS (Para fechar o anterior ao abrir um novo)
-  // Utilizamos um Ref para guardar as referências dos itens da lista
+  // 👉 1. NOVOS ESTADOS PARA OS FILTROS
+  const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
+  const [filterType, setFilterType] = useState<TransactionType | 'todas'>(
+    'todas',
+  );
+  const [filterAccountId, setFilterAccountId] = useState<string | 'todas'>(
+    'todas',
+  );
+  const [filterTagId, setFilterTagId] = useState<string | 'todas'>('todas');
+
+  // Conta quantos filtros estão ativos (para a bolinha vermelha no ícone)
+  const activeFiltersCount =
+    (filterType !== 'todas' ? 1 : 0) +
+    (filterAccountId !== 'todas' ? 1 : 0) +
+    (filterTagId !== 'todas' ? 1 : 0);
+
   const rowRefs = React.useRef(new Map()).current;
   let currentlyOpenRowId: string | null = null;
 
@@ -61,11 +78,34 @@ export function SaldosScreen() {
     }
   };
 
+  // 👉 2. O MOTOR DE BUSCA (A LÓGICA DO FILTRO MULTI-CRITÉRIOS)
   const displayedTransactions = useMemo(() => {
     return transactions
-      .filter((tx) => (showPending ? true : tx.paid === true))
+      .filter((tx) => {
+        // Regra 1: Ocultar previstos se o switch estiver desligado
+        if (!showPending && !tx.paid) return false;
+
+        // Regra 2: Filtro de Tipo (Receita, Despesa, Transferência)
+        if (filterType !== 'todas' && tx.type !== filterType) return false;
+
+        // Regra 3: Filtro de Conta (O pulo do gato: procura na origem E no destino)
+        if (filterAccountId !== 'todas') {
+          if (
+            tx.accountId !== filterAccountId &&
+            tx.targetAccountId !== filterAccountId
+          ) {
+            return false;
+          }
+        }
+
+        // Regra 4: Filtro de Tag
+        if (filterTagId !== 'todas' && !tx.tagIds.includes(filterTagId))
+          return false;
+
+        return true;
+      })
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [transactions, showPending]);
+  }, [transactions, showPending, filterType, filterAccountId, filterTagId]);
 
   const paginatedTransactions = useMemo(() => {
     return displayedTransactions.slice(0, displayLimit);
@@ -79,44 +119,56 @@ export function SaldosScreen() {
 
   React.useEffect(() => {
     setDisplayLimit(20);
-    closeCurrentlyOpenRow(); // Fecha swipes abertos ao mudar filtro
-  }, [showPending]);
+    closeCurrentlyOpenRow();
+  }, [showPending, filterType, filterAccountId, filterTagId]);
 
-  // 👉 AÇÕES DE SWIPE (Funções disparadas pelos botões)
+  const clearFilters = () => {
+    setFilterType('todas');
+    setFilterAccountId('todas');
+    setFilterTagId('todas');
+  };
 
+  // Funções de Swipe (Mantidas)
   const handleTogglePaid = (tx: Transaction) => {
     closeCurrentlyOpenRow();
-    // Inverte o status de pago
     updateTransaction({ ...tx, paid: !tx.paid });
   };
 
   const handleDeletePrompt = (txId: string) => {
-    Alert.alert(
-      'Apagar Lançamento',
-      'Tem certeza que deseja excluir esta transação?',
-      [
-        { text: 'Cancelar', style: 'cancel', onPress: closeCurrentlyOpenRow },
-        {
-          text: 'Apagar',
-          style: 'destructive',
-          onPress: () => {
-            closeCurrentlyOpenRow();
-            deleteTransaction(txId);
+    const tx = transactions.find((t) => t.id === txId);
+    if (!tx) return;
+
+    const isFamily = tx.groupId || tx.id.includes('-');
+
+    if (isFamily) {
+      // 👉 Se tem família, abre o Bottom Sheet Customizado
+      closeCurrentlyOpenRow();
+      setRecurrenceDeleteData(txId);
+    } else {
+      // 👉 Se for órfã, usa o Alert padrão do sistema
+      Alert.alert(
+        'Apagar Lançamento',
+        'Tem certeza que deseja excluir esta transação?',
+        [
+          { text: 'Cancelar', style: 'cancel', onPress: closeCurrentlyOpenRow },
+          {
+            text: 'Apagar',
+            style: 'destructive',
+            onPress: () => {
+              closeCurrentlyOpenRow();
+              deleteTransaction(txId, 'single');
+            },
           },
-        },
-      ],
-    );
+        ],
+      );
+    }
   };
 
-  // 👉 RENDERIZAÇÃO DOS BOTÕES OCULTOS NO SWIPE
-
-  // O que aparece quando desliza da Esquerda para a Direita (Toggle Status)
   const renderLeftActions = (tx: Transaction) => {
     const isPaid = tx.paid;
     const actionColor = isPaid ? colors.warning : colors.success;
     const actionIcon = isPaid ? 'time-outline' : 'checkmark-circle-outline';
     const actionLabel = isPaid ? 'Tornar\nPendente' : 'Marcar\nPago';
-
     return (
       <TouchableOpacity
         style={[
@@ -132,7 +184,6 @@ export function SaldosScreen() {
     );
   };
 
-  // O que aparece quando desliza da Direita para a Esquerda (Deletar)
   const renderRightActions = (txId: string) => {
     return (
       <TouchableOpacity
@@ -162,10 +213,8 @@ export function SaldosScreen() {
     );
   }
 
-  // CABEÇALHO DA LISTA
   const renderHeader = () => (
     <View style={{ gap: 16, paddingBottom: 8 }}>
-      {/* Card de Saldo Total */}
       <View style={[styles.balanceCard, { backgroundColor: colors.primary }]}>
         <Text style={styles.balanceLabel}>Saldo Total</Text>
         <Text style={styles.balanceValue}>{formatCurrency(totalBalance)}</Text>
@@ -194,7 +243,6 @@ export function SaldosScreen() {
         </View>
       </View>
 
-      {/* Seção de Contas e Cartões */}
       <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
         Contas e Cartões
       </Text>
@@ -203,11 +251,9 @@ export function SaldosScreen() {
           {accounts.map((acc: Account) => {
             const isCreditCard = acc.type === 'cartao_credito';
             let currentInvoice = 0;
-
             if (isCreditCard) {
               currentInvoice = calculateCreditCardInvoice(acc, transactions);
             }
-
             const cardLimit =
               acc.creditLimit || (acc.balance > 0 ? acc.balance : 0);
             const availableLimit = Math.max(0, cardLimit - currentInvoice);
@@ -272,28 +318,56 @@ export function SaldosScreen() {
         </View>
       </ScrollView>
 
-      {/* Cabeçalho de Lançamentos */}
       <View style={styles.sectionHeader}>
         <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
           Lançamentos
         </Text>
+
+        {/* 👉 3. BOTÕES DE FILTRO NO CABEÇALHO */}
         <View style={styles.filterToggle}>
-          <Text style={[styles.filterText, { color: colors.mutedForeground }]}>
-            Mostrar previstos
-          </Text>
-          <Switch
-            value={showPending}
-            onValueChange={setShowPending}
-            trackColor={{ false: colors.border, true: colors.primary }}
-            thumbColor='#ffffff'
-            style={{ transform: [{ scale: 0.8 }] }}
-          />
+          <TouchableOpacity
+            style={[
+              styles.filterBtn,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+            onPress={() => setIsFilterModalOpen(true)}
+          >
+            <Ionicons
+              name='options-outline'
+              size={18}
+              color={colors.foreground}
+            />
+            {activeFiltersCount > 0 && (
+              <View
+                style={[
+                  styles.filterBadge,
+                  { backgroundColor: colors.primary },
+                ]}
+              >
+                <Text style={styles.filterBadgeText}>{activeFiltersCount}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Text
+              style={[styles.filterText, { color: colors.mutedForeground }]}
+            >
+              Previstos
+            </Text>
+            <Switch
+              value={showPending}
+              onValueChange={setShowPending}
+              trackColor={{ false: colors.border, true: colors.primary }}
+              thumbColor='#ffffff'
+              style={{ transform: [{ scale: 0.8 }] }}
+            />
+          </View>
         </View>
       </View>
     </View>
   );
 
-  // ITEM INDIVIDUAL DA LISTA
   const renderItem = ({
     item: tx,
     index,
@@ -313,8 +387,6 @@ export function SaldosScreen() {
 
     const tag =
       tx.tagIds?.length > 0 ? tags.find((t) => t.id === tx.tagIds[0]) : null;
-
-    // 👉 NOVO: Buscamos as DUAS contas (Origem e Destino)
     const account = accounts.find((a) => a.id === tx.accountId);
     const targetAccount =
       tx.type === 'transferencia'
@@ -336,7 +408,6 @@ export function SaldosScreen() {
           ? 'swap-horizontal'
           : 'arrow-down';
 
-    // O corpo principal do item (a parte branca que desliza)
     const ItemContent = () => (
       <TouchableOpacity
         style={[
@@ -347,7 +418,7 @@ export function SaldosScreen() {
           !isLast && { borderBottomWidth: StyleSheet.hairlineWidth },
         ]}
         onPress={() => setSelectedTx(tx)}
-        activeOpacity={1} // Alterado para 1 para evitar conflito tátil com o Swipe
+        activeOpacity={1}
       >
         <View style={[styles.txIcon, { backgroundColor: iconColor + '15' }]}>
           <Ionicons name={iconName as any} size={18} color={iconColor} />
@@ -360,7 +431,6 @@ export function SaldosScreen() {
           >
             {tx.description}
           </Text>
-
           <View style={styles.txMeta}>
             <Text style={[styles.txDateText, { color: colors.primary }]}>
               {formatDateShort(tx.date)}
@@ -373,8 +443,6 @@ export function SaldosScreen() {
               {tag?.name || 'Sem categoria'}
             </Text>
             <View style={[styles.txDot, { backgroundColor: colors.border }]} />
-
-            {/* 👉 NOVO: Renderização condicional para Transferências */}
             <Text
               style={[styles.txMetaText, { color: colors.mutedForeground }]}
               numberOfLines={1}
@@ -391,7 +459,6 @@ export function SaldosScreen() {
             {isReceita ? '+' : tx.type === 'transferencia' ? '' : '-'}
             {formatCurrency(tx.amount)}
           </Text>
-
           <View style={styles.badgesContainer}>
             {isCredito && (
               <View
@@ -429,29 +496,21 @@ export function SaldosScreen() {
       </TouchableOpacity>
     );
 
-    // 👉 COMPONENTE SWIPEABLE ENVOLVENDO O ITEM
     return (
       <Swipeable
         ref={(ref) => {
-          if (ref) {
-            rowRefs.set(tx.id, ref);
-          }
+          if (ref) rowRefs.set(tx.id, ref);
         }}
         renderLeftActions={() => renderLeftActions(tx)}
         renderRightActions={() => renderRightActions(tx.id)}
         onSwipeableWillOpen={() => {
-          // Fecha qualquer outro item aberto antes de abrir este
-          if (currentlyOpenRowId && currentlyOpenRowId !== tx.id) {
+          if (currentlyOpenRowId && currentlyOpenRowId !== tx.id)
             closeCurrentlyOpenRow();
-          }
           currentlyOpenRowId = tx.id;
         }}
         onSwipeableWillClose={() => {
-          if (currentlyOpenRowId === tx.id) {
-            currentlyOpenRowId = null;
-          }
+          if (currentlyOpenRowId === tx.id) currentlyOpenRowId = null;
         }}
-        // Limita a área de resistência visual para não quebrar os cantos arredondados
         containerStyle={[
           isFirst && styles.txItemFirst,
           isLast && styles.txItemLast,
@@ -464,7 +523,6 @@ export function SaldosScreen() {
   };
 
   return (
-    // 👉 GESTURE HANDLER ROOT VIEW: Necessário para o Swipe funcionar no Android
     <GestureHandlerRootView style={{ flex: 1 }}>
       <FlatList
         data={paginatedTransactions}
@@ -489,8 +547,20 @@ export function SaldosScreen() {
               color={colors.mutedForeground}
             />
             <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
-              Nenhum lançamento
+              {activeFiltersCount > 0
+                ? 'Nenhum lançamento encontrado para os filtros ativos.'
+                : 'Nenhum lançamento'}
             </Text>
+            {activeFiltersCount > 0 && (
+              <TouchableOpacity
+                onPress={clearFilters}
+                style={{ marginTop: 12 }}
+              >
+                <Text style={{ color: colors.primary, fontWeight: '600' }}>
+                  Limpar Filtros
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
         }
       />
@@ -515,6 +585,321 @@ export function SaldosScreen() {
           transactionToEdit={selectedTx}
         />
       )}
+
+      {/* 👉 4. MODAL DE FILTROS */}
+      <Modal
+        visible={isFilterModalOpen}
+        transparent
+        animationType='slide'
+        onRequestClose={() => setIsFilterModalOpen(false)}
+      >
+        <View style={styles.modalOverlayBottom}>
+          <View
+            style={[
+              styles.filterModalContent,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+          >
+            <View style={styles.filterModalHeader}>
+              <Text style={[styles.modalTitle, { color: colors.foreground }]}>
+                Filtros Avançados
+              </Text>
+              <TouchableOpacity
+                onPress={() => setIsFilterModalOpen(false)}
+                style={[
+                  styles.closeBtn,
+                  { backgroundColor: colors.background },
+                ]}
+              >
+                <Ionicons name='close' size={20} color={colors.foreground} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              style={{ maxHeight: '80%' }}
+            >
+              {/* TIPO */}
+              <Text
+                style={[
+                  styles.filterGroupLabel,
+                  { color: colors.mutedForeground },
+                ]}
+              >
+                Tipo de Transação
+              </Text>
+              <View style={styles.chipRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.chip,
+                    {
+                      borderColor: colors.border,
+                      backgroundColor:
+                        filterType === 'todas' ? colors.primary : 'transparent',
+                    },
+                  ]}
+                  onPress={() => setFilterType('todas')}
+                >
+                  <Text
+                    style={[
+                      styles.chipText,
+                      {
+                        color:
+                          filterType === 'todas' ? '#FFF' : colors.foreground,
+                      },
+                    ]}
+                  >
+                    Todas
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.chip,
+                    {
+                      borderColor: colors.border,
+                      backgroundColor:
+                        filterType === 'receita'
+                          ? colors.success
+                          : 'transparent',
+                    },
+                  ]}
+                  onPress={() => setFilterType('receita')}
+                >
+                  <Text
+                    style={[
+                      styles.chipText,
+                      {
+                        color:
+                          filterType === 'receita' ? '#FFF' : colors.foreground,
+                      },
+                    ]}
+                  >
+                    Receitas
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.chip,
+                    {
+                      borderColor: colors.border,
+                      backgroundColor:
+                        filterType === 'despesa'
+                          ? colors.destructive
+                          : 'transparent',
+                    },
+                  ]}
+                  onPress={() => setFilterType('despesa')}
+                >
+                  <Text
+                    style={[
+                      styles.chipText,
+                      {
+                        color:
+                          filterType === 'despesa' ? '#FFF' : colors.foreground,
+                      },
+                    ]}
+                  >
+                    Despesas
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.chip,
+                    {
+                      borderColor: colors.border,
+                      backgroundColor:
+                        filterType === 'transferencia'
+                          ? colors.primary
+                          : 'transparent',
+                    },
+                  ]}
+                  onPress={() => setFilterType('transferencia')}
+                >
+                  <Text
+                    style={[
+                      styles.chipText,
+                      {
+                        color:
+                          filterType === 'transferencia'
+                            ? '#FFF'
+                            : colors.foreground,
+                      },
+                    ]}
+                  >
+                    Transferências
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* CONTA */}
+              <Text
+                style={[
+                  styles.filterGroupLabel,
+                  { color: colors.mutedForeground, marginTop: 24 },
+                ]}
+              >
+                Conta de Origem/Destino
+              </Text>
+              <View style={styles.chipRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.chip,
+                    {
+                      borderColor: colors.border,
+                      backgroundColor:
+                        filterAccountId === 'todas'
+                          ? colors.primary
+                          : 'transparent',
+                    },
+                  ]}
+                  onPress={() => setFilterAccountId('todas')}
+                >
+                  <Text
+                    style={[
+                      styles.chipText,
+                      {
+                        color:
+                          filterAccountId === 'todas'
+                            ? '#FFF'
+                            : colors.foreground,
+                      },
+                    ]}
+                  >
+                    Todas as Contas
+                  </Text>
+                </TouchableOpacity>
+                {accounts.map((acc) => (
+                  <TouchableOpacity
+                    key={acc.id}
+                    style={[
+                      styles.chip,
+                      {
+                        borderColor: acc.color,
+                        backgroundColor:
+                          filterAccountId === acc.id
+                            ? acc.color
+                            : 'transparent',
+                      },
+                    ]}
+                    onPress={() => setFilterAccountId(acc.id)}
+                  >
+                    <Text
+                      style={[
+                        styles.chipText,
+                        {
+                          color:
+                            filterAccountId === acc.id ? '#FFF' : acc.color,
+                        },
+                      ]}
+                    >
+                      {acc.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {/* TAGS */}
+              <Text
+                style={[
+                  styles.filterGroupLabel,
+                  { color: colors.mutedForeground, marginTop: 24 },
+                ]}
+              >
+                Categoria (Tag)
+              </Text>
+              <View style={styles.chipRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.chip,
+                    {
+                      borderColor: colors.border,
+                      backgroundColor:
+                        filterTagId === 'todas'
+                          ? colors.primary
+                          : 'transparent',
+                    },
+                  ]}
+                  onPress={() => setFilterTagId('todas')}
+                >
+                  <Text
+                    style={[
+                      styles.chipText,
+                      {
+                        color:
+                          filterTagId === 'todas' ? '#FFF' : colors.foreground,
+                      },
+                    ]}
+                  >
+                    Todas as Categorias
+                  </Text>
+                </TouchableOpacity>
+                {tags.map((tag) => (
+                  <TouchableOpacity
+                    key={tag.id}
+                    style={[
+                      styles.chip,
+                      {
+                        borderColor: tag.color,
+                        backgroundColor:
+                          filterTagId === tag.id ? tag.color : 'transparent',
+                      },
+                    ]}
+                    onPress={() => setFilterTagId(tag.id)}
+                  >
+                    <Text
+                      style={[
+                        styles.chipText,
+                        { color: filterTagId === tag.id ? '#FFF' : tag.color },
+                      ]}
+                    >
+                      {tag.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <View style={{ height: 40 }} />
+            </ScrollView>
+
+            {/* BOTÃO LIMPAR FILTROS (Só aparece se algo estiver filtrado) */}
+            {activeFiltersCount > 0 && (
+              <TouchableOpacity
+                style={styles.clearFiltersBtn}
+                onPress={clearFilters}
+              >
+                <Ionicons
+                  name='trash-outline'
+                  size={18}
+                  color={colors.destructive}
+                />
+                <Text style={{ color: colors.destructive, fontWeight: '600' }}>
+                  Limpar {activeFiltersCount} filtro(s) ativo(s)
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            <TouchableOpacity
+              style={[styles.applyBtn, { backgroundColor: colors.foreground }]}
+              onPress={() => setIsFilterModalOpen(false)}
+            >
+              <Text style={[styles.applyBtnText, { color: colors.background }]}>
+                Ver Resultados
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+      <RecurrenceActionModal
+        visible={!!recurrenceDeleteData}
+        actionType='delete'
+        onClose={() => setRecurrenceDeleteData(null)}
+        onSelect={(mode) => {
+          if (recurrenceDeleteData) {
+            deleteTransaction(recurrenceDeleteData, mode);
+          }
+          setRecurrenceDeleteData(null);
+        }}
+      />
     </GestureHandlerRootView>
   );
 }
@@ -557,8 +942,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingTop: 8,
   },
-  filterToggle: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+
+  // 👉 ESTILOS DOS BOTÕES DE FILTRO NO HEADER
+  filterToggle: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  filterBtn: {
+    padding: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    position: 'relative',
+  },
+  filterBadge: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#FFF',
+  },
+  filterBadgeText: { color: '#FFF', fontSize: 10, fontWeight: 'bold' },
   filterText: { fontSize: 13, fontWeight: '500' },
+
   sectionTitle: { fontSize: 16, fontWeight: '600' },
   accountsRow: { flexDirection: 'row', gap: 12, paddingRight: 16 },
   accountCard: {
@@ -589,9 +996,8 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderWidth: StyleSheet.hairlineWidth,
   },
-  emptyText: { fontSize: 14, fontWeight: '500' },
+  emptyText: { fontSize: 14, fontWeight: '500', textAlign: 'center' },
 
-  // ESTILOS DA LISTA E DOS ITENS
   txItem: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -610,7 +1016,6 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: 20,
     borderBottomRightRadius: 20,
   },
-
   txIcon: {
     width: 44,
     height: 44,
@@ -635,21 +1040,9 @@ const styles = StyleSheet.create({
   smallBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
   smallBadgeText: { fontSize: 9, fontWeight: '800' },
 
-  // 👉 NOVOS ESTILOS PARA OS BOTÕES OCULTOS DO SWIPE
-  hiddenAction: {
-    justifyContent: 'center',
-    alignItems: 'center',
-    width: 80,
-  },
-  hiddenActionLeft: {
-    // Esse estilo faz o fundo da ação preencher o buraco, mas sem quebrar as bordas arredondadas do componente pai
-    borderTopLeftRadius: 20,
-    borderBottomLeftRadius: 20,
-  },
-  hiddenActionRight: {
-    borderTopRightRadius: 20,
-    borderBottomRightRadius: 20,
-  },
+  hiddenAction: { justifyContent: 'center', alignItems: 'center', width: 80 },
+  hiddenActionLeft: { borderTopLeftRadius: 20, borderBottomLeftRadius: 20 },
+  hiddenActionRight: { borderTopRightRadius: 20, borderBottomRightRadius: 20 },
   hiddenActionText: {
     color: '#FFF',
     fontSize: 10,
@@ -658,4 +1051,57 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     textTransform: 'uppercase',
   },
+
+  // 👉 ESTILOS DO MODAL DE FILTRO
+  modalOverlayBottom: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'flex-end',
+  },
+  filterModalContent: {
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    borderWidth: 1,
+    padding: 24,
+    paddingBottom: 40,
+    maxHeight: '90%',
+  },
+  filterModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modalTitle: { fontSize: 20, fontWeight: '700' },
+  closeBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filterGroupLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    marginBottom: 12,
+  },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  chip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  chipText: { fontSize: 14, fontWeight: '600' },
+  clearFiltersBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    marginBottom: 12,
+  },
+  applyBtn: { padding: 16, borderRadius: 16, alignItems: 'center' },
+  applyBtnText: { fontSize: 16, fontWeight: '700' },
 });

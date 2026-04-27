@@ -46,6 +46,7 @@ export interface Transaction {
   recurrenceStartDate?: string
   recurrenceEndDate?: string
   targetAccountId?: string
+  groupId?: string
 }
 
 export interface DailyBalance {

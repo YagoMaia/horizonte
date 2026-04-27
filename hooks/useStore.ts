@@ -160,17 +160,24 @@ export function useStore() {
         }
       }
       // 2. RECORRÊNCIA MENSAL (Débito/Dinheiro)
+      // 2. RECORRÊNCIA MENSAL (Débito/Dinheiro)
       else if (tx.recurrence === 'mensal') {
         const baseId = Date.now().toString();
         const baseDate = new Date(tx.date);
-        for (let i = 0; i < 12; i++) {
+
+        // 👉 NOVO: Opcional. Você pode definir até quantas recorrências físicas quer gerar (ex: 24 meses).
+        const maxRecurrences = 24;
+
+        for (let i = 0; i < maxRecurrences; i++) {
           const currentDate = new Date(baseDate);
           currentDate.setMonth(baseDate.getMonth() + i);
           const isPaid = i === 0 ? tx.paid : false;
 
           newTransactions.push({
             ...tx,
-            id: `${baseId}-${i}`,
+            id: `${baseId}-${i}`, // Mantemos o ID sequencial
+            groupId: baseId, // 👉 NOVO DNA: Conecta toda a família
+            groupIndex: i, // 👉 NOVO DNA: Diz a ordem na família
             date: currentDate.toISOString(),
             paid: isPaid,
             paymentMethod: finalizedTxMethod,
@@ -220,25 +227,41 @@ export function useStore() {
     [transactions, accounts, saveTransactions, saveAccounts],
   );
 
+  // 👉 NOVA ASSINATURA: deleteTransaction(id, mode)
   const deleteTransaction = useCallback(
-    async (id: string) => {
-      const tx = transactions.find((t) => t.id === id);
-      if (!tx) return;
+    async (id: string, mode: 'single' | 'future' | 'all' = 'single') => {
+      const targetTx = transactions.find((t) => t.id === id);
+      if (!targetTx) return;
 
-      // Lógica de eliminação em massa para parcelas/recorrências
       let idsToDelete = [id];
-      if (id.includes('-')) {
-        const baseId = id.split('-')[0];
-        const relatedTxs = transactions.filter((t) =>
-          t.id.startsWith(`${baseId}-`),
+
+      // 👉 NOVA LÓGICA DE DETECÇÃO DE FAMÍLIA (Usando o DNA ou o formato antigo com hífen)
+      const isPartOfFamily = targetTx.groupId || id.includes('-');
+
+      if (isPartOfFamily && mode !== 'single') {
+        const baseId = targetTx.groupId || id.split('-')[0];
+
+        const familyTxs = transactions.filter(
+          (t) => t.groupId === baseId || t.id.startsWith(`${baseId}-`),
         );
-        idsToDelete = relatedTxs.map((t) => t.id);
+
+        if (mode === 'all') {
+          // Apaga toda a corrente, passada e futura
+          idsToDelete = familyTxs.map((t) => t.id);
+        } else if (mode === 'future') {
+          // Apaga esta e as posteriores baseando-se na data
+          const targetTime = new Date(targetTx.date).getTime();
+          const futureTxs = familyTxs.filter(
+            (t) => new Date(t.date).getTime() >= targetTime,
+          );
+          idsToDelete = futureTxs.map((t) => t.id);
+        }
       }
 
+      // 1. Filtrar as transações que SOBRAM no banco de dados
       const updated = transactions.filter((t) => !idsToDelete.includes(t.id));
-      await saveTransactions(updated);
 
-      // Reverte o saldo de todas as transações eliminadas que estavam marcadas como pagas
+      // 2. Reverter os saldos das contas para todas as transações pagas que foram mortas
       let updatedAccounts = [...accounts];
       const txsToDelete = transactions.filter((t) =>
         idsToDelete.includes(t.id),
@@ -247,7 +270,6 @@ export function useStore() {
       txsToDelete.forEach((deletedTx) => {
         if (deletedTx.paid) {
           updatedAccounts = updatedAccounts.map((acc) => {
-            // Reverte a Origem
             if (acc.id === deletedTx.accountId) {
               const delta =
                 deletedTx.type === 'receita'
@@ -255,7 +277,6 @@ export function useStore() {
                   : deletedTx.amount;
               return { ...acc, balance: acc.balance + delta };
             }
-            // Reverte o Destino (Tira o dinheiro que tinha entrado na transferência)
             if (
               deletedTx.type === 'transferencia' &&
               acc.id === deletedTx.targetAccountId
@@ -267,64 +288,119 @@ export function useStore() {
         }
       });
 
+      await saveTransactions(updated);
       await saveAccounts(updatedAccounts);
     },
     [transactions, accounts, saveTransactions, saveAccounts],
   );
 
+  // 👉 NOVA ASSINATURA: updateTransaction(updatedTx, mode)
   const updateTransaction = useCallback(
-    async (updatedTx: Transaction) => {
+    async (
+      updatedTx: Transaction,
+      mode: 'single' | 'future' | 'all' = 'single',
+    ) => {
       const oldTx = transactions.find((t) => t.id === updatedTx.id);
       if (!oldTx) return;
 
       let updatedAccounts = [...accounts];
 
-      // TEMPO 1: DESFAZER O PASSADO (Reverter oldTx)
-      if (oldTx.paid) {
+      // Função auxiliar interna para reverter saldo
+      const revertBalance = (tx: Transaction) => {
+        if (!tx.paid) return;
         updatedAccounts = updatedAccounts.map((acc) => {
-          // Reverte a Origem
-          if (acc.id === oldTx.accountId) {
-            const delta =
-              oldTx.type === 'receita' ? -oldTx.amount : oldTx.amount;
+          if (acc.id === tx.accountId) {
+            const delta = tx.type === 'receita' ? -tx.amount : tx.amount;
             return { ...acc, balance: acc.balance + delta };
           }
-          // Reverte o Destino (Arranca o dinheiro da conta de destino antiga)
-          if (
-            oldTx.type === 'transferencia' &&
-            acc.id === oldTx.targetAccountId
-          ) {
-            return { ...acc, balance: acc.balance - oldTx.amount };
+          if (tx.type === 'transferencia' && acc.id === tx.targetAccountId) {
+            return { ...acc, balance: acc.balance - tx.amount };
           }
           return acc;
         });
-      }
+      };
 
-      // TEMPO 2: CONSTRUIR O FUTURO (Aplicar updatedTx)
-      if (updatedTx.paid) {
+      // Função auxiliar interna para aplicar saldo
+      const applyBalance = (tx: Transaction) => {
+        if (!tx.paid) return;
         updatedAccounts = updatedAccounts.map((acc) => {
-          // Aplica na Nova Origem
-          if (acc.id === updatedTx.accountId) {
-            const delta =
-              updatedTx.type === 'receita'
-                ? updatedTx.amount
-                : -updatedTx.amount;
+          if (acc.id === tx.accountId) {
+            const delta = tx.type === 'receita' ? tx.amount : -tx.amount;
             return { ...acc, balance: acc.balance + delta };
           }
-          // Aplica no Novo Destino (Injeta o dinheiro na conta de destino nova)
-          if (
-            updatedTx.type === 'transferencia' &&
-            acc.id === updatedTx.targetAccountId
-          ) {
-            return { ...acc, balance: acc.balance + updatedTx.amount };
+          if (tx.type === 'transferencia' && acc.id === tx.targetAccountId) {
+            return { ...acc, balance: acc.balance + tx.amount };
           }
           return acc;
         });
+      };
+
+      // 👉 CÓPIA MUTANTE
+      let finalTransactions = [...transactions];
+      const isPartOfFamily = oldTx.groupId || oldTx.id.includes('-');
+
+      if (isPartOfFamily && mode !== 'single') {
+        const baseId = oldTx.groupId || oldTx.id.split('-')[0];
+        const familyTxs = transactions.filter(
+          (t) => t.groupId === baseId || t.id.startsWith(`${baseId}-`),
+        );
+        const targetTime = new Date(oldTx.date).getTime();
+
+        // Define quais membros da família vão sofrer a mutação
+        const txsToMutate =
+          mode === 'all'
+            ? familyTxs
+            : familyTxs.filter((t) => new Date(t.date).getTime() >= targetTime);
+
+        // Prepara a diferença de dias (se o usuário mudou o dia da transação original)
+        const oldDate = new Date(oldTx.date);
+        const newDateBase = new Date(updatedTx.date);
+
+        txsToMutate.forEach((mutantOld) => {
+          // Reverte o saldo antigo
+          revertBalance(mutantOld);
+
+          // Calcula a nova data mantendo o espaçamento de meses original (ou recalculando o novo)
+          const newMutantDate = new Date(mutantOld.date);
+
+          // Se o usuário mudou o DIA na transação principal, propaga para os clones futuros
+          if (oldDate.getDate() !== newDateBase.getDate()) {
+            newMutantDate.setDate(newDateBase.getDate());
+          }
+
+          // Constrói a nova transação
+          const mutantNew: Transaction = {
+            ...mutantOld,
+            amount: updatedTx.amount, // Herda novo valor
+            description: updatedTx.description, // Herda nova descrição
+            accountId: updatedTx.accountId, // Herda nova conta
+            type: updatedTx.type, // Herda novo tipo
+            tagIds: updatedTx.tagIds, // Herda novas tags
+            date: newMutantDate.toISOString(),
+            // Não herda o 'paid' porque não queremos dar como pago compras do futuro só porque ele pagou a de hoje
+          };
+
+          // Aplica o novo saldo
+          applyBalance(mutantNew);
+
+          // Atualiza a lista na memória
+          finalTransactions = finalTransactions.map((t) =>
+            t.id === mutantNew.id ? mutantNew : t,
+          );
+        });
+      } else {
+        // MODO SINGLE: Comportamento antigo, reverte um, aplica um.
+        revertBalance(oldTx);
+        applyBalance(updatedTx);
+
+        // Para quebrar a corrente (para não ser mutado por acidente num futuro 'update all')
+        const detachedTx = { ...updatedTx, groupId: undefined };
+        finalTransactions = finalTransactions.map((t) =>
+          t.id === updatedTx.id ? detachedTx : t,
+        );
       }
 
-      const updatedTransactions = transactions.map((t) =>
-        t.id === updatedTx.id ? updatedTx : t,
-      );
-      await saveTransactions(updatedTransactions);
+      await saveTransactions(finalTransactions);
       await saveAccounts(updatedAccounts);
     },
     [transactions, accounts, saveTransactions, saveAccounts],

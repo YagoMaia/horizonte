@@ -21,6 +21,7 @@ import {
   RecurrenceType,
   Account,
 } from '@/constants/types';
+import { RecurrenceActionModal } from './RecurrenceActionModal';
 
 const WEEK_DAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 const MONTHS = [
@@ -42,7 +43,7 @@ interface AddTransactionModalProps {
   visible: boolean;
   onClose: () => void;
   onAdd: (tx: any) => void;
-  onUpdate?: (tx: any) => void;
+  onUpdate?: (tx: any, mode: string ) => void;
   accounts: Account[];
   tags: any[];
   transactionToEdit?: Transaction | null;
@@ -86,6 +87,8 @@ export function AddTransactionModal({
   const [recurrence, setRecurrence] = useState<RecurrenceType>('unica');
   const [paid, setPaid] = useState(true);
   const [targetAccountId, setTargetAccountId] = useState('');
+  const [recurrenceActionVisible, setRecurrenceActionVisible] = useState(false);
+  const [pendingTxData, setPendingTxData] = useState<any>(null);
 
   const [installments, setInstallments] = useState(1);
 
@@ -333,11 +336,21 @@ export function AddTransactionModal({
     };
 
     if (isEditing && onUpdate) {
-      onUpdate({ ...txData, id: transactionToEdit.id });
+      // 👉 A INTERCEPTAÇÃO DO DNA
+      const isFamily =
+        transactionToEdit.groupId || transactionToEdit.id.includes('-');
+
+      if (isFamily) {
+        setPendingTxData({ ...txData, id: transactionToEdit.id });
+        setRecurrenceActionVisible(true);
+      } else {
+        onUpdate({ ...txData, id: transactionToEdit.id }, 'single');
+        onClose();
+      }
     } else {
       onAdd(txData);
+      onClose();
     }
-    onClose();
   };
 
   return (
@@ -818,6 +831,18 @@ export function AddTransactionModal({
           </View>
         )}
         {renderCalendar()}
+        <RecurrenceActionModal
+          visible={recurrenceActionVisible}
+          actionType='edit'
+          onClose={() => setRecurrenceActionVisible(false)}
+          onSelect={(mode) => {
+            setRecurrenceActionVisible(false);
+            if (onUpdate && pendingTxData) {
+              onUpdate(pendingTxData, mode);
+              onClose(); // Fecha o AddTransactionModal também
+            }
+          }}
+        />
       </KeyboardAvoidingView>
     </Modal>
   );
