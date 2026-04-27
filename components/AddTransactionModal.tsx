@@ -306,27 +306,29 @@ export function AddTransactionModal({
       ).toISOString();
     };
 
-    const finalRecurrence =
-      isCreditCardSelected && installments > 1 ? 'mensal' : recurrence;
+    // 👉 A LÓGICA CORRIGIDA AQUI:
+    const isInstallment = isCreditCardSelected && installments > 1;
+    const finalRecurrence = isInstallment ? 'mensal' : recurrence;
 
     const txData = {
       description: description.trim(),
       amount: parseFloat(amount.replace(',', '.')),
       type,
-      date:
-        finalRecurrence === 'unica'
-          ? parseToISO(date)
-          : parseToISO(recurrenceStart),
+      // Se for uma assinatura normal, usa o Inicia Em (recurrenceStart). 
+      // Se for uma compra Parcelada no Cartão, respeita a "Data da Compra" (date).
+      date: (recurrence === 'unica' || isInstallment)
+        ? parseToISO(date)
+        : parseToISO(recurrenceStart),
       accountId,
       tagIds: selectedTags,
       recurrence: finalRecurrence,
       paid,
-      recurrenceStartDate:
-        finalRecurrence !== 'unica' ? parseToISO(recurrenceStart) : undefined,
-      recurrenceEndDate:
-        finalRecurrence !== 'unica' && recurrenceEnd
-          ? parseToISO(recurrenceEnd)
-          : undefined,
+      recurrenceStartDate: (!isInstallment && finalRecurrence !== 'unica')
+        ? parseToISO(recurrenceStart)
+        : undefined,
+      recurrenceEndDate: (!isInstallment && finalRecurrence !== 'unica' && recurrenceEnd)
+        ? parseToISO(recurrenceEnd)
+        : undefined,
       totalInstallments: isCreditCardSelected ? installments : 1,
       paymentMethod: isCreditCardSelected ? 'credito' : 'debito',
       targetAccountId: type === 'transferencia' ? targetAccountId : undefined,
@@ -939,7 +941,6 @@ const styles = StyleSheet.create({
   },
   emptyStateText: { fontSize: 14, textAlign: 'center', lineHeight: 20 },
 
-  // 👉 Estilos Adicionados para forçar o Calendário a aparecer por cima
   calendarOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.7)',

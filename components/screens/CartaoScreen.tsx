@@ -9,6 +9,7 @@ import {
   FlatList,
   Modal,
   Alert,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/hooks/useTheme';
@@ -48,6 +49,7 @@ export function CartaoScreen() {
     payCreditCardInvoice,
     addTransaction,
     updateTransaction,
+    deleteTransaction, // Adicionado para a função de excluir todos
   } = useStoreContext();
 
   const creditCards = useMemo(
@@ -64,10 +66,8 @@ export function CartaoScreen() {
     [creditCards, selectedCardId],
   );
 
-  // 👉 1. NOVO ESTADO: MÁQUINA DO TEMPO
   const [monthOffset, setMonthOffset] = useState(0);
 
-  // Reseta a máquina do tempo ao trocar de cartão
   useEffect(() => {
     setMonthOffset(0);
   }, [selectedCardId]);
@@ -75,14 +75,37 @@ export function CartaoScreen() {
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [sourceAccountId, setSourceAccountId] = useState<string>('');
 
-  // Estados de Edição
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
   const [isEditing, setIsEditing] = useState(false);
 
-  // 👉 2. MOTOR DE CÁLCULO (SEPARANDO O GLOBAL DO LOCAL)
+  // MOTOR BANCÁRIO DE FATURA
+  const getInvoiceForTx = (txDateStr: string, accountId: string) => {
+    const card = accounts.find(c => c.id === accountId);
+    const closingDay = card?.closingDay || 25;
+    const dueDay = card?.dueDay || 5;
+    const d = new Date(txDateStr);
+
+    let m = d.getMonth() + 1;
+    let y = d.getFullYear();
+
+    if (d.getDate() >= closingDay) {
+      m += 1;
+    }
+
+    if (dueDay < closingDay) {
+      m += 1;
+    }
+
+    while (m > 12) {
+      m -= 12;
+      y += 1;
+    }
+    return { viewMonth: m - 1, viewYear: y, value: y * 100 + m };
+  };
+
   const {
-    totalInvoice, // Total bruto gasto neste mês específico (histórico)
-    pendingInvoice, // Quanto DESSA fatura específica ainda não foi pago
+    totalInvoice,
+    pendingInvoice,
     targetMonth,
     targetYear,
     invoiceTransactions,
@@ -91,6 +114,7 @@ export function CartaoScreen() {
     limitUsagePercent,
     invoiceStatus,
     statusColor,
+    globalPendingDebt,
   } = useMemo(() => {
     if (!selectedCard)
       return {
@@ -104,26 +128,79 @@ export function CartaoScreen() {
         limitUsagePercent: 0,
         invoiceStatus: 'ZERADA',
         statusColor: colors.mutedForeground,
+        globalPendingDebt: 0,
       };
 
-    // A data base para os cálculos viaja no tempo usando o offset
     const baseDate = new Date();
     baseDate.setMonth(baseDate.getMonth() + monthOffset);
 
-    // Descobre qual é o mês/ano faturado desta data no tempo
-    const { targetMonth: tMonth, targetYear: tYear } = getCreditCardTargetMonth(
-      selectedCard,
-      baseDate,
-    );
+    const targetInvoice = getInvoiceForTx(baseDate.toISOString(), selectedCard.id);
+    const tMonth = targetInvoice.viewMonth;
+    const tYear = targetInvoice.viewYear;
+    const tValue = targetInvoice.value;
 
-    // FILTRO LOCAL: Pega TODAS as transações desta fatura no tempo (pagas ou não)
-    const invTxs = transactions
-      .filter((tx) => {
-        if (tx.accountId !== selectedCard.id || tx.paymentMethod !== 'credito')
-          return false;
-        const txDate = new Date(tx.date);
-        return txDate.getMonth() === tMonth && txDate.getFullYear() === tYear;
-      })
+    const expandedTxs: any[] = [];
+    transactions.forEach(tx => {
+      if (tx.accountId !== selectedCard.id || tx.paymentMethod !== 'credito') return;
+
+      const installmentsCount = tx.totalInstallments || 1;
+      const isInstallment = installmentsCount > 1;
+
+      if (isInstallment) {
+        const parcelAmount = tx.amount / installmentsCount;
+        const baseInv = getInvoiceForTx(tx.date, tx.accountId);
+
+        for (let i = 0; i < installmentsCount; i++) {
+          let m = baseInv.viewMonth + i;
+          let y = baseInv.viewYear;
+
+          while (m > 11) {
+            m -= 12;
+            y += 1;
+          }
+
+          let installmentDate = tx.date;
+          if (i > 0) {
+            installmentDate = new Date(y, m, 1, 12, 0, 0).toISOString();
+          }
+
+          expandedTxs.push({
+            ...tx,
+            id: `${tx.id}-parcel-${i}`,
+            originalId: tx.id,
+            amount: parcelAmount,
+            date: installmentDate,
+            description: `${tx.description} (${i + 1}/${installmentsCount})`,
+            targetInvoiceValue: y * 100 + (m + 1)
+          });
+        }
+      } else if (tx.recurrence === 'mensal') {
+        const startDate = new Date(tx.date);
+        const limitMonths = 36;
+        for (let i = 0; i < limitMonths; i++) {
+          const d = new Date(startDate);
+          d.setMonth(d.getMonth() + i);
+          if (tx.recurrenceEndDate && d > new Date(tx.recurrenceEndDate)) break;
+
+          expandedTxs.push({
+            ...tx,
+            id: `${tx.id}-rec-${i}`,
+            originalId: tx.id,
+            date: d.toISOString(),
+            targetInvoiceValue: getInvoiceForTx(d.toISOString(), tx.accountId).value
+          });
+        }
+      } else {
+        expandedTxs.push({
+          ...tx,
+          originalId: tx.id,
+          targetInvoiceValue: getInvoiceForTx(tx.date, tx.accountId).value
+        });
+      }
+    });
+
+    const invTxs = expandedTxs
+      .filter((tx) => tx.targetInvoiceValue === tValue)
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
     const tInvoice = invTxs.reduce(
@@ -137,13 +214,12 @@ export function CartaoScreen() {
         0,
       );
 
-    // FILTRO GLOBAL: O limite do cartão independe do mês atual. Ele olha toda a dívida não paga da história.
-    const globalPendingDebt = transactions
+    const openInvoiceValue = getInvoiceForTx(new Date().toISOString(), selectedCard.id).value;
+
+    const globalPendingDebtValue = expandedTxs
       .filter(
         (tx) =>
-          tx.accountId === selectedCard.id &&
-          tx.paymentMethod === 'credito' &&
-          !tx.paid,
+          !tx.paid && tx.targetInvoiceValue >= openInvoiceValue
       )
       .reduce(
         (sum, tx) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount),
@@ -151,18 +227,17 @@ export function CartaoScreen() {
       );
 
     const cLimit = selectedCard.creditLimit || 0;
-    const aLimit = Math.max(0, cLimit - globalPendingDebt);
+    const aLimit = Math.max(0, cLimit - globalPendingDebtValue);
     const percent =
-      cLimit > 0 ? Math.min((globalPendingDebt / cLimit) * 100, 100) : 0;
+      cLimit > 0 ? Math.min((globalPendingDebtValue / cLimit) * 100, 100) : 0;
 
-    // Lógica visual de Status
     let status = 'ABERTA';
     let color = colors.primary;
 
-    if (monthOffset < 0 && pInvoice <= 0 && tInvoice > 0) {
+    if (tValue < openInvoiceValue && pInvoice <= 0 && tInvoice > 0) {
       status = 'PAGA';
       color = colors.success;
-    } else if (monthOffset > 0) {
+    } else if (tValue > openInvoiceValue) {
       status = 'FUTURA';
       color = colors.warning;
     } else if (tInvoice <= 0) {
@@ -181,6 +256,7 @@ export function CartaoScreen() {
       limitUsagePercent: percent,
       invoiceStatus: status,
       statusColor: color,
+      globalPendingDebt: globalPendingDebtValue,
     };
   }, [selectedCard, transactions, monthOffset, colors]);
 
@@ -217,6 +293,37 @@ export function CartaoScreen() {
     }
   };
 
+  // 👉 LÓGICA PARA EXCLUIR TODOS OS ITENS DA FATURA ATUAL
+  const handleDeleteAllFromInvoice = () => {
+    if (invoiceTransactions.length === 0) return;
+
+    // Pegamos apenas os IDs originais únicos (para não chamar delete 2x no mesmo ID)
+    const uniqueOriginalIds = Array.from(new Set(invoiceTransactions.map((tx: any) => tx.originalId)));
+
+    const alertMessage = 'Atenção: Se houver compras parceladas nesta fatura, TODAS as parcelas (passadas e futuras) dessas compras também serão excluídas. Deseja continuar?';
+
+    if (Platform.OS === 'web') {
+      if (window.confirm(`${alertMessage}\n\nTem certeza que deseja excluir todos os ${uniqueOriginalIds.length} lançamentos originais?`)) {
+        uniqueOriginalIds.forEach(id => deleteTransaction(id));
+      }
+    } else {
+      Alert.alert(
+        'Excluir Fatura',
+        alertMessage,
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          {
+            text: 'Excluir Todos',
+            style: 'destructive',
+            onPress: () => {
+              uniqueOriginalIds.forEach(id => deleteTransaction(id));
+            }
+          }
+        ]
+      );
+    }
+  };
+
   if (creditCards.length === 0) {
     return (
       <View
@@ -230,12 +337,11 @@ export function CartaoScreen() {
     );
   }
 
-  const renderTransaction = ({ item: tx }: { item: Transaction }) => {
+  const renderTransaction = ({ item: tx }: { item: any }) => {
     const isReceita = tx.type === 'receita';
     const amountColor = isReceita ? colors.success : colors.foreground;
 
     return (
-      // 👉 3. HABILITADA A EDIÇÃO NA TELA DO CARTÃO
       <TouchableOpacity
         style={[styles.txItem, { borderBottomColor: colors.border }]}
         onPress={() => setSelectedTx(tx)}
@@ -249,7 +355,6 @@ export function CartaoScreen() {
             >
               {tx.description}
             </Text>
-            {/* Indicador visual se a compra específica já foi paga (Ex: Faturas antigas) */}
             {tx.paid && (
               <Ionicons
                 name='checkmark-circle'
@@ -272,7 +377,6 @@ export function CartaoScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
-      {/* SELETOR DE CARTÕES (CARROSSEL) */}
       <View
         style={[
           styles.carouselContainer,
@@ -324,7 +428,6 @@ export function CartaoScreen() {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.content}
         >
-          {/* 👉 4. NAVEGAÇÃO DA FATURA (MÁQUINA DO TEMPO) */}
           <View style={styles.monthNav}>
             <TouchableOpacity
               onPress={() => setMonthOffset((m) => m - 1)}
@@ -341,16 +444,6 @@ export function CartaoScreen() {
               <Text style={[styles.monthTitle, { color: colors.foreground }]}>
                 {MONTH_NAMES[targetMonth]} {targetYear}
               </Text>
-              <View
-                style={[
-                  styles.statusBadge,
-                  { backgroundColor: statusColor + '20' },
-                ]}
-              >
-                <Text style={[styles.statusText, { color: statusColor }]}>
-                  {invoiceStatus}
-                </Text>
-              </View>
             </View>
 
             <TouchableOpacity
@@ -365,94 +458,41 @@ export function CartaoScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* O CARTÃO FÍSICO VISUAL */}
-          <View
-            style={[
-              styles.creditCardVisual,
-              { backgroundColor: selectedCard.color },
-            ]}
-          >
+          <View style={[styles.cardVisual, { backgroundColor: selectedCard.color }]}>
             <View style={styles.cardHeader}>
-              <Text style={styles.cardName}>{selectedCard.name}</Text>
-              <Ionicons
-                name='wifi'
-                size={24}
-                color='rgba(255,255,255,0.7)'
-                style={{ transform: [{ rotate: '90deg' }] }}
-              />
+              <Ionicons name="card" size={28} color="#FFF" />
+              <Text style={styles.cardBrand}>{selectedCard.name.toUpperCase()}</Text>
             </View>
+
             <View style={styles.cardBody}>
-              <Text style={styles.invoiceLabel}>Total da Fatura</Text>
-              <Text style={styles.invoiceValue}>
-                {formatCurrency(totalInvoice)}
-              </Text>
+              <Text style={styles.cardLabel}>Valor total da fatura</Text>
+              <Text style={styles.cardAmount}>{formatCurrency(totalInvoice)}</Text>
+
+              <View style={styles.limitContainer}>
+                <View style={styles.limitBarBackground}>
+                  <View style={[styles.limitBarFill, { width: `${limitUsagePercent}%` }]} />
+                </View>
+                <View style={styles.limitInfo}>
+                  <View>
+                    <Text style={styles.limitValue}>{formatCurrency(globalPendingDebt)}</Text>
+                    <Text style={styles.limitLabel}>Utilizado</Text>
+                  </View>
+                  <View style={{ alignItems: 'flex-end' }}>
+                    <Text style={styles.limitValue}>{formatCurrency(availableLimit)}</Text>
+                    <Text style={styles.limitLabel}>Disponível</Text>
+                  </View>
+                </View>
+              </View>
             </View>
+
             <View style={styles.cardFooter}>
-              <Text style={styles.cardInfoText}>
-                Fecha dia {selectedCard.closingDay || 31}
-              </Text>
-              <Text style={styles.cardInfoText}>
-                Vence dia {selectedCard.dueDay || 5}
-              </Text>
-            </View>
-          </View>
-
-          {/* BARRA DE LIMITE GLOBAL */}
-          <View
-            style={[
-              styles.limitSection,
-              { backgroundColor: colors.card, borderColor: colors.border },
-            ]}
-          >
-            <View style={styles.limitHeader}>
-              <Text style={[styles.limitTitle, { color: colors.foreground }]}>
-                Limite Global
-              </Text>
-              <Text
-                style={[styles.limitTotal, { color: colors.mutedForeground }]}
-              >
-                {formatCurrency(limit)}
-              </Text>
-            </View>
-
-            <View
-              style={[
-                styles.progressBarBackground,
-                { backgroundColor: colors.border },
-              ]}
-            >
-              <View
-                style={[
-                  styles.progressBarFill,
-                  {
-                    backgroundColor:
-                      limitUsagePercent > 90
-                        ? colors.destructive
-                        : selectedCard.color,
-                    width: `${limitUsagePercent}%`,
-                  },
-                ]}
-              />
-            </View>
-
-            <View style={styles.limitDetails}>
-              <View>
-                <Text
-                  style={[
-                    styles.limitSubLabel,
-                    { color: colors.mutedForeground },
-                  ]}
-                >
-                  Disponível
-                </Text>
-                <Text style={[styles.limitSubValue, { color: colors.success }]}>
-                  {formatCurrency(availableLimit)}
-                </Text>
+              <View style={styles.chip} />
+              <View style={styles.cardStatus}>
+                <Text style={styles.cardStatusText}>{invoiceStatus === 'ABERTA' ? 'FATURA EM ABERTO' : `FATURA ${invoiceStatus}`}</Text>
               </View>
             </View>
           </View>
 
-          {/* BOTÃO DE PAGAMENTO (Baseado na Dívida Pendente da fatura visível) */}
           <TouchableOpacity
             style={[
               styles.payButton,
@@ -485,10 +525,24 @@ export function CartaoScreen() {
             </Text>
           </TouchableOpacity>
 
-          {/* LISTA DE DESPESAS DA FATURA */}
-          <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
-            Lançamentos
-          </Text>
+          {/* 👉 SEÇÃO DA LISTA COM O NOVO BOTÃO EXCLUIR TODOS */}
+          <View style={styles.sectionHeader}>
+            <View>
+              <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>ITENS DA FATURA</Text>
+              <Text style={[styles.itemCount, { color: colors.mutedForeground }]}>{invoiceTransactions.length} itens</Text>
+            </View>
+
+            {invoiceTransactions.length > 0 && (
+              <TouchableOpacity
+                style={styles.deleteAllBtn}
+                onPress={handleDeleteAllFromInvoice}
+              >
+                <Ionicons name="trash-outline" size={16} color={colors.destructive} />
+                <Text style={[styles.deleteAllText, { color: colors.destructive }]}>Excluir Todos</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
           <View
             style={[
               styles.txContainer,
@@ -513,7 +567,6 @@ export function CartaoScreen() {
         </ScrollView>
       )}
 
-      {/* MODAL DE PAGAMENTO DA FATURA */}
       <Modal visible={isPaymentModalOpen} transparent animationType='slide'>
         <View style={styles.modalOverlay}>
           <View
@@ -601,7 +654,6 @@ export function CartaoScreen() {
         </View>
       </Modal>
 
-      {/* MODAIS DE EDIÇÃO DA TRANSAÇÃO */}
       <TransactionDetailModal
         transaction={isEditing ? null : selectedTx}
         onClose={() => setSelectedTx(null)}
@@ -616,10 +668,12 @@ export function CartaoScreen() {
             setSelectedTx(null);
           }}
           onAdd={addTransaction}
-          onUpdate={(updatedTx: any, mode: any) => updateTransaction(updatedTx, mode)}
+          onUpdate={updateTransaction as any}
           accounts={accounts}
           tags={tags}
-          transactionToEdit={selectedTx}
+          transactionToEdit={
+            transactions.find(t => t.id === (selectedTx as any).originalId) || selectedTx
+          }
         />
       )}
     </View>
@@ -644,7 +698,6 @@ const styles = StyleSheet.create({
   },
   content: { padding: 16, paddingBottom: 40, gap: 20 },
 
-  // 👉 ESTILOS DA NAVEGAÇÃO DA FATURA
   monthNav: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -653,18 +706,12 @@ const styles = StyleSheet.create({
   },
   navBtn: { padding: 8 },
   monthTitle: { fontSize: 18, fontWeight: '700' },
-  statusBadge: {
-    marginTop: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 8,
-  },
-  statusText: { fontSize: 10, fontWeight: '800' },
 
-  creditCardVisual: {
-    borderRadius: 20,
+  cardVisual: {
+    marginVertical: 4,
     padding: 24,
-    height: 200,
+    borderRadius: 24,
+    minHeight: 210,
     justifyContent: 'space-between',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
@@ -677,55 +724,70 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  cardName: {
+  cardBrand: {
     color: '#FFF',
-    fontSize: 18,
-    fontWeight: '700',
-    letterSpacing: 1,
-  },
-  cardBody: { gap: 4 },
-  invoiceLabel: {
-    color: 'rgba(255,255,255,0.8)',
     fontSize: 13,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    fontWeight: '900',
+    letterSpacing: 2,
   },
-  invoiceValue: {
+  cardBody: { marginTop: 12 },
+  cardLabel: {
+    color: '#FFF',
+    fontSize: 13,
+    opacity: 0.8,
+    marginBottom: 2,
+  },
+  cardAmount: {
     color: '#FFF',
     fontSize: 36,
     fontWeight: '800',
     letterSpacing: -1,
   },
-  cardFooter: { flexDirection: 'row', justifyContent: 'space-between' },
-  cardInfoText: {
-    color: 'rgba(255,255,255,0.7)',
-    fontSize: 11,
-    fontWeight: '500',
-  },
-
-  limitSection: {
-    borderRadius: 16,
-    borderWidth: StyleSheet.hairlineWidth,
-    padding: 16,
-    gap: 12,
-  },
-  limitHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  limitTitle: { fontSize: 14, fontWeight: '600' },
-  limitTotal: { fontSize: 14, fontWeight: '700' },
-  progressBarBackground: {
-    height: 8,
-    borderRadius: 4,
-    width: '100%',
+  limitContainer: { marginTop: 24, gap: 6 },
+  limitBarBackground: {
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(255,255,255,0.3)',
     overflow: 'hidden',
   },
-  progressBarFill: { height: '100%', borderRadius: 4 },
-  limitDetails: { flexDirection: 'row', justifyContent: 'space-between' },
-  limitSubLabel: { fontSize: 11, textTransform: 'uppercase', marginBottom: 2 },
-  limitSubValue: { fontSize: 15, fontWeight: '700' },
+  limitBarFill: { height: '100%', backgroundColor: '#FF8C00' },
+  limitInfo: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 4,
+  },
+  limitValue: { color: '#FFF', fontSize: 12, fontWeight: '700' },
+  limitLabel: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 10,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  cardFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    marginTop: 16,
+  },
+  chip: {
+    width: 42,
+    height: 28,
+    backgroundColor: '#cca633',
+    borderRadius: 6,
+    opacity: 0.9,
+  },
+  cardStatus: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  cardStatusText: {
+    color: '#FFF',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
 
   payButton: {
     flexDirection: 'row',
@@ -737,12 +799,35 @@ const styles = StyleSheet.create({
   },
   payButtonText: { fontSize: 16, fontWeight: '700' },
 
+  // 👉 AJUSTE DO CABEÇALHO PARA ACOMODAR O BOTÃO
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    marginBottom: 8,
+  },
   sectionTitle: {
     fontSize: 15,
     fontWeight: '700',
-    marginLeft: 4,
-    marginTop: 8,
   },
+  itemCount: { fontSize: 12, marginTop: 2 },
+
+  // 👉 ESTILOS DO NOVO BOTÃO EXCLUIR TODOS
+  deleteAllBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(255,59,48,0.1)', // Um vermelho bem clarinho e suave
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+  },
+  deleteAllText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+
   txContainer: {
     borderRadius: 16,
     borderWidth: StyleSheet.hairlineWidth,
