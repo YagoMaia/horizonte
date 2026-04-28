@@ -300,25 +300,150 @@ export function SaldosScreen() {
       )}
 
       {/* Modal de Filtros (Simplificado sem o switch de previstos) */}
-      <Modal visible={isFilterModalOpen} transparent animationType='slide'>
+      <Modal
+        visible={isFilterModalOpen}
+        transparent
+        animationType='slide'
+        onRequestClose={() => setIsFilterModalOpen(false)}
+      >
         <View style={styles.modalOverlayBottom}>
-          <View style={[styles.filterModalContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Text style={[styles.modalTitle, { color: colors.foreground, marginBottom: 20 }]}>Filtrar por Categoria</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
+          <View
+            style={[
+              styles.filterModalContent,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+          >
+            <View style={styles.filterModalHeader}>
+              <Text style={[styles.modalTitle, { color: colors.foreground }]}>
+                Filtros
+              </Text>
+              <TouchableOpacity
+                onPress={() => setIsFilterModalOpen(false)}
+                style={[styles.closeBtn, { backgroundColor: colors.background }]}
+              >
+                <Ionicons name='close' size={20} color={colors.foreground} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: '80%' }}>
+
+              {/* FILTRO POR TIPO */}
+              <Text style={[styles.filterGroupLabel, { color: colors.mutedForeground }]}>
+                Tipo
+              </Text>
               <View style={styles.chipRow}>
-                {tags.map(tag => (
-                  <TouchableOpacity key={tag.id} style={[styles.chip, { borderColor: tag.color, backgroundColor: filterTagId === tag.id ? tag.color : 'transparent' }]} onPress={() => setFilterTagId(tag.id)}>
-                    <Text style={[styles.chipText, { color: filterTagId === tag.id ? '#FFF' : tag.color }]}>{tag.name}</Text>
+                {(['todas', 'receita', 'despesa', 'transferencia'] as const).map((t) => (
+                  <TouchableOpacity
+                    key={t}
+                    style={[
+                      styles.chip,
+                      {
+                        borderColor: colors.border,
+                        backgroundColor: filterType === t ? colors.primary : 'transparent',
+                      },
+                    ]}
+                    onPress={() => setFilterType(t)}
+                  >
+                    <Text style={[styles.chipText, { color: filterType === t ? '#FFF' : colors.foreground }]}>
+                      {t.charAt(0).toUpperCase() + t.slice(1)}
+                    </Text>
                   </TouchableOpacity>
                 ))}
               </View>
+
+              {/* FILTRO POR CONTA (O que estava faltando) */}
+              <Text style={[styles.filterGroupLabel, { color: colors.mutedForeground, marginTop: 20 }]}>
+                Contas
+              </Text>
+              <View style={styles.chipRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.chip,
+                    {
+                      borderColor: colors.border,
+                      backgroundColor: filterAccountId === 'todas' ? colors.primary : 'transparent',
+                    },
+                  ]}
+                  onPress={() => setFilterAccountId('todas')}
+                >
+                  <Text style={[styles.chipText, { color: filterAccountId === 'todas' ? '#FFF' : colors.foreground }]}>
+                    Todas
+                  </Text>
+                </TouchableOpacity>
+                {accounts.map((acc) => (
+                  <TouchableOpacity
+                    key={acc.id}
+                    style={[
+                      styles.chip,
+                      {
+                        borderColor: acc.color,
+                        backgroundColor: filterAccountId === acc.id ? acc.color : 'transparent',
+                      },
+                    ]}
+                    onPress={() => setFilterAccountId(acc.id)}
+                  >
+                    <Text style={[styles.chipText, { color: filterAccountId === acc.id ? '#FFF' : acc.color }]}>
+                      {acc.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {/* FILTRO POR CATEGORIA (TAGS) */}
+              <Text style={[styles.filterGroupLabel, { color: colors.mutedForeground, marginTop: 20 }]}>
+                Categorias
+              </Text>
+              <View style={styles.chipRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.chip,
+                    {
+                      borderColor: colors.border,
+                      backgroundColor: filterTagId === 'todas' ? colors.primary : 'transparent',
+                    },
+                  ]}
+                  onPress={() => setFilterTagId('todas')}
+                >
+                  <Text style={[styles.chipText, { color: filterTagId === 'todas' ? '#FFF' : colors.foreground }]}>
+                    Todas
+                  </Text>
+                </TouchableOpacity>
+                {tags.map((tag) => (
+                  <TouchableOpacity
+                    key={tag.id}
+                    style={[
+                      styles.chip,
+                      {
+                        borderColor: tag.color,
+                        backgroundColor: filterTagId === tag.id ? tag.color : 'transparent',
+                      },
+                    ]}
+                    onPress={() => setFilterTagId(tag.id)}
+                  >
+                    <Text style={[styles.chipText, { color: filterTagId === tag.id ? '#FFF' : tag.color }]}>
+                      {tag.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <View style={{ height: 30 }} />
             </ScrollView>
-            <TouchableOpacity style={[styles.applyBtn, { backgroundColor: colors.primary }]} onPress={() => setIsFilterModalOpen(false)}>
-              <Text style={{ color: '#FFF', fontWeight: 'bold' }}>Aplicar Filtros</Text>
+
+            <TouchableOpacity
+              style={[styles.applyBtn, { backgroundColor: colors.foreground }]}
+              onPress={() => setIsFilterModalOpen(false)}
+            >
+              <Text style={[styles.applyBtnText, { color: colors.background }]}>
+                Aplicar Filtros
+              </Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={clearFilters} style={{ marginTop: 15, alignItems: 'center' }}>
-              <Text style={{ color: colors.destructive }}>Limpar Tudo</Text>
-            </TouchableOpacity>
+
+            {activeFiltersCount > 0 && (
+              <TouchableOpacity onPress={clearFilters} style={{ marginTop: 15, alignItems: 'center' }}>
+                <Text style={{ color: colors.destructive, fontWeight: '600' }}>Limpar Filtros</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
       </Modal>
@@ -375,13 +500,68 @@ const styles = StyleSheet.create({
   txAmount: { fontSize: 14, fontWeight: '700' },
   emptyState: { alignItems: 'center', padding: 40, gap: 8, borderRadius: 20, borderWidth: StyleSheet.hairlineWidth, marginTop: 20 },
   emptyText: { fontSize: 14, textAlign: 'center' },
-  modalOverlayBottom: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  filterModalContent: { padding: 24, borderTopLeftRadius: 25, borderTopRightRadius: 25 },
-  modalTitle: { fontSize: 18, fontWeight: '700' },
-  chipRow: { flexDirection: 'row', gap: 8 },
-  chip: { paddingHorizontal: 15, paddingVertical: 8, borderRadius: 20, borderWidth: 1 },
-  chipText: { fontSize: 13, fontWeight: '600' },
-  applyBtn: { padding: 15, borderRadius: 12, alignItems: 'center' },
+  modalOverlayBottom: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'flex-end',
+  },
+  filterModalContent: {
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    borderWidth: 1,
+    padding: 24,
+    paddingBottom: 40,
+    maxHeight: '90%',
+  },
+  filterModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700'
+  },
+  closeBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filterGroupLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 12,
+  },
+  chipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10
+  },
+  chip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  chipText: {
+    fontSize: 14,
+    fontWeight: '600'
+  },
+  applyBtn: {
+    padding: 16,
+    borderRadius: 16,
+    alignItems: 'center',
+    marginTop: 10
+  },
+  applyBtnText: {
+    fontSize: 16,
+    fontWeight: '700'
+  },
   hiddenAction: { justifyContent: 'center', alignItems: 'center', width: 80 },
   hiddenActionRight: { borderTopRightRadius: 20, borderBottomRightRadius: 20 },
   hiddenActionText: { color: '#FFF', fontSize: 10, fontWeight: '700', marginTop: 4 }
