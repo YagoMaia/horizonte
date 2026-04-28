@@ -10,6 +10,7 @@ import {
   Modal,
   Alert,
   Platform,
+  TextInput,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/hooks/useTheme';
@@ -31,18 +32,20 @@ const MONTH_NAMES = [
 
 export function CartaoScreen() {
   const { colors } = useTheme();
+  // 👉 Certifique-se de que o type do StoreContext exporta a nova função!
   const {
     accounts,
     transactions,
     tags,
     payCreditCardInvoice,
+    anticipateCreditCardPayment, // 👈 Nova função importada
     addTransaction,
     updateTransaction,
     deleteTransaction,
-  } = useStoreContext();
+  } = useStoreContext() as any; // Usando "as any" caso o TypeScript demore a ler o Context
 
   const creditCards = useMemo(
-    () => accounts.filter((a) => a.type === 'cartao_credito'),
+    () => accounts.filter((a: Account) => a.type === 'cartao_credito'),
     [accounts],
   );
 
@@ -51,7 +54,7 @@ export function CartaoScreen() {
   );
 
   const selectedCard = useMemo(
-    () => creditCards.find((c) => c.id === selectedCardId) || null,
+    () => creditCards.find((c: Account) => c.id === selectedCardId) || null,
     [creditCards, selectedCardId],
   );
 
@@ -64,14 +67,18 @@ export function CartaoScreen() {
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [sourceAccountId, setSourceAccountId] = useState<string>('');
 
+  // 👉 Novos estados para Antecipação
+  const [isAnticipateModalOpen, setIsAnticipateModalOpen] = useState(false);
+  const [anticipateAmountStr, setAnticipateAmountStr] = useState('');
+  const [anticipateSourceAccountId, setAnticipateSourceAccountId] = useState<string>('');
+
   const [optionsModalVisible, setOptionsModalVisible] = useState(false);
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [txToEdit, setTxToEdit] = useState<Transaction | null>(null);
 
-  // 👉 MOTOR BANCÁRIO DE FATURAS (Vencimento)
   const getInvoiceForTx = (txDateStr: string, accountId: string) => {
-    const card = accounts.find(c => c.id === accountId);
+    const card = accounts.find((c: Account) => c.id === accountId);
     const closingDay = card?.closingDay || 25;
     const dueDay = card?.dueDay || 5;
     const d = new Date(txDateStr);
@@ -117,28 +124,27 @@ export function CartaoScreen() {
     const tYear = targetInvoice.viewYear;
     const tValue = targetInvoice.value;
 
-    // 👉 TELA LIMPA E VELOZ: LÊ DIRETAMENTE DO BANCO SEM INVENTAR CLONES
     const invTxs = transactions
-      .filter((tx) => {
+      .filter((tx: Transaction) => {
         if (tx.accountId !== selectedCard.id || tx.paymentMethod !== 'credito') return false;
         const txInv = getInvoiceForTx(tx.date, tx.accountId);
         return txInv.value === tValue;
       })
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      .sort((a: Transaction, b: Transaction) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-    const tInvoice = invTxs.reduce((sum, tx) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount), 0);
-    const pInvoice = invTxs.filter((t) => !t.paid).reduce((sum, tx) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount), 0);
+    const tInvoice = invTxs.reduce((sum: number, tx: Transaction) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount), 0);
+    const pInvoice = invTxs.filter((t: Transaction) => !t.paid).reduce((sum: number, tx: Transaction) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount), 0);
 
     const openInvoiceValue = getInvoiceForTx(new Date().toISOString(), selectedCard.id).value;
 
     // 👉 CÁLCULO DA DÍVIDA TOTAL
     const globalPendingDebtValue = transactions
-      .filter((tx) => {
+      .filter((tx: Transaction) => {
         if (tx.accountId !== selectedCard.id || tx.paymentMethod !== 'credito' || tx.paid) return false;
         const txInv = getInvoiceForTx(tx.date, tx.accountId);
         return txInv.value >= openInvoiceValue;
       })
-      .reduce((sum, tx) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount), 0);
+      .reduce((sum: number, tx: Transaction) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount), 0);
 
     const cLimit = selectedCard.creditLimit || 0;
     const aLimit = Math.max(0, cLimit - globalPendingDebtValue);
@@ -162,7 +168,7 @@ export function CartaoScreen() {
     };
   }, [selectedCard, transactions, monthOffset, colors]);
 
-  const debitAccounts = useMemo(() => accounts.filter((a) => a.type !== 'cartao_credito'), [accounts]);
+  const debitAccounts = useMemo(() => accounts.filter((a: Account) => a.type !== 'cartao_credito'), [accounts]);
 
   const handlePayInvoice = () => {
     if (debitAccounts.length === 0) {
@@ -184,21 +190,60 @@ export function CartaoScreen() {
     }
   };
 
+  // 👉 Funções de Antecipação
+  const handleOpenAnticipate = () => {
+    if (debitAccounts.length === 0) {
+      Alert.alert('Aviso', 'Nenhuma conta corrente cadastrada para debitar a antecipação.');
+      return;
+    }
+    if (globalPendingDebt <= 0) {
+      Alert.alert('Aviso', 'Você não tem dívidas pendentes neste cartão para antecipar.');
+      return;
+    }
+    setAnticipateSourceAccountId(debitAccounts[0].id);
+    setAnticipateAmountStr('');
+    setIsAnticipateModalOpen(true);
+  };
+
+  const confirmAnticipation = async () => {
+    if (!selectedCard || !anticipateSourceAccountId) return;
+    const amount = parseFloat(anticipateAmountStr.replace(',', '.'));
+
+    if (isNaN(amount) || amount <= 0) {
+      Alert.alert('Erro', 'Digite um valor válido maior que zero.');
+      return;
+    }
+
+    if (amount > globalPendingDebt) {
+      Alert.alert('Aviso', `Você só pode antecipar até ${formatCurrency(globalPendingDebt)}, que é o total da sua dívida.`);
+      return;
+    }
+
+    try {
+      await anticipateCreditCardPayment(selectedCard.id, anticipateSourceAccountId, amount);
+      setIsAnticipateModalOpen(false);
+      Alert.alert('Sucesso', 'Fatura antecipada e limite liberado!');
+    } catch (e) {
+      Alert.alert('Erro', 'Não foi possível processar a antecipação.');
+    }
+  };
+
   const handleDeleteAllFromInvoice = () => {
     if (invoiceTransactions.length === 0) return;
 
-    const idsToDelete = invoiceTransactions.map(tx => tx.id);
+    const idsToDelete = invoiceTransactions.map((tx: Transaction) => tx.id);
     const alertMessage = 'Atenção: Se houver compras parceladas nesta fatura, TODAS as parcelas (passadas e futuras) dessas compras também serão excluídas. Deseja continuar?';
 
     if (Platform.OS === 'web') {
       if (window.confirm(`${alertMessage}\n\nTem certeza que deseja excluir todos os lançamentos desta fatura?`)) {
-        // Envia comando para excluir a família toda
-        idsToDelete.forEach(id => deleteTransaction(id, 'all'));
+        // 👉 Adicionado (id: string) aqui
+        idsToDelete.forEach((id: string) => deleteTransaction(id, 'all'));
       }
     } else {
       Alert.alert('Excluir Fatura', alertMessage, [
         { text: 'Cancelar', style: 'cancel' },
-        { text: 'Excluir Todos', style: 'destructive', onPress: () => { idsToDelete.forEach(id => deleteTransaction(id, 'all')); } }
+        // 👉 Adicionado (id: string) aqui também
+        { text: 'Excluir Todos', style: 'destructive', onPress: () => { idsToDelete.forEach((id: string) => deleteTransaction(id, 'all')); } }
       ]);
     }
   };
@@ -244,7 +289,7 @@ export function CartaoScreen() {
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <View style={[styles.carouselContainer, { borderBottomColor: colors.border, backgroundColor: colors.card }]}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.carouselContent}>
-          {creditCards.map((card) => {
+          {creditCards.map((card: Account) => {
             const isSelected = card.id === selectedCardId;
             return (
               <TouchableOpacity
@@ -311,16 +356,30 @@ export function CartaoScreen() {
             </View>
           </View>
 
-          <TouchableOpacity
-            style={[styles.payButton, { backgroundColor: pendingInvoice > 0 ? colors.primary : colors.border }]}
-            disabled={pendingInvoice <= 0}
-            onPress={handlePayInvoice}
-          >
-            <Ionicons name={pendingInvoice > 0 ? 'wallet-outline' : 'checkmark-circle-outline'} size={20} color={pendingInvoice > 0 ? '#FFF' : colors.mutedForeground} />
-            <Text style={[styles.payButtonText, { color: pendingInvoice > 0 ? '#FFF' : colors.mutedForeground }]}>
-              {pendingInvoice > 0 ? `Pagar ${formatCurrency(pendingInvoice)}` : 'Fatura sem pendências'}
-            </Text>
-          </TouchableOpacity>
+          {/* 👉 ROW DE BOTÕES: PAGAR E ANTECIPAR */}
+          <View style={styles.actionButtonsRow}>
+            <TouchableOpacity
+              style={[styles.payButton, { backgroundColor: pendingInvoice > 0 ? colors.primary : colors.border, flex: 1 }]}
+              disabled={pendingInvoice <= 0}
+              onPress={handlePayInvoice}
+            >
+              <Ionicons name={pendingInvoice > 0 ? 'wallet-outline' : 'checkmark-circle-outline'} size={20} color={pendingInvoice > 0 ? '#FFF' : colors.mutedForeground} />
+              <Text style={[styles.payButtonText, { color: pendingInvoice > 0 ? '#FFF' : colors.mutedForeground }]}>
+                {pendingInvoice > 0 ? `Pagar Fatura` : 'Paga'}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.payButton, { backgroundColor: globalPendingDebt > 0 ? colors.secondary : colors.border, marginLeft: 12, paddingHorizontal: 16 }]}
+              disabled={globalPendingDebt <= 0}
+              onPress={handleOpenAnticipate}
+            >
+              <Ionicons name="flash-outline" size={20} color={globalPendingDebt > 0 ? colors.foreground : colors.mutedForeground} />
+              <Text style={[styles.payButtonText, { color: globalPendingDebt > 0 ? colors.foreground : colors.mutedForeground }]}>
+                Antecipar
+              </Text>
+            </TouchableOpacity>
+          </View>
 
           <View style={styles.sectionHeader}>
             <View>
@@ -346,6 +405,7 @@ export function CartaoScreen() {
         </ScrollView>
       )}
 
+      {/* MODAL DE PAGAR FATURA */}
       <Modal visible={isPaymentModalOpen} transparent animationType='slide'>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -355,7 +415,7 @@ export function CartaoScreen() {
             </Text>
 
             <View style={styles.accountSelection}>
-              {debitAccounts.map((acc) => (
+              {debitAccounts.map((acc: Account) => (
                 <TouchableOpacity
                   key={acc.id}
                   style={[
@@ -377,6 +437,61 @@ export function CartaoScreen() {
               </TouchableOpacity>
               <TouchableOpacity style={[styles.confirmBtn, { backgroundColor: colors.primary }]} onPress={confirmPayment}>
                 <Text style={styles.confirmBtnText}>Confirmar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* 👉 MODAL DE ANTECIPAR FATURA */}
+      <Modal visible={isAnticipateModalOpen} transparent animationType='slide'>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[styles.modalTitle, { color: colors.foreground }]}>Antecipar Pagamento</Text>
+            <Text style={[styles.modalSubtitle, { color: colors.mutedForeground }]}>
+              Dívida total pendente: {formatCurrency(globalPendingDebt)}
+            </Text>
+
+            <View style={{ marginBottom: 24 }}>
+              <Text style={{ fontSize: 11, fontWeight: '700', textTransform: 'uppercase', color: colors.mutedForeground, marginBottom: 8 }}>
+                Valor a antecipar
+              </Text>
+              <TextInput
+                style={{ fontSize: 32, fontWeight: '700', borderBottomWidth: 1, borderBottomColor: colors.border, paddingBottom: 4, color: colors.foreground }}
+                value={anticipateAmountStr}
+                onChangeText={setAnticipateAmountStr}
+                placeholder="0,00"
+                keyboardType="decimal-pad"
+                placeholderTextColor={colors.mutedForeground}
+              />
+            </View>
+
+            <Text style={{ fontSize: 11, fontWeight: '700', textTransform: 'uppercase', color: colors.mutedForeground, marginBottom: 8 }}>
+              Debitar de:
+            </Text>
+            <View style={styles.accountSelection}>
+              {debitAccounts.map((acc: Account) => (
+                <TouchableOpacity
+                  key={acc.id}
+                  style={[
+                    styles.accountOption,
+                    { borderColor: anticipateSourceAccountId === acc.id ? colors.primary : colors.border, backgroundColor: anticipateSourceAccountId === acc.id ? colors.primary + '10' : 'transparent' },
+                  ]}
+                  onPress={() => setAnticipateSourceAccountId(acc.id)}
+                >
+                  <Ionicons name={acc.icon as any} size={20} color={acc.color} />
+                  <Text style={[styles.accountOptionName, { color: colors.foreground }]}>{acc.name}</Text>
+                  {anticipateSourceAccountId === acc.id && <Ionicons name='checkmark' size={18} color={colors.primary} style={{ marginLeft: 'auto' }} />}
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={styles.cancelBtn} onPress={() => setIsAnticipateModalOpen(false)}>
+                <Text style={[styles.cancelBtnText, { color: colors.mutedForeground }]}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.confirmBtn, { backgroundColor: colors.primary }]} onPress={confirmAnticipation}>
+                <Text style={styles.confirmBtnText}>Antecipar</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -439,6 +554,7 @@ const styles = StyleSheet.create({
   chip: { width: 42, height: 28, backgroundColor: '#cca633', borderRadius: 6, opacity: 0.9 },
   cardStatus: { backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6 },
   cardStatusText: { color: '#FFF', fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
+  actionButtonsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, // 👈 Novo
   payButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, borderRadius: 16, gap: 8 },
   payButtonText: { fontSize: 16, fontWeight: '700' },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 12, marginBottom: 8 },

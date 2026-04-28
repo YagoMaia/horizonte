@@ -108,7 +108,6 @@ export function useStore() {
       const closingDay = targetAccount?.closingDay || 25;
       const dueDay = targetAccount?.dueDay || 5;
 
-      // 1. LÓGICA DE CARTÃO (PARCELADO OU À VISTA)
       if (isCreditCard) {
         const baseDate = new Date(tx.date);
 
@@ -121,7 +120,6 @@ export function useStore() {
 
         const cleanDescription = tx.description.replace(/\s\(\d+\/\d+\)$/, "");
 
-        // 👉 LÓGICA REVERSA PARA DATAS (Evita o Paradoxo de Dezembro)
         let baseM = baseDate.getMonth() + 1;
         let baseY = baseDate.getFullYear();
         if (baseDate.getDate() >= closingDay) baseM += 1;
@@ -131,14 +129,11 @@ export function useStore() {
           let currentDate: Date;
 
           if (i === 0) {
-            // Parcela 1: Data exata da compra
             currentDate = new Date(baseDate);
           } else {
-            // Parcela 2 em diante: Calcula o mês alvo exato e seta para dia 1
             let targetInvM = baseM + i;
             let monthForDay1 = targetInvM - (dueDay < closingDay ? 1 : 0);
 
-            // O JavaScript gerencia a transição de ano se monthForDay1 > 12
             currentDate = new Date(baseY, monthForDay1 - 1, 1, 12, 0, 0);
           }
 
@@ -148,7 +143,7 @@ export function useStore() {
             ...tx,
             id: `${baseId}-${i}`,
             groupId: baseId,
-            groupIndex: i, // Importante para remapeamento futuro
+            groupIndex: i,
             description: `${cleanDescription}${descSuffix}`,
             amount: installmentAmount,
             date: currentDate.toISOString(),
@@ -158,7 +153,6 @@ export function useStore() {
           });
         }
       }
-      // 2. RECORRÊNCIA MENSAL (Débito/Dinheiro)
       else if (tx.recurrence === 'mensal') {
         const baseId = Date.now().toString();
         const baseDate = new Date(tx.date);
@@ -190,7 +184,6 @@ export function useStore() {
           }
         }
       }
-      // 3. TRANSAÇÃO ÚNICA
       else {
         const newTx: Transaction = {
           ...tx,
@@ -347,7 +340,6 @@ export function useStore() {
           revertBalance(mutantOld);
           let newMutantDate = new Date(mutantOld.date);
 
-          // 👉 Reposicionamento com Lógica Reversa ao Editar
           if (isCreditCard && mutantOld.groupIndex !== undefined) {
             if (mutantOld.groupIndex === 0) {
               newMutantDate = new Date(newDateBase);
@@ -525,6 +517,61 @@ export function useStore() {
     [transactions, accounts, saveTransactions, saveAccounts],
   );
 
+  // 👉 NOVA FUNÇÃO DE ANTECIPAÇÃO AQUI:
+  const anticipateCreditCardPayment = useCallback(
+    async (
+      creditCardId: string,
+      sourceAccountId: string,
+      amount: number,
+    ) => {
+      const cardAccount = accounts.find((a) => a.id === creditCardId);
+      if (!cardAccount) return;
+
+      const baseId = Date.now().toString();
+
+      // Despesa na conta corrente (o dinheiro sai agora)
+      const paymentTx: Transaction = {
+        id: `${baseId}-out`,
+        description: `Antecipação - ${cardAccount.name}`,
+        amount: amount,
+        type: 'despesa',
+        date: new Date().toISOString(),
+        accountId: sourceAccountId,
+        tagIds: [],
+        paymentMethod: 'debito',
+        paid: true, // Já foi debitado
+        recurrence: 'unica',
+      };
+
+      // Receita no cartão de crédito (abate o valor da fatura atual e libera limite)
+      const creditTx: Transaction = {
+        id: `${baseId}-in`,
+        description: `Pagamento Antecipado`,
+        amount: amount,
+        type: 'receita',
+        date: new Date().toISOString(), // Cai direto na fatura atual
+        accountId: creditCardId,
+        tagIds: [],
+        paymentMethod: 'credito',
+        paid: false, // Fica "false" para que o sistema subtraia este valor do pendingInvoice
+        recurrence: 'unica',
+      };
+
+      const finalTransactions = [paymentTx, creditTx, ...transactions];
+
+      const updatedAccounts = accounts.map((acc) => {
+        if (acc.id === sourceAccountId) {
+          return { ...acc, balance: acc.balance - amount };
+        }
+        return acc;
+      });
+
+      await saveTransactions(finalTransactions);
+      await saveAccounts(updatedAccounts);
+    },
+    [transactions, accounts, saveTransactions, saveAccounts]
+  );
+
   return {
     transactions,
     accounts,
@@ -545,5 +592,6 @@ export function useStore() {
     saveTags,
     clearAllData,
     payCreditCardInvoice,
+    anticipateCreditCardPayment, // Expondo a nova função para o Contexto
   };
 }
