@@ -105,6 +105,9 @@ export function useStore() {
         ? 'credito'
         : tx.paymentMethod || 'debito';
 
+      const closingDay = targetAccount?.closingDay || 25;
+      const dueDay = targetAccount?.dueDay || 5;
+
       // 1. LÓGICA DE CARTÃO (PARCELADO OU À VISTA)
       if (isCreditCard) {
         const baseDate = new Date(tx.date);
@@ -116,8 +119,13 @@ export function useStore() {
         const installmentAmount = tx.amount / installmentsCount;
         const baseId = Date.now().toString();
 
-        // 👉 Limpa o nome para evitar "lançamento (1/2) (1/2)"
         const cleanDescription = tx.description.replace(/\s\(\d+\/\d+\)$/, "");
+
+        // 👉 LÓGICA REVERSA PARA DATAS (Evita o Paradoxo de Dezembro)
+        let baseM = baseDate.getMonth() + 1;
+        let baseY = baseDate.getFullYear();
+        if (baseDate.getDate() >= closingDay) baseM += 1;
+        if (dueDay < closingDay) baseM += 1;
 
         for (let i = 0; i < installmentsCount; i++) {
           let currentDate: Date;
@@ -126,13 +134,12 @@ export function useStore() {
             // Parcela 1: Data exata da compra
             currentDate = new Date(baseDate);
           } else {
-            // Parcela 2 em diante: Dia 1 do mês seguinte (ao meio-dia)
-            currentDate = new Date(
-              baseDate.getFullYear(),
-              baseDate.getMonth() + i,
-              1,
-              12, 0, 0
-            );
+            // Parcela 2 em diante: Calcula o mês alvo exato e seta para dia 1
+            let targetInvM = baseM + i;
+            let monthForDay1 = targetInvM - (dueDay < closingDay ? 1 : 0);
+
+            // O JavaScript gerencia a transição de ano se monthForDay1 > 12
+            currentDate = new Date(baseY, monthForDay1 - 1, 1, 12, 0, 0);
           }
 
           const descSuffix = installmentsCount > 1 ? ` (${i + 1}/${installmentsCount})` : '';
@@ -141,12 +148,13 @@ export function useStore() {
             ...tx,
             id: `${baseId}-${i}`,
             groupId: baseId,
+            groupIndex: i, // Importante para remapeamento futuro
             description: `${cleanDescription}${descSuffix}`,
             amount: installmentAmount,
             date: currentDate.toISOString(),
             paid: false,
             paymentMethod: finalizedTxMethod,
-            recurrence: 'unica', // Trava a recorrência para não conflitar
+            recurrence: 'unica',
           });
         }
       }
@@ -282,6 +290,11 @@ export function useStore() {
 
       let updatedAccounts = [...accounts];
 
+      const targetAccount = accounts.find((a) => a.id === updatedTx.accountId);
+      const isCreditCard = targetAccount?.type === 'cartao_credito';
+      const closingDay = targetAccount?.closingDay || 25;
+      const dueDay = targetAccount?.dueDay || 5;
+
       const revertBalance = (tx: Transaction) => {
         if (!tx.paid) return;
         updatedAccounts = updatedAccounts.map((acc) => {
@@ -328,25 +341,39 @@ export function useStore() {
         const oldDate = new Date(oldTx.date);
         const newDateBase = new Date(updatedTx.date);
 
-        // 👉 Limpa a nova descrição para não empilhar sufixos na edição
         const cleanDescription = updatedTx.description.replace(/\s\(\d+\/\d+\)$/, "");
 
         txsToMutate.forEach((mutantOld) => {
           revertBalance(mutantOld);
-          const newMutantDate = new Date(mutantOld.date);
+          let newMutantDate = new Date(mutantOld.date);
 
-          if (oldDate.getDate() !== newDateBase.getDate()) {
-            newMutantDate.setDate(newDateBase.getDate());
+          // 👉 Reposicionamento com Lógica Reversa ao Editar
+          if (isCreditCard && mutantOld.groupIndex !== undefined) {
+            if (mutantOld.groupIndex === 0) {
+              newMutantDate = new Date(newDateBase);
+            } else {
+              let baseM = newDateBase.getMonth() + 1;
+              let baseY = newDateBase.getFullYear();
+              if (newDateBase.getDate() >= closingDay) baseM += 1;
+              if (dueDay < closingDay) baseM += 1;
+
+              let targetInvM = baseM + mutantOld.groupIndex;
+              let monthForDay1 = targetInvM - (dueDay < closingDay ? 1 : 0);
+              newMutantDate = new Date(baseY, monthForDay1 - 1, 1, 12, 0, 0);
+            }
+          } else {
+            if (oldDate.getDate() !== newDateBase.getDate()) {
+              newMutantDate.setDate(newDateBase.getDate());
+            }
           }
 
-          // Salva o sufixo antigo da parcela que está sofrendo mutação (ex: "(2/3)")
           const oldSuffixMatch = mutantOld.description.match(/\s\(\d+\/\d+\)$/);
           const oldSuffix = oldSuffixMatch ? oldSuffixMatch[0] : '';
 
           const mutantNew: Transaction = {
             ...mutantOld,
             amount: updatedTx.amount,
-            description: `${cleanDescription}${oldSuffix}`, // Reconecta a base nova com o sufixo certo
+            description: `${cleanDescription}${oldSuffix}`,
             accountId: updatedTx.accountId,
             type: updatedTx.type,
             tagIds: updatedTx.tagIds,
@@ -437,7 +464,6 @@ export function useStore() {
         )
           return false;
 
-        // 👉 CÁLCULO BANCÁRIO (Igual ao CartaoScreen) para garantir que paga a fatura certa
         const closingDay = cardAccount.closingDay || 25;
         const dueDay = cardAccount.dueDay || 5;
         const d = new Date(tx.date);
