@@ -306,16 +306,16 @@ export function AddTransactionModal({
       ).toISOString();
     };
 
-    // 👉 A LÓGICA CORRIGIDA AQUI:
+    // 👉 A CORREÇÃO DE OURO AQUI:
+    // O parcelamento do cartão deve ser tratado como uma transação 'unica' pelo motor
+    // de recorrência. O useStore.ts é que vai cuidar de dividir os valores.
     const isInstallment = isCreditCardSelected && installments > 1;
-    const finalRecurrence = isInstallment ? 'mensal' : recurrence;
+    const finalRecurrence = isInstallment ? 'unica' : recurrence;
 
     const txData = {
       description: description.trim(),
       amount: parseFloat(amount.replace(',', '.')),
       type,
-      // Se for uma assinatura normal, usa o Inicia Em (recurrenceStart). 
-      // Se for uma compra Parcelada no Cartão, respeita a "Data da Compra" (date).
       date: (recurrence === 'unica' || isInstallment)
         ? parseToISO(date)
         : parseToISO(recurrenceStart),

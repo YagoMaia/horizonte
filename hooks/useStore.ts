@@ -19,10 +19,7 @@ export function useStore() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
-  // 2. Estado atualizado para ser um dicionário/Record
-  const [monthlyBudgets, setMonthlyBudgets] = useState<Record<string, number>>(
-    {},
-  );
+  const [monthlyBudgets, setMonthlyBudgets] = useState<Record<string, number>>({});
   const [showPending, setShowPendingState] = useState<boolean>(true);
   const [loading, setLoading] = useState(true);
 
@@ -37,15 +34,13 @@ export function useStore() {
           AsyncStorage.getItem(STORAGE_KEYS.TRANSACTIONS),
           AsyncStorage.getItem(STORAGE_KEYS.ACCOUNTS),
           AsyncStorage.getItem(STORAGE_KEYS.TAGS),
-          AsyncStorage.getItem(STORAGE_KEYS.MONTHLY_BUDGETS), // Usando a chave nova
+          AsyncStorage.getItem(STORAGE_KEYS.MONTHLY_BUDGETS),
           AsyncStorage.getItem(STORAGE_KEYS.SHOW_PENDING),
         ]);
 
       setTransactions(txRaw ? JSON.parse(txRaw) : DEFAULT_TRANSACTIONS);
       setAccounts(accRaw ? JSON.parse(accRaw) : DEFAULT_ACCOUNTS);
       setTags(tagsRaw ? JSON.parse(tagsRaw) : DEFAULT_TAGS);
-
-      // 3. Fazendo parse do JSON para o novo dicionário de orçamentos
       setMonthlyBudgets(budgetsRaw ? JSON.parse(budgetsRaw) : {});
 
       if (showPendingRaw !== null) {
@@ -89,13 +84,13 @@ export function useStore() {
       STORAGE_KEYS.TRANSACTIONS,
       STORAGE_KEYS.ACCOUNTS,
       STORAGE_KEYS.TAGS,
-      STORAGE_KEYS.MONTHLY_BUDGETS, // Removendo a chave correta
+      STORAGE_KEYS.MONTHLY_BUDGETS,
       STORAGE_KEYS.SHOW_PENDING,
     ]);
     setTransactions(DEFAULT_TRANSACTIONS);
     setAccounts(DEFAULT_ACCOUNTS);
     setTags(DEFAULT_TAGS);
-    setMonthlyBudgets({}); // Resetando o dicionário
+    setMonthlyBudgets({});
     setShowPendingState(true);
   }, []);
 
@@ -110,62 +105,55 @@ export function useStore() {
         ? 'credito'
         : tx.paymentMethod || 'debito';
 
-      // Dia de fecho da fatura (padrão 31 se não definido)
-      const closingDay = targetAccount?.closingDay || 31;
-
       // 1. LÓGICA DE CARTÃO (PARCELADO OU À VISTA)
       if (isCreditCard) {
         const baseDate = new Date(tx.date);
-        const dayOfPurchase = baseDate.getDate();
-
-        // 👉 CORREÇÃO AQUI: >= (Maior ou igual).
-        // Se comprar no próprio dia do fechamento, já pula para a outra fatura.
-        const shiftMonths = dayOfPurchase >= closingDay ? 1 : 0;
 
         const installmentsCount =
           tx.totalInstallments && tx.totalInstallments > 1
             ? tx.totalInstallments
             : 1;
         const installmentAmount = tx.amount / installmentsCount;
-
         const baseId = Date.now().toString();
 
+        // 👉 Limpa o nome para evitar "lançamento (1/2) (1/2)"
+        const cleanDescription = tx.description.replace(/\s\(\d+\/\d+\)$/, "");
+
         for (let i = 0; i < installmentsCount; i++) {
-          const currentDate = new Date(baseDate);
+          let currentDate: Date;
 
-          // Evita o erro de rollover de meses (ex: 31 de Março -> Abril)
-          currentDate.setDate(1);
-          currentDate.setMonth(baseDate.getMonth() + i + shiftMonths);
+          if (i === 0) {
+            // Parcela 1: Data exata da compra
+            currentDate = new Date(baseDate);
+          } else {
+            // Parcela 2 em diante: Dia 1 do mês seguinte (ao meio-dia)
+            currentDate = new Date(
+              baseDate.getFullYear(),
+              baseDate.getMonth() + i,
+              1,
+              12, 0, 0
+            );
+          }
 
-          // Ajusta para o dia original ou o último dia possível do mês (ex: 31 -> 28 de Fev)
-          const lastDayOfTargetMonth = new Date(
-            currentDate.getFullYear(),
-            currentDate.getMonth() + 1,
-            0,
-          ).getDate();
-          currentDate.setDate(Math.min(dayOfPurchase, lastDayOfTargetMonth));
-
-          const descSuffix =
-            installmentsCount > 1 ? ` (${i + 1}/${installmentsCount})` : '';
+          const descSuffix = installmentsCount > 1 ? ` (${i + 1}/${installmentsCount})` : '';
 
           newTransactions.push({
             ...tx,
-            id: `${baseId}-${i}`, // ID Agrupado para permitir eliminação em massa
-            description: `${tx.description}${descSuffix}`,
+            id: `${baseId}-${i}`,
+            groupId: baseId,
+            description: `${cleanDescription}${descSuffix}`,
             amount: installmentAmount,
             date: currentDate.toISOString(),
             paid: false,
             paymentMethod: finalizedTxMethod,
+            recurrence: 'unica', // Trava a recorrência para não conflitar
           });
         }
       }
       // 2. RECORRÊNCIA MENSAL (Débito/Dinheiro)
-      // 2. RECORRÊNCIA MENSAL (Débito/Dinheiro)
       else if (tx.recurrence === 'mensal') {
         const baseId = Date.now().toString();
         const baseDate = new Date(tx.date);
-
-        // 👉 NOVO: Opcional. Você pode definir até quantas recorrências físicas quer gerar (ex: 24 meses).
         const maxRecurrences = 24;
 
         for (let i = 0; i < maxRecurrences; i++) {
@@ -175,9 +163,9 @@ export function useStore() {
 
           newTransactions.push({
             ...tx,
-            id: `${baseId}-${i}`, // Mantemos o ID sequencial
-            groupId: baseId, // 👉 NOVO DNA: Conecta toda a família
-            groupIndex: i, // 👉 NOVO DNA: Diz a ordem na família
+            id: `${baseId}-${i}`,
+            groupId: baseId,
+            groupIndex: i,
             date: currentDate.toISOString(),
             paid: isPaid,
             paymentMethod: finalizedTxMethod,
@@ -205,12 +193,10 @@ export function useStore() {
 
         if (tx.paid) {
           updatedAccounts = updatedAccounts.map((acc) => {
-            // Conta de Origem (Perde dinheiro se for despesa/transferencia, ganha se for receita)
             if (acc.id === tx.accountId) {
               const delta = tx.type === 'receita' ? tx.amount : -tx.amount;
               return { ...acc, balance: acc.balance + delta };
             }
-            // Conta de Destino (Ganha dinheiro apenas na transferência)
             if (tx.type === 'transferencia' && acc.id === tx.targetAccountId) {
               return { ...acc, balance: acc.balance + tx.amount };
             }
@@ -227,15 +213,12 @@ export function useStore() {
     [transactions, accounts, saveTransactions, saveAccounts],
   );
 
-  // 👉 NOVA ASSINATURA: deleteTransaction(id, mode)
   const deleteTransaction = useCallback(
     async (id: string, mode: 'single' | 'future' | 'all' = 'single') => {
       const targetTx = transactions.find((t) => t.id === id);
       if (!targetTx) return;
 
       let idsToDelete = [id];
-
-      // 👉 NOVA LÓGICA DE DETECÇÃO DE FAMÍLIA (Usando o DNA ou o formato antigo com hífen)
       const isPartOfFamily = targetTx.groupId || id.includes('-');
 
       if (isPartOfFamily && mode !== 'single') {
@@ -246,10 +229,8 @@ export function useStore() {
         );
 
         if (mode === 'all') {
-          // Apaga toda a corrente, passada e futura
           idsToDelete = familyTxs.map((t) => t.id);
         } else if (mode === 'future') {
-          // Apaga esta e as posteriores baseando-se na data
           const targetTime = new Date(targetTx.date).getTime();
           const futureTxs = familyTxs.filter(
             (t) => new Date(t.date).getTime() >= targetTime,
@@ -258,10 +239,7 @@ export function useStore() {
         }
       }
 
-      // 1. Filtrar as transações que SOBRAM no banco de dados
       const updated = transactions.filter((t) => !idsToDelete.includes(t.id));
-
-      // 2. Reverter os saldos das contas para todas as transações pagas que foram mortas
       let updatedAccounts = [...accounts];
       const txsToDelete = transactions.filter((t) =>
         idsToDelete.includes(t.id),
@@ -294,7 +272,6 @@ export function useStore() {
     [transactions, accounts, saveTransactions, saveAccounts],
   );
 
-  // 👉 NOVA ASSINATURA: updateTransaction(updatedTx, mode)
   const updateTransaction = useCallback(
     async (
       updatedTx: Transaction,
@@ -305,7 +282,6 @@ export function useStore() {
 
       let updatedAccounts = [...accounts];
 
-      // Função auxiliar interna para reverter saldo
       const revertBalance = (tx: Transaction) => {
         if (!tx.paid) return;
         updatedAccounts = updatedAccounts.map((acc) => {
@@ -320,7 +296,6 @@ export function useStore() {
         });
       };
 
-      // Função auxiliar interna para aplicar saldo
       const applyBalance = (tx: Transaction) => {
         if (!tx.paid) return;
         updatedAccounts = updatedAccounts.map((acc) => {
@@ -335,7 +310,6 @@ export function useStore() {
         });
       };
 
-      // 👉 CÓPIA MUTANTE
       let finalTransactions = [...transactions];
       const isPartOfFamily = oldTx.groupId || oldTx.id.includes('-');
 
@@ -346,54 +320,49 @@ export function useStore() {
         );
         const targetTime = new Date(oldTx.date).getTime();
 
-        // Define quais membros da família vão sofrer a mutação
         const txsToMutate =
           mode === 'all'
             ? familyTxs
             : familyTxs.filter((t) => new Date(t.date).getTime() >= targetTime);
 
-        // Prepara a diferença de dias (se o usuário mudou o dia da transação original)
         const oldDate = new Date(oldTx.date);
         const newDateBase = new Date(updatedTx.date);
 
-        txsToMutate.forEach((mutantOld) => {
-          // Reverte o saldo antigo
-          revertBalance(mutantOld);
+        // 👉 Limpa a nova descrição para não empilhar sufixos na edição
+        const cleanDescription = updatedTx.description.replace(/\s\(\d+\/\d+\)$/, "");
 
-          // Calcula a nova data mantendo o espaçamento de meses original (ou recalculando o novo)
+        txsToMutate.forEach((mutantOld) => {
+          revertBalance(mutantOld);
           const newMutantDate = new Date(mutantOld.date);
 
-          // Se o usuário mudou o DIA na transação principal, propaga para os clones futuros
           if (oldDate.getDate() !== newDateBase.getDate()) {
             newMutantDate.setDate(newDateBase.getDate());
           }
 
-          // Constrói a nova transação
+          // Salva o sufixo antigo da parcela que está sofrendo mutação (ex: "(2/3)")
+          const oldSuffixMatch = mutantOld.description.match(/\s\(\d+\/\d+\)$/);
+          const oldSuffix = oldSuffixMatch ? oldSuffixMatch[0] : '';
+
           const mutantNew: Transaction = {
             ...mutantOld,
-            amount: updatedTx.amount, // Herda novo valor
-            description: updatedTx.description, // Herda nova descrição
-            accountId: updatedTx.accountId, // Herda nova conta
-            type: updatedTx.type, // Herda novo tipo
-            tagIds: updatedTx.tagIds, // Herda novas tags
+            amount: updatedTx.amount,
+            description: `${cleanDescription}${oldSuffix}`, // Reconecta a base nova com o sufixo certo
+            accountId: updatedTx.accountId,
+            type: updatedTx.type,
+            tagIds: updatedTx.tagIds,
             date: newMutantDate.toISOString(),
-            // Não herda o 'paid' porque não queremos dar como pago compras do futuro só porque ele pagou a de hoje
           };
 
-          // Aplica o novo saldo
           applyBalance(mutantNew);
 
-          // Atualiza a lista na memória
           finalTransactions = finalTransactions.map((t) =>
             t.id === mutantNew.id ? mutantNew : t,
           );
         });
       } else {
-        // MODO SINGLE: Comportamento antigo, reverte um, aplica um.
         revertBalance(oldTx);
         applyBalance(updatedTx);
 
-        // Para quebrar a corrente (para não ser mutado por acidente num futuro 'update all')
         const detachedTx = { ...updatedTx, groupId: undefined };
         finalTransactions = finalTransactions.map((t) =>
           t.id === updatedTx.id ? detachedTx : t,
@@ -409,22 +378,18 @@ export function useStore() {
   const getEffectiveBudget = useCallback(
     (year: number, month: number) => {
       const currentKey = `${year}-${String(month).padStart(2, '0')}`;
-
-      // Se existir um valor específico para este mês, usa ele
       if (monthlyBudgets[currentKey]) return monthlyBudgets[currentKey];
 
-      // Caso contrário, busca o orçamento mais recente definido no passado
       const sortedKeys = Object.keys(monthlyBudgets).sort().reverse();
       for (const key of sortedKeys) {
         if (key < currentKey) return monthlyBudgets[key];
       }
 
-      return 0; // Padrão se nunca nada foi definido
+      return 0;
     },
     [monthlyBudgets],
   );
 
-  // Atualize o save para usar a chave padronizada YYYY-MM
   const saveMonthlyBudget = useCallback(
     async (year: number, month: number, value: number) => {
       const key = `${year}-${String(month).padStart(2, '0')}`;
@@ -445,9 +410,11 @@ export function useStore() {
     }
     return sum + a.balance;
   }, 0);
+
   const monthlyIncome = transactions
     .filter((t) => t.type === 'receita' && t.paid)
     .reduce((sum, t) => sum + t.amount, 0);
+
   const monthlyExpense = transactions
     .filter((t) => t.type === 'despesa' && t.paid)
     .reduce((sum, t) => sum + t.amount, 0);
@@ -456,13 +423,12 @@ export function useStore() {
     async (
       creditCardId: string,
       sourceAccountId: string,
-      targetMonth: number, // Agora recebe 0 a 11
+      targetMonth: number,
       targetYear: number,
     ) => {
       const cardAccount = accounts.find((a) => a.id === creditCardId);
       if (!cardAccount || cardAccount.type !== 'cartao_credito') return;
 
-      // 1. Isolar transações que compõem a fatura específica
       const invoiceTxs = transactions.filter((tx) => {
         if (
           tx.accountId !== creditCardId ||
@@ -470,23 +436,33 @@ export function useStore() {
           tx.paid
         )
           return false;
-        const txDate = new Date(tx.date);
-        // 👉 CORREÇÃO: Removido o "- 1". Agora ambos usam o padrão 0-11 nativo do JS.
-        return (
-          txDate.getMonth() === targetMonth &&
-          txDate.getFullYear() === targetYear
-        );
+
+        // 👉 CÁLCULO BANCÁRIO (Igual ao CartaoScreen) para garantir que paga a fatura certa
+        const closingDay = cardAccount.closingDay || 25;
+        const dueDay = cardAccount.dueDay || 5;
+        const d = new Date(tx.date);
+
+        let m = d.getMonth() + 1;
+        let y = d.getFullYear();
+
+        if (d.getDate() >= closingDay) m += 1;
+        if (dueDay < closingDay) m += 1;
+
+        while (m > 12) {
+          m -= 12;
+          y += 1;
+        }
+
+        return (m - 1) === targetMonth && y === targetYear;
       });
 
       if (invoiceTxs.length === 0) return;
 
-      // 2. Calcular o total exato da fatura
       const invoiceTotal = invoiceTxs.reduce(
         (sum, tx) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount),
         0,
       );
 
-      // 3. Atualizar o lote inteiro para 'Pago'
       const invoiceTxIds = invoiceTxs.map((t) => t.id);
       const updatedTransactions = transactions.map((tx) => {
         if (invoiceTxIds.includes(tx.id)) {
@@ -495,7 +471,6 @@ export function useStore() {
         return tx;
       });
 
-      // 4. Criar transação de Transferência (Para manter o rastro do dinheiro sem duplicar despesa)
       const paymentTx: Transaction = {
         id: Date.now().toString(),
         description: `Pagamento Fatura - ${cardAccount.name}`,
@@ -503,7 +478,7 @@ export function useStore() {
         type: 'transferencia',
         date: new Date().toISOString(),
         accountId: sourceAccountId,
-        tagIds: [], // Pode criar uma Tag "Fatura" futuramente se desejar
+        tagIds: [],
         paymentMethod: 'debito',
         paid: true,
         recurrence: 'unica',
@@ -511,7 +486,6 @@ export function useStore() {
 
       const finalTransactions = [paymentTx, ...updatedTransactions];
 
-      // 5. Efetuar o débito na conta corrente
       const updatedAccounts = accounts.map((acc) => {
         if (acc.id === sourceAccountId) {
           return { ...acc, balance: acc.balance - invoiceTotal };
@@ -529,7 +503,6 @@ export function useStore() {
     transactions,
     accounts,
     tags,
-    // 4. Expondo as novas propriedades e funções do orçamento
     monthlyBudgets,
     getEffectiveBudget,
     saveMonthlyBudget,
