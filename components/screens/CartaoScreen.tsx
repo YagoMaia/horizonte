@@ -16,11 +16,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/hooks/useTheme';
 import { useStoreContext } from '@/context/StoreContext';
 import {
+  getCreditCardTargetMonth,
   formatCurrency,
   formatDateShort,
 } from '@/lib/utils';
 import { Account, Transaction } from '@/constants/types';
 
+import { TransactionDetailModal } from '../TransactionDetailModal';
 import { AddTransactionModal } from '../AddTransactionModal';
 
 const MONTH_NAMES = [
@@ -30,29 +32,26 @@ const MONTH_NAMES = [
 
 export function CartaoScreen() {
   const { colors } = useTheme();
+  // 👉 Certifique-se de que o type do StoreContext exporta a nova função!
   const {
     accounts,
     transactions,
     tags,
     payCreditCardInvoice,
-    anticipateCreditCardPayment,
+    anticipateCreditCardPayment, // 👈 Nova função importada
     addTransaction,
     updateTransaction,
     deleteTransaction,
-  } = useStoreContext() as any;
+  } = useStoreContext() as any; // Usando "as any" caso o TypeScript demore a ler o Context
 
   const creditCards = useMemo(
     () => accounts.filter((a: Account) => a.type === 'cartao_credito'),
     [accounts],
   );
 
-  // 'todos' será o nosso ID especial
   const [selectedCardId, setSelectedCardId] = useState<string | null>(
-    creditCards.length > 0 ? 'todos' : null,
+    creditCards.length > 0 ? creditCards[0].id : null,
   );
-
-  // Determina se estamos a visualizar um cartão específico ou o agregado ("todos")
-  const isViewingAll = selectedCardId === 'todos';
 
   const selectedCard = useMemo(
     () => creditCards.find((c: Account) => c.id === selectedCardId) || null,
@@ -68,6 +67,7 @@ export function CartaoScreen() {
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [sourceAccountId, setSourceAccountId] = useState<string>('');
 
+  // 👉 Novos estados para Antecipação
   const [isAnticipateModalOpen, setIsAnticipateModalOpen] = useState(false);
   const [anticipateAmountStr, setAnticipateAmountStr] = useState('');
   const [anticipateSourceAccountId, setAnticipateSourceAccountId] = useState<string>('');
@@ -109,7 +109,7 @@ export function CartaoScreen() {
     statusColor,
     globalPendingDebt,
   } = useMemo(() => {
-    if (!selectedCard && !isViewingAll)
+    if (!selectedCard)
       return {
         totalInvoice: 0, pendingInvoice: 0, targetMonth: 0, targetYear: 2024,
         invoiceTransactions: [], limit: 0, availableLimit: 0, limitUsagePercent: 0,
@@ -119,122 +119,58 @@ export function CartaoScreen() {
     const baseDate = new Date();
     baseDate.setMonth(baseDate.getMonth() + monthOffset);
 
-    // Para a vista "Todos", usamos as datas do calendário normal como referência base.
-    // Vamos usar as regras do primeiro cartão ou um padrão para determinar o "Mês de Visualização".
-    const defaultRefCardId = creditCards[0]?.id;
-    const targetInvoice = getInvoiceForTx(baseDate.toISOString(), selectedCard ? selectedCard.id : defaultRefCardId);
-
+    const targetInvoice = getInvoiceForTx(baseDate.toISOString(), selectedCard.id);
     const tMonth = targetInvoice.viewMonth;
     const tYear = targetInvoice.viewYear;
+    const tValue = targetInvoice.value;
 
-    let invTxs: Transaction[] = [];
-    let tInvoice = 0;
-    let pInvoice = 0;
-    let globalPendingDebtValue = 0;
-    let totalLimit = 0;
-    let totalAvailableLimit = 0;
-
-    if (isViewingAll) {
-      // Agregar dados de TODOS os cartões
-      invTxs = transactions.filter((tx: Transaction) => {
-        if (tx.paymentMethod !== 'credito') return false;
-        // Na vista de todos, filtramos para que a fatura coincida com o mês/ano de visualização
+    const invTxs = transactions
+      .filter((tx: Transaction) => {
+        if (tx.accountId !== selectedCard.id || tx.paymentMethod !== 'credito') return false;
         const txInv = getInvoiceForTx(tx.date, tx.accountId);
-        return txInv.viewMonth === tMonth && txInv.viewYear === tYear;
-      }).sort((a: Transaction, b: Transaction) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        return txInv.value === tValue;
+      })
+      .sort((a: Transaction, b: Transaction) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-      tInvoice = invTxs.reduce((sum: number, tx: Transaction) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount), 0);
-      pInvoice = invTxs.filter((t: Transaction) => !t.paid).reduce((sum: number, tx: Transaction) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount), 0);
+    const tInvoice = invTxs.reduce((sum: number, tx: Transaction) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount), 0);
+    const pInvoice = invTxs.filter((t: Transaction) => !t.paid).reduce((sum: number, tx: Transaction) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount), 0);
 
-      const openInvoiceDateStr = new Date().toISOString();
+    const openInvoiceValue = getInvoiceForTx(new Date().toISOString(), selectedCard.id).value;
 
-      globalPendingDebtValue = transactions
-        .filter((tx: Transaction) => {
-          if (tx.paymentMethod !== 'credito' || tx.paid) return false;
-          const openInv = getInvoiceForTx(openInvoiceDateStr, tx.accountId);
-          const txInv = getInvoiceForTx(tx.date, tx.accountId);
-          return txInv.value >= openInv.value;
-        })
-        .reduce((sum: number, tx: Transaction) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount), 0);
+    // 👉 CÁLCULO DA DÍVIDA TOTAL
+    const globalPendingDebtValue = transactions
+      .filter((tx: Transaction) => {
+        if (tx.accountId !== selectedCard.id || tx.paymentMethod !== 'credito' || tx.paid) return false;
+        const txInv = getInvoiceForTx(tx.date, tx.accountId);
+        return txInv.value >= openInvoiceValue;
+      })
+      .reduce((sum: number, tx: Transaction) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount), 0);
 
-      totalLimit = creditCards.reduce((acc: number, card: Account) => acc + (card.creditLimit || 0), 0);
-      totalAvailableLimit = Math.max(0, totalLimit - globalPendingDebtValue);
-
-    } else if (selectedCard) {
-      // Dados de UM cartão específico (lógica original)
-      const tValue = targetInvoice.value;
-
-      invTxs = transactions
-        .filter((tx: Transaction) => {
-          if (tx.accountId !== selectedCard.id || tx.paymentMethod !== 'credito') return false;
-          const txInv = getInvoiceForTx(tx.date, tx.accountId);
-          return txInv.value === tValue;
-        })
-        .sort((a: Transaction, b: Transaction) => new Date(b.date).getTime() - new Date(a.date).getTime());
-
-      tInvoice = invTxs.reduce((sum: number, tx: Transaction) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount), 0);
-      pInvoice = invTxs.filter((t: Transaction) => !t.paid).reduce((sum: number, tx: Transaction) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount), 0);
-
-      const openInvoiceValue = getInvoiceForTx(new Date().toISOString(), selectedCard.id).value;
-
-      globalPendingDebtValue = transactions
-        .filter((tx: Transaction) => {
-          if (tx.accountId !== selectedCard.id || tx.paymentMethod !== 'credito' || tx.paid) return false;
-          const txInv = getInvoiceForTx(tx.date, tx.accountId);
-          return txInv.value >= openInvoiceValue;
-        })
-        .reduce((sum: number, tx: Transaction) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount), 0);
-
-      totalLimit = selectedCard.creditLimit || 0;
-      totalAvailableLimit = Math.max(0, totalLimit - globalPendingDebtValue);
-    }
-
-    const percent = totalLimit > 0 ? Math.min((globalPendingDebtValue / totalLimit) * 100, 100) : 0;
+    const cLimit = selectedCard.creditLimit || 0;
+    const aLimit = Math.max(0, cLimit - globalPendingDebtValue);
+    const percent = cLimit > 0 ? Math.min((globalPendingDebtValue / cLimit) * 100, 100) : 0;
 
     let status = 'ABERTA';
     let color = colors.primary;
 
-    // A lógica de estado (FUTURA, PAGA, etc) pode ficar ambígua ao agregar, vamos simplificar se for "Todos"
-    if (isViewingAll) {
-      const today = new Date();
-      const currentTargetMonth = today.getMonth();
-      const currentTargetYear = today.getFullYear();
-
-      if (tYear > currentTargetYear || (tYear === currentTargetYear && tMonth > currentTargetMonth)) {
-        status = 'FUTURA'; color = colors.warning;
-      } else if (tInvoice <= 0) {
-        status = 'ZERADA'; color = colors.mutedForeground;
-      } else if (pInvoice <= 0 && tInvoice > 0) {
-        status = 'PAGA'; color = colors.success;
-      } else {
-        status = 'ABERTA'; color = colors.primary;
-      }
-    } else if (selectedCard) {
-      const openInvoiceValue = getInvoiceForTx(new Date().toISOString(), selectedCard.id).value;
-      const tValue = targetInvoice.value;
-      if (tValue < openInvoiceValue && pInvoice <= 0 && tInvoice > 0) {
-        status = 'PAGA'; color = colors.success;
-      } else if (tValue > openInvoiceValue) {
-        status = 'FUTURA'; color = colors.warning;
-      } else if (tInvoice <= 0) {
-        status = 'ZERADA'; color = colors.mutedForeground;
-      }
+    if (tValue < openInvoiceValue && pInvoice <= 0 && tInvoice > 0) {
+      status = 'PAGA'; color = colors.success;
+    } else if (tValue > openInvoiceValue) {
+      status = 'FUTURA'; color = colors.warning;
+    } else if (tInvoice <= 0) {
+      status = 'ZERADA'; color = colors.mutedForeground;
     }
 
     return {
       totalInvoice: tInvoice, pendingInvoice: pInvoice, targetMonth: tMonth, targetYear: tYear,
-      invoiceTransactions: invTxs, limit: totalLimit, availableLimit: totalAvailableLimit, limitUsagePercent: percent,
+      invoiceTransactions: invTxs, limit: cLimit, availableLimit: aLimit, limitUsagePercent: percent,
       invoiceStatus: status, statusColor: color, globalPendingDebt: globalPendingDebtValue,
     };
-  }, [selectedCard, isViewingAll, creditCards, transactions, monthOffset, colors]);
+  }, [selectedCard, transactions, monthOffset, colors]);
 
   const debitAccounts = useMemo(() => accounts.filter((a: Account) => a.type !== 'cartao_credito'), [accounts]);
 
   const handlePayInvoice = () => {
-    if (isViewingAll) {
-      Alert.alert('Aviso', 'Selecione um cartão específico para pagar a fatura.');
-      return;
-    }
     if (debitAccounts.length === 0) {
       Alert.alert('Aviso', 'Não tem nenhuma conta corrente cadastrada para pagar esta fatura.');
       return;
@@ -244,7 +180,7 @@ export function CartaoScreen() {
   };
 
   const confirmPayment = async () => {
-    if (!selectedCard || !sourceAccountId || isViewingAll) return;
+    if (!selectedCard || !sourceAccountId) return;
     try {
       await payCreditCardInvoice(selectedCard.id, sourceAccountId, targetMonth, targetYear);
       setIsPaymentModalOpen(false);
@@ -254,11 +190,8 @@ export function CartaoScreen() {
     }
   };
 
+  // 👉 Funções de Antecipação
   const handleOpenAnticipate = () => {
-    if (isViewingAll) {
-      Alert.alert('Aviso', 'Selecione um cartão específico para antecipar pagamentos.');
-      return;
-    }
     if (debitAccounts.length === 0) {
       Alert.alert('Aviso', 'Nenhuma conta corrente cadastrada para debitar a antecipação.');
       return;
@@ -273,7 +206,7 @@ export function CartaoScreen() {
   };
 
   const confirmAnticipation = async () => {
-    if (!selectedCard || !anticipateSourceAccountId || isViewingAll) return;
+    if (!selectedCard || !anticipateSourceAccountId) return;
     const amount = parseFloat(anticipateAmountStr.replace(',', '.'));
 
     if (isNaN(amount) || amount <= 0) {
@@ -298,21 +231,18 @@ export function CartaoScreen() {
   const handleDeleteAllFromInvoice = () => {
     if (invoiceTransactions.length === 0) return;
 
-    if (isViewingAll) {
-      Alert.alert('Aviso', 'Selecione um cartão específico para realizar a exclusão em massa.');
-      return;
-    }
-
     const idsToDelete = invoiceTransactions.map((tx: Transaction) => tx.id);
     const alertMessage = 'Atenção: Se houver compras parceladas nesta fatura, TODAS as parcelas (passadas e futuras) dessas compras também serão excluídas. Deseja continuar?';
 
     if (Platform.OS === 'web') {
       if (window.confirm(`${alertMessage}\n\nTem certeza que deseja excluir todos os lançamentos desta fatura?`)) {
+        // 👉 Adicionado (id: string) aqui
         idsToDelete.forEach((id: string) => deleteTransaction(id, 'all'));
       }
     } else {
       Alert.alert('Excluir Fatura', alertMessage, [
         { text: 'Cancelar', style: 'cancel' },
+        // 👉 Adicionado (id: string) aqui também
         { text: 'Excluir Todos', style: 'destructive', onPress: () => { idsToDelete.forEach((id: string) => deleteTransaction(id, 'all')); } }
       ]);
     }
@@ -337,9 +267,6 @@ export function CartaoScreen() {
     const isReceita = tx.type === 'receita';
     const amountColor = isReceita ? colors.success : colors.foreground;
 
-    // Na vista "Todos", é útil ver qual o cartão da despesa
-    const txCardName = isViewingAll ? creditCards.find((c: Account) => c.id === tx.accountId)?.name : null;
-
     return (
       <TouchableOpacity
         style={[styles.txItem, { borderBottomColor: colors.border }]}
@@ -351,12 +278,7 @@ export function CartaoScreen() {
             <Text style={[styles.txDesc, { color: colors.foreground }]} numberOfLines={1}>{tx.description}</Text>
             {tx.paid && <Ionicons name='checkmark-circle' size={14} color={colors.success} />}
           </View>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <Text style={[styles.txDate, { color: colors.mutedForeground }]}>{formatDateShort(tx.date)}</Text>
-            {isViewingAll && txCardName && (
-              <Text style={{ fontSize: 10, color: colors.primary, fontWeight: 'bold' }}>{txCardName}</Text>
-            )}
-          </View>
+          <Text style={[styles.txDate, { color: colors.mutedForeground }]}>{formatDateShort(tx.date)}</Text>
         </View>
         <Text style={[styles.txAmount, { color: amountColor }]}>{isReceita ? '+' : '-'}{formatCurrency(tx.amount)}</Text>
       </TouchableOpacity>
@@ -367,15 +289,6 @@ export function CartaoScreen() {
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <View style={[styles.carouselContainer, { borderBottomColor: colors.border, backgroundColor: colors.card }]}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.carouselContent}>
-          {/* 👉 BOTÃO "TODOS" */}
-          <TouchableOpacity
-            onPress={() => setSelectedCardId('todos')}
-            style={[styles.cardSelectorItem, { backgroundColor: isViewingAll ? colors.foreground : 'transparent', borderColor: isViewingAll ? colors.foreground : colors.border }]}
-          >
-            <Ionicons name="card-outline" size={16} color={isViewingAll ? colors.background : colors.foreground} style={{ marginRight: 6 }} />
-            <Text style={{ fontSize: 13, fontWeight: '600', color: isViewingAll ? colors.background : colors.foreground }}>Todos</Text>
-          </TouchableOpacity>
-
           {creditCards.map((card: Account) => {
             const isSelected = card.id === selectedCardId;
             return (
@@ -392,7 +305,7 @@ export function CartaoScreen() {
         </ScrollView>
       </View>
 
-      {(selectedCard || isViewingAll) && (
+      {selectedCard && (
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
           <View style={styles.monthNav}>
             <TouchableOpacity onPress={() => setMonthOffset((m) => m - 1)} style={styles.navBtn}>
@@ -408,48 +321,46 @@ export function CartaoScreen() {
             </TouchableOpacity>
           </View>
 
-          <View style={[styles.cardVisual, { backgroundColor: isViewingAll ? colors.card : selectedCard?.color, borderWidth: isViewingAll ? 1 : 0, borderColor: colors.border }]}>
+          <View style={[styles.cardVisual, { backgroundColor: selectedCard.color }]}>
             <View style={styles.cardHeader}>
-              <Ionicons name="card" size={28} color={isViewingAll ? colors.foreground : "#FFF"} />
-              <Text style={[styles.cardBrand, { color: isViewingAll ? colors.foreground : "#FFF" }]}>
-                {isViewingAll ? 'VISÃO GERAL' : selectedCard?.name.toUpperCase()}
-              </Text>
+              <Ionicons name="card" size={28} color="#FFF" />
+              <Text style={styles.cardBrand}>{selectedCard.name.toUpperCase()}</Text>
             </View>
 
             <View style={styles.cardBody}>
-              <Text style={[styles.cardLabel, { color: isViewingAll ? colors.mutedForeground : '#FFF' }]}>Valor total consolidado</Text>
-              <Text style={[styles.cardAmount, { color: isViewingAll ? colors.foreground : '#FFF' }]}>{formatCurrency(totalInvoice)}</Text>
+              <Text style={styles.cardLabel}>Valor total da fatura</Text>
+              <Text style={styles.cardAmount}>{formatCurrency(totalInvoice)}</Text>
 
               <View style={styles.limitContainer}>
-                <View style={[styles.limitBarBackground, { backgroundColor: isViewingAll ? colors.border : 'rgba(255,255,255,0.3)' }]}>
+                <View style={styles.limitBarBackground}>
                   <View style={[styles.limitBarFill, { width: `${limitUsagePercent}%` }]} />
                 </View>
                 <View style={styles.limitInfo}>
                   <View>
-                    <Text style={[styles.limitValue, { color: isViewingAll ? colors.foreground : '#FFF' }]}>{formatCurrency(globalPendingDebt)}</Text>
-                    <Text style={[styles.limitLabel, { color: isViewingAll ? colors.mutedForeground : 'rgba(255,255,255,0.7)' }]}>Utilizado</Text>
+                    <Text style={styles.limitValue}>{formatCurrency(globalPendingDebt)}</Text>
+                    <Text style={styles.limitLabel}>Utilizado</Text>
                   </View>
                   <View style={{ alignItems: 'flex-end' }}>
-                    <Text style={[styles.limitValue, { color: isViewingAll ? colors.foreground : '#FFF' }]}>{formatCurrency(availableLimit)}</Text>
-                    <Text style={[styles.limitLabel, { color: isViewingAll ? colors.mutedForeground : 'rgba(255,255,255,0.7)' }]}>Disponível</Text>
+                    <Text style={styles.limitValue}>{formatCurrency(availableLimit)}</Text>
+                    <Text style={styles.limitLabel}>Disponível</Text>
                   </View>
                 </View>
               </View>
             </View>
 
             <View style={styles.cardFooter}>
-              {isViewingAll ? <View style={{ width: 42, height: 28 }} /> : <View style={styles.chip} />}
-              <View style={[styles.cardStatus, isViewingAll && { backgroundColor: statusColor }]}>
-                <Text style={[styles.cardStatusText, isViewingAll && { color: '#FFF' }]}>{invoiceStatus === 'ABERTA' ? 'EM ABERTO' : `FATURA ${invoiceStatus}`}</Text>
+              <View style={styles.chip} />
+              <View style={styles.cardStatus}>
+                <Text style={styles.cardStatusText}>{invoiceStatus === 'ABERTA' ? 'FATURA EM ABERTO' : `FATURA ${invoiceStatus}`}</Text>
               </View>
             </View>
           </View>
 
-          {/* Desabilita os botões se estivermos a ver 'Todos' */}
-          <View style={[styles.actionButtonsRow, isViewingAll && { opacity: 0.5 }]}>
+          {/* 👉 ROW DE BOTÕES: PAGAR E ANTECIPAR */}
+          <View style={styles.actionButtonsRow}>
             <TouchableOpacity
               style={[styles.payButton, { backgroundColor: pendingInvoice > 0 ? colors.primary : colors.border, flex: 1 }]}
-              disabled={pendingInvoice <= 0 || isViewingAll}
+              disabled={pendingInvoice <= 0}
               onPress={handlePayInvoice}
             >
               <Ionicons name={pendingInvoice > 0 ? 'wallet-outline' : 'checkmark-circle-outline'} size={20} color={pendingInvoice > 0 ? '#FFF' : colors.mutedForeground} />
@@ -460,7 +371,7 @@ export function CartaoScreen() {
 
             <TouchableOpacity
               style={[styles.payButton, { backgroundColor: globalPendingDebt > 0 ? colors.secondary : colors.border, marginLeft: 12, paddingHorizontal: 16 }]}
-              disabled={globalPendingDebt <= 0 || isViewingAll}
+              disabled={globalPendingDebt <= 0}
               onPress={handleOpenAnticipate}
             >
               <Ionicons name="flash-outline" size={20} color={globalPendingDebt > 0 ? colors.foreground : colors.mutedForeground} />
@@ -469,11 +380,6 @@ export function CartaoScreen() {
               </Text>
             </TouchableOpacity>
           </View>
-          {isViewingAll && (
-            <Text style={{ textAlign: 'center', fontSize: 11, color: colors.mutedForeground, marginTop: -8 }}>
-              Selecione um cartão específico para pagar ou antecipar.
-            </Text>
-          )}
 
           <View style={styles.sectionHeader}>
             <View>
@@ -481,7 +387,7 @@ export function CartaoScreen() {
               <Text style={[styles.itemCount, { color: colors.mutedForeground }]}>{invoiceTransactions.length} itens</Text>
             </View>
 
-            {invoiceTransactions.length > 0 && !isViewingAll && (
+            {invoiceTransactions.length > 0 && (
               <TouchableOpacity style={styles.deleteAllBtn} onPress={handleDeleteAllFromInvoice}>
                 <Ionicons name="trash-outline" size={16} color={colors.destructive} />
                 <Text style={[styles.deleteAllText, { color: colors.destructive }]}>Excluir Todos</Text>
@@ -537,7 +443,7 @@ export function CartaoScreen() {
         </View>
       </Modal>
 
-      {/* MODAL DE ANTECIPAR FATURA */}
+      {/* 👉 MODAL DE ANTECIPAR FATURA */}
       <Modal visible={isAnticipateModalOpen} transparent animationType='slide'>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -648,7 +554,7 @@ const styles = StyleSheet.create({
   chip: { width: 42, height: 28, backgroundColor: '#cca633', borderRadius: 6, opacity: 0.9 },
   cardStatus: { backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6 },
   cardStatusText: { color: '#FFF', fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
-  actionButtonsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  actionButtonsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, // 👈 Novo
   payButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, borderRadius: 16, gap: 8 },
   payButtonText: { fontSize: 16, fontWeight: '700' },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 12, marginBottom: 8 },
