@@ -21,6 +21,7 @@ import { TagsScreen } from '@/components/screens/TagsScreen'
 import { ContasScreen } from '@/components/screens/ContasScreen'
 import { MenuScreen } from '@/components/screens/MenuScreen'
 import { CartaoScreen } from '@/components/screens/CartaoScreen'
+import { HorizonteScreen2 } from '@/components/screens/HorizonteScreen2'
 
 export default function HomePage() {
   const { colors } = useTheme()
@@ -40,7 +41,7 @@ export default function HomePage() {
     switch (activeTab) {
       case 'saldos': return <SaldosScreen />
       case 'totais': return <TotaisScreen />
-      case 'horizonte': return <HorizonteScreen />
+      case 'horizonte': return <HorizonteScreen2 />
       case 'contas': return <ContasScreen />
       case 'cartao': return <CartaoScreen />
       case 'tags': return <TagsScreen />

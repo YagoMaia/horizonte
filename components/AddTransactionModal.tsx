@@ -43,7 +43,7 @@ interface AddTransactionModalProps {
   visible: boolean;
   onClose: () => void;
   onAdd: (tx: any) => void;
-  onUpdate?: (tx: any, mode: string ) => void;
+  onUpdate?: (tx: any, mode: string) => void;
   accounts: Account[];
   tags: any[];
   transactionToEdit?: Transaction | null;
@@ -175,42 +175,41 @@ export function AddTransactionModal({
         : new Date();
 
     return (
-      <Modal transparent={true} visible={!!calendarTarget} animationType='fade'>
-        <View style={styles.calendarOverlay}>
-          <View
-            style={[
-              styles.calendarBox,
-              { backgroundColor: colors.card, borderColor: colors.border },
-            ]}
-          >
-            {/* O cabeçalho do calendário que já existe */}
-            <View style={styles.calendarHeader}>
-              <TouchableOpacity
-                onPress={() => setCalendarMonth(new Date(year, month - 1, 1))}
-              >
-                <Ionicons
-                  name='chevron-back'
-                  size={20}
-                  color={colors.foreground}
-                />
-              </TouchableOpacity>
-              <Text
-                style={[styles.calendarMonthText, { color: colors.foreground }]}
-              >
-                {MONTHS[month]} {year}
-              </Text>
-              <TouchableOpacity
-                onPress={() => setCalendarMonth(new Date(year, month + 1, 1))}
-              >
-                <Ionicons
-                  name='chevron-forward'
-                  size={20}
-                  color={colors.foreground}
-                />
-              </TouchableOpacity>
-            </View>
+      <View style={styles.calendarOverlay}>
+        <View
+          style={[
+            styles.calendarBox,
+            { backgroundColor: colors.card, borderColor: colors.border },
+          ]}
+        >
+          {/* 1. CABEÇALHO */}
+          <View style={styles.calendarHeader}>
+            <TouchableOpacity
+              onPress={() => setCalendarMonth(new Date(year, month - 1, 1))}
+            >
+              <Ionicons
+                name='chevron-back'
+                size={20}
+                color={colors.foreground}
+              />
+            </TouchableOpacity>
+            <Text
+              style={[styles.calendarMonthText, { color: colors.foreground }]}
+            >
+              {MONTHS[month]} {year}
+            </Text>
+            <TouchableOpacity
+              onPress={() => setCalendarMonth(new Date(year, month + 1, 1))}
+            >
+              <Ionicons
+                name='chevron-forward'
+                size={20}
+                color={colors.foreground}
+              />
+            </TouchableOpacity>
           </View>
 
+          {/* 2. CORPO DO CALENDÁRIO (GRELHA) - Agora DENTRO do calendarBox */}
           <View style={styles.calendarGrid}>
             {WEEK_DAYS.map((wd, i) => (
               <View key={`wd-${i}`} style={styles.calendarDayCell}>
@@ -269,17 +268,19 @@ export function AddTransactionModal({
                 </TouchableOpacity>
               );
             })}
-            <TouchableOpacity
-              style={styles.calendarCloseBtn}
-              onPress={() => setCalendarTarget(null)}
-            >
-              <Text style={{ color: colors.primary, fontWeight: '600' }}>
-                Cancelar
-              </Text>
-            </TouchableOpacity>
           </View>
+
+          {/* 3. BOTÃO CANCELAR - Agora DENTRO do calendarBox */}
+          <TouchableOpacity
+            style={styles.calendarCloseBtn}
+            onPress={() => setCalendarTarget(null)}
+          >
+            <Text style={{ color: colors.primary, fontWeight: '600' }}>
+              Cancelar
+            </Text>
+          </TouchableOpacity>
         </View>
-      </Modal>
+      </View>
     );
   };
 
@@ -830,7 +831,6 @@ export function AddTransactionModal({
             </Text>
           </View>
         )}
-        {renderCalendar()}
         <RecurrenceActionModal
           visible={recurrenceActionVisible}
           actionType='edit'
@@ -843,6 +843,7 @@ export function AddTransactionModal({
             }
           }}
         />
+        {renderCalendar()}
       </KeyboardAvoidingView>
     </Modal>
   );
@@ -912,7 +913,22 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     marginRight: 8,
   },
-  // calendarBox: { marginTop: 8, borderRadius: 12, padding: 12, borderWidth: 1 },
+  calendarOverlay: {
+    ...StyleSheet.absoluteFillObject, // Magia negra do RN: crava top/bottom/left/right 0 automaticamente
+    backgroundColor: 'rgba(0, 0, 0, 0.75)', // Fundo escuro intenso
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 99999, // Força bruta para passar por cima de TUDO
+    elevation: 99999,
+  },
+  calendarBox: {
+    width: '85%',
+    // maxWidth: 400, // 👉 TRAVA DE LARGURA: Impede que ele estique infinitamente no Web/Tablet
+    borderRadius: 20,
+    padding: 24,
+    borderWidth: 1,
+    // O backgroundColor será injetado inline via tema
+  },
   calendarHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -926,6 +942,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 8,
+    // REMOVIDO: backgroundColor: 'FFF'
   },
   dayInner: {
     width: 30,
@@ -933,6 +950,11 @@ const styles = StyleSheet.create({
     borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  calendarCloseBtn: {
+    marginTop: 16,
+    alignItems: 'center',
+    paddingVertical: 10,
   },
   // Estilos da mensagem de erro
   emptyStateContainer: {
@@ -949,26 +971,4 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   emptyStateText: { fontSize: 14, textAlign: 'center', lineHeight: 20 },
-  calendarOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  calendarBox: {
-    width: '85%',
-    borderRadius: 20,
-    padding: 20,
-    borderWidth: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 10,
-    elevation: 8,
-  },
-  calendarCloseBtn: {
-    marginTop: 16,
-    alignItems: 'center',
-    paddingVertical: 10,
-  },
 });
