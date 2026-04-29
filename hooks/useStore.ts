@@ -586,6 +586,59 @@ export function useStore() {
     [transactions, accounts, saveTransactions, saveAccounts]
   );
 
+  // 👉 NOVA FUNÇÃO: Deleta múltiplos IDs em lote de forma segura
+  const deleteMultipleTransactions = useCallback(
+    async (txIds: string[]) => {
+      let idsToRemove = new Set<string>();
+
+      // 1. Mapeia todos os IDs e suas respectivas parcelas (família)
+      txIds.forEach((id) => {
+        const targetTx = transactions.find((t) => t.id === id);
+        if (!targetTx) return;
+
+        idsToRemove.add(id);
+        const isPartOfFamily = targetTx.groupId || id.includes('-');
+
+        // Se for compra parcelada, pegamos todas as parcelas dela
+        if (isPartOfFamily) {
+          const baseId = targetTx.groupId || id.split('-')[0];
+          const familyTxs = transactions.filter(
+            (t) => t.groupId === baseId || t.id.startsWith(`${baseId}-`)
+          );
+          familyTxs.forEach((t) => idsToRemove.add(t.id));
+        }
+      });
+
+      const finalIdsToRemove = Array.from(idsToRemove);
+
+      // 2. Filtra as transações removendo todos os IDs mapeados de uma vez
+      const updated = transactions.filter((t) => !finalIdsToRemove.includes(t.id));
+      let updatedAccounts = [...accounts];
+      const txsToDelete = transactions.filter((t) => finalIdsToRemove.includes(t.id));
+
+      // 3. Atualiza os saldos das contas (se as compras que estão sendo apagadas já foram pagas)
+      txsToDelete.forEach((deletedTx) => {
+        if (deletedTx.paid) {
+          updatedAccounts = updatedAccounts.map((acc) => {
+            if (acc.id === deletedTx.accountId) {
+              const delta = deletedTx.type === 'receita' ? -deletedTx.amount : deletedTx.amount;
+              return { ...acc, balance: acc.balance + delta };
+            }
+            if (deletedTx.type === 'transferencia' && acc.id === deletedTx.targetAccountId) {
+              return { ...acc, balance: acc.balance - deletedTx.amount };
+            }
+            return acc;
+          });
+        }
+      });
+
+      // 4. Salva no banco apenas 1 vez
+      await saveTransactions(updated);
+      await saveAccounts(updatedAccounts);
+    },
+    [transactions, accounts, saveTransactions, saveAccounts],
+  );
+
   return {
     transactions,
     accounts,
@@ -606,6 +659,7 @@ export function useStore() {
     saveTags,
     clearAllData,
     payCreditCardInvoice,
-    anticipateCreditCardPayment, // Expondo a nova função para o Contexto
+    anticipateCreditCardPayment,
+    deleteMultipleTransactions,
   };
 }

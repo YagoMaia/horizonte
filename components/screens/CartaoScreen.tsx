@@ -40,6 +40,7 @@ export function CartaoScreen() {
     addTransaction,
     updateTransaction,
     deleteTransaction,
+    deleteMultipleTransactions,
   } = useStoreContext() as any;
 
   const creditCards = useMemo(
@@ -294,12 +295,18 @@ export function CartaoScreen() {
 
     if (Platform.OS === 'web') {
       if (window.confirm(`${alertMessage}\n\nTem certeza que deseja excluir todos os lançamentos desta fatura?`)) {
-        idsToDelete.forEach((id: string) => deleteTransaction(id, 'all'));
+        // 👉 Envia o Array inteiro
+        deleteMultipleTransactions(idsToDelete);
       }
     } else {
       Alert.alert('Excluir Fatura', alertMessage, [
         { text: 'Cancelar', style: 'cancel' },
-        { text: 'Excluir Todos', style: 'destructive', onPress: () => { idsToDelete.forEach((id: string) => deleteTransaction(id, 'all')); } }
+        {
+          text: 'Excluir Todos',
+          style: 'destructive',
+          // 👉 Envia o Array inteiro
+          onPress: () => deleteMultipleTransactions(idsToDelete)
+        }
       ]);
     }
   };
