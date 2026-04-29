@@ -43,7 +43,7 @@ interface AddTransactionModalProps {
   visible: boolean;
   onClose: () => void;
   onAdd: (tx: any) => void;
-  onUpdate?: (tx: any, mode: string) => void;
+  onUpdate?: (tx: any, mode: 'single' | 'future' | 'all') => void;
   accounts: Account[];
   tags: any[];
   transactionToEdit?: Transaction | null;
