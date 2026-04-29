@@ -306,11 +306,36 @@ export function AddTransactionModal({
       ).toISOString();
     };
 
-    // 👉 A CORREÇÃO DE OURO AQUI:
-    // O parcelamento do cartão deve ser tratado como uma transação 'unica' pelo motor
-    // de recorrência. O useStore.ts é que vai cuidar de dividir os valores.
     const isInstallment = isCreditCardSelected && installments > 1;
     const finalRecurrence = isInstallment ? 'unica' : recurrence;
+
+    // 👉 CORREÇÃO: Calcula a quantidade exata de repetições com base na data final
+    let calculatedMaxRecurrences = 24; // Padrão máximo caso não haja data de fim definida
+
+    if (finalRecurrence !== 'unica' && recurrenceEnd) {
+      const startD = new Date(parseToISO(recurrenceStart));
+      const endD = new Date(parseToISO(recurrenceEnd));
+
+      if (endD < startD) {
+        alert('A data de fim não pode ser antes da data de início.');
+        return;
+      }
+
+      if (finalRecurrence === 'mensal') {
+        const monthsDiff =
+          (endD.getFullYear() - startD.getFullYear()) * 12 +
+          (endD.getMonth() - startD.getMonth());
+        calculatedMaxRecurrences = monthsDiff + 1; // +1 para incluir o mês de início
+      } else if (finalRecurrence === 'anual') {
+        calculatedMaxRecurrences = (endD.getFullYear() - startD.getFullYear()) + 1;
+      } else if (finalRecurrence === 'semanal') {
+        const diffTime = Math.abs(endD.getTime() - startD.getTime());
+        calculatedMaxRecurrences = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 7)) + 1;
+      } else if (finalRecurrence === 'diaria') {
+        const diffTime = Math.abs(endD.getTime() - startD.getTime());
+        calculatedMaxRecurrences = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+      }
+    }
 
     const txData = {
       description: description.trim(),
@@ -332,6 +357,8 @@ export function AddTransactionModal({
       totalInstallments: isCreditCardSelected ? installments : 1,
       paymentMethod: isCreditCardSelected ? 'credito' : 'debito',
       targetAccountId: type === 'transferencia' ? targetAccountId : undefined,
+      // 👉 Repassa o cálculo exato para o store respeitar o limite
+      calculatedRecurrenceCount: calculatedMaxRecurrences,
     };
 
     if (isEditing && onUpdate) {

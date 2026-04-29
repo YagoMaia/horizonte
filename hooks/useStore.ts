@@ -153,14 +153,27 @@ export function useStore() {
           });
         }
       }
-      else if (tx.recurrence === 'mensal') {
+      else if (tx.recurrence === 'mensal' || tx.recurrence === 'anual' || tx.recurrence === 'semanal' || tx.recurrence === 'diaria') {
         const baseId = Date.now().toString();
         const baseDate = new Date(tx.date);
-        const maxRecurrences = 24;
+
+        // 👉 AQUI ESTÁ O SEGREDO: usa o limite enviado pelo modal. Se não existir, usa 24.
+        const maxRecurrences = tx.calculatedRecurrenceCount || 24;
 
         for (let i = 0; i < maxRecurrences; i++) {
           const currentDate = new Date(baseDate);
-          currentDate.setMonth(baseDate.getMonth() + i);
+
+          // Ajusta a data dependendo do tipo de recorrência
+          if (tx.recurrence === 'mensal') {
+            currentDate.setMonth(baseDate.getMonth() + i);
+          } else if (tx.recurrence === 'anual') {
+            currentDate.setFullYear(baseDate.getFullYear() + i);
+          } else if (tx.recurrence === 'semanal') {
+            currentDate.setDate(baseDate.getDate() + (i * 7));
+          } else if (tx.recurrence === 'diaria') {
+            currentDate.setDate(baseDate.getDate() + i);
+          }
+
           const isPaid = i === 0 ? tx.paid : false;
 
           newTransactions.push({
