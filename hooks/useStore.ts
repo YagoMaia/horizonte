@@ -502,14 +502,15 @@ export function useStore() {
         return tx;
       });
 
+      // 👉 ALTERAÇÃO: 'type' mudou para 'despesa'
       const paymentTx: Transaction = {
         id: Date.now().toString(),
         description: `Pagamento Fatura - ${cardAccount.name}`,
         amount: invoiceTotal,
-        type: 'transferencia',
+        type: 'despesa',
         date: new Date().toISOString(),
         accountId: sourceAccountId,
-        tagIds: [],
+        tagIds: [], // Você pode adicionar uma tag de "Cartão" aqui se desejar
         paymentMethod: 'debito',
         paid: true,
         recurrence: 'unica',
