@@ -16,7 +16,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/hooks/useTheme';
 import { useStoreContext } from '@/context/StoreContext';
 import {
-  getCreditCardTargetMonth,
   formatCurrency,
   formatDateShort,
 } from '@/lib/utils';
@@ -32,31 +31,40 @@ const MONTH_NAMES = [
 
 export function CartaoScreen() {
   const { colors } = useTheme();
-  // 👉 Certifique-se de que o type do StoreContext exporta a nova função!
   const {
     accounts,
     transactions,
     tags,
     payCreditCardInvoice,
-    anticipateCreditCardPayment, // 👈 Nova função importada
+    anticipateCreditCardPayment,
     addTransaction,
     updateTransaction,
     deleteTransaction,
-  } = useStoreContext() as any; // Usando "as any" caso o TypeScript demore a ler o Context
+  } = useStoreContext() as any;
 
   const creditCards = useMemo(
     () => accounts.filter((a: Account) => a.type === 'cartao_credito'),
     [accounts],
   );
 
+  // 👉 selectedCardId agora pode ser 'all' (Todos)
   const [selectedCardId, setSelectedCardId] = useState<string | null>(
-    creditCards.length > 0 ? creditCards[0].id : null,
+    creditCards.length > 0 ? 'all' : null,
   );
 
-  const selectedCard = useMemo(
-    () => creditCards.find((c: Account) => c.id === selectedCardId) || null,
-    [creditCards, selectedCardId],
-  );
+  // 👉 Cria um cartão "Virtual" caso a opção Todos esteja selecionada
+  const selectedCard = useMemo(() => {
+    if (selectedCardId === 'all') {
+      return {
+        id: 'all',
+        name: 'Todos os Cartões',
+        color: '#334155', // Slate escoro para manter o texto branco legível
+        type: 'cartao_credito',
+        icon: 'albums',
+      } as Account;
+    }
+    return creditCards.find((c: Account) => c.id === selectedCardId) || null;
+  }, [creditCards, selectedCardId]);
 
   const [monthOffset, setMonthOffset] = useState(0);
 
@@ -67,7 +75,6 @@ export function CartaoScreen() {
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [sourceAccountId, setSourceAccountId] = useState<string>('');
 
-  // 👉 Novos estados para Antecipação
   const [isAnticipateModalOpen, setIsAnticipateModalOpen] = useState(false);
   const [anticipateAmountStr, setAnticipateAmountStr] = useState('');
   const [anticipateSourceAccountId, setAnticipateSourceAccountId] = useState<string>('');
@@ -108,17 +115,73 @@ export function CartaoScreen() {
     invoiceStatus,
     statusColor,
     globalPendingDebt,
+    isAll,
   } = useMemo(() => {
     if (!selectedCard)
       return {
         totalInvoice: 0, pendingInvoice: 0, targetMonth: 0, targetYear: 2024,
         invoiceTransactions: [], limit: 0, availableLimit: 0, limitUsagePercent: 0,
         invoiceStatus: 'ZERADA', statusColor: colors.mutedForeground, globalPendingDebt: 0,
+        isAll: false
       };
 
     const baseDate = new Date();
     baseDate.setMonth(baseDate.getMonth() + monthOffset);
 
+    // 👉 LÓGICA PARA "TODOS OS CARTÕES"
+    if (selectedCard.id === 'all') {
+      let tInvoice = 0;
+      let pInvoice = 0;
+      let globalDebt = 0;
+      let tLimit = 0;
+      let tAvailable = 0;
+      let allTxs: Transaction[] = [];
+
+      creditCards.forEach((card: Account) => {
+        const targetInvoice = getInvoiceForTx(baseDate.toISOString(), card.id);
+        const tValue = targetInvoice.value;
+        const openInvoiceValue = getInvoiceForTx(new Date().toISOString(), card.id).value;
+
+        const cardInvTxs = transactions.filter((tx: Transaction) => {
+          if (tx.accountId !== card.id || tx.paymentMethod !== 'credito') return false;
+          return getInvoiceForTx(tx.date, tx.accountId).value === tValue;
+        });
+
+        allTxs.push(...cardInvTxs);
+
+        tInvoice += cardInvTxs.reduce((sum: number, tx: Transaction) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount), 0);
+        pInvoice += cardInvTxs.filter((t: Transaction) => !t.paid).reduce((sum: number, tx: Transaction) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount), 0);
+
+        const cardDebt = transactions.filter((tx: Transaction) => {
+          if (tx.accountId !== card.id || tx.paymentMethod !== 'credito' || tx.paid) return false;
+          return getInvoiceForTx(tx.date, tx.accountId).value >= openInvoiceValue;
+        }).reduce((sum: number, tx: Transaction) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount), 0);
+
+        globalDebt += cardDebt;
+        const cLimit = card.creditLimit || 0;
+        tLimit += cLimit;
+        tAvailable += Math.max(0, cLimit - cardDebt);
+      });
+
+      allTxs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      const percent = tLimit > 0 ? Math.min((globalDebt / tLimit) * 100, 100) : 0;
+
+      let status = 'CONSOLIDADA';
+      let color = colors.primary;
+      if (pInvoice <= 0 && tInvoice > 0) { status = 'PAGA'; color = colors.success; }
+      else if (tInvoice <= 0) { status = 'ZERADA'; color = colors.mutedForeground; }
+
+      // Pega o nome do mês usando o primeiro cartão como referência de data
+      const refInvoice = creditCards.length > 0 ? getInvoiceForTx(baseDate.toISOString(), creditCards[0].id) : { viewMonth: baseDate.getMonth(), viewYear: baseDate.getFullYear() };
+
+      return {
+        totalInvoice: tInvoice, pendingInvoice: pInvoice, targetMonth: refInvoice.viewMonth, targetYear: refInvoice.viewYear,
+        invoiceTransactions: allTxs, limit: tLimit, availableLimit: tAvailable, limitUsagePercent: percent,
+        invoiceStatus: status, statusColor: color, globalPendingDebt: globalDebt, isAll: true
+      };
+    }
+
+    // 👉 LÓGICA PARA UM CARTÃO ESPECÍFICO (Mantida igual)
     const targetInvoice = getInvoiceForTx(baseDate.toISOString(), selectedCard.id);
     const tMonth = targetInvoice.viewMonth;
     const tYear = targetInvoice.viewYear;
@@ -127,22 +190,18 @@ export function CartaoScreen() {
     const invTxs = transactions
       .filter((tx: Transaction) => {
         if (tx.accountId !== selectedCard.id || tx.paymentMethod !== 'credito') return false;
-        const txInv = getInvoiceForTx(tx.date, tx.accountId);
-        return txInv.value === tValue;
+        return getInvoiceForTx(tx.date, tx.accountId).value === tValue;
       })
       .sort((a: Transaction, b: Transaction) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
     const tInvoice = invTxs.reduce((sum: number, tx: Transaction) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount), 0);
     const pInvoice = invTxs.filter((t: Transaction) => !t.paid).reduce((sum: number, tx: Transaction) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount), 0);
-
     const openInvoiceValue = getInvoiceForTx(new Date().toISOString(), selectedCard.id).value;
 
-    // 👉 CÁLCULO DA DÍVIDA TOTAL
     const globalPendingDebtValue = transactions
       .filter((tx: Transaction) => {
         if (tx.accountId !== selectedCard.id || tx.paymentMethod !== 'credito' || tx.paid) return false;
-        const txInv = getInvoiceForTx(tx.date, tx.accountId);
-        return txInv.value >= openInvoiceValue;
+        return getInvoiceForTx(tx.date, tx.accountId).value >= openInvoiceValue;
       })
       .reduce((sum: number, tx: Transaction) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount), 0);
 
@@ -164,9 +223,9 @@ export function CartaoScreen() {
     return {
       totalInvoice: tInvoice, pendingInvoice: pInvoice, targetMonth: tMonth, targetYear: tYear,
       invoiceTransactions: invTxs, limit: cLimit, availableLimit: aLimit, limitUsagePercent: percent,
-      invoiceStatus: status, statusColor: color, globalPendingDebt: globalPendingDebtValue,
+      invoiceStatus: status, statusColor: color, globalPendingDebt: globalPendingDebtValue, isAll: false
     };
-  }, [selectedCard, transactions, monthOffset, colors]);
+  }, [selectedCard, transactions, monthOffset, colors, creditCards, accounts]);
 
   const debitAccounts = useMemo(() => accounts.filter((a: Account) => a.type !== 'cartao_credito'), [accounts]);
 
@@ -180,7 +239,7 @@ export function CartaoScreen() {
   };
 
   const confirmPayment = async () => {
-    if (!selectedCard || !sourceAccountId) return;
+    if (!selectedCard || !sourceAccountId || selectedCard.id === 'all') return;
     try {
       await payCreditCardInvoice(selectedCard.id, sourceAccountId, targetMonth, targetYear);
       setIsPaymentModalOpen(false);
@@ -190,7 +249,6 @@ export function CartaoScreen() {
     }
   };
 
-  // 👉 Funções de Antecipação
   const handleOpenAnticipate = () => {
     if (debitAccounts.length === 0) {
       Alert.alert('Aviso', 'Nenhuma conta corrente cadastrada para debitar a antecipação.');
@@ -206,7 +264,7 @@ export function CartaoScreen() {
   };
 
   const confirmAnticipation = async () => {
-    if (!selectedCard || !anticipateSourceAccountId) return;
+    if (!selectedCard || !anticipateSourceAccountId || selectedCard.id === 'all') return;
     const amount = parseFloat(anticipateAmountStr.replace(',', '.'));
 
     if (isNaN(amount) || amount <= 0) {
@@ -229,20 +287,18 @@ export function CartaoScreen() {
   };
 
   const handleDeleteAllFromInvoice = () => {
-    if (invoiceTransactions.length === 0) return;
+    if (invoiceTransactions.length === 0 || isAll) return;
 
     const idsToDelete = invoiceTransactions.map((tx: Transaction) => tx.id);
     const alertMessage = 'Atenção: Se houver compras parceladas nesta fatura, TODAS as parcelas (passadas e futuras) dessas compras também serão excluídas. Deseja continuar?';
 
     if (Platform.OS === 'web') {
       if (window.confirm(`${alertMessage}\n\nTem certeza que deseja excluir todos os lançamentos desta fatura?`)) {
-        // 👉 Adicionado (id: string) aqui
         idsToDelete.forEach((id: string) => deleteTransaction(id, 'all'));
       }
     } else {
       Alert.alert('Excluir Fatura', alertMessage, [
         { text: 'Cancelar', style: 'cancel' },
-        // 👉 Adicionado (id: string) aqui também
         { text: 'Excluir Todos', style: 'destructive', onPress: () => { idsToDelete.forEach((id: string) => deleteTransaction(id, 'all')); } }
       ]);
     }
@@ -266,6 +322,8 @@ export function CartaoScreen() {
   const renderTransaction = ({ item: tx }: { item: Transaction }) => {
     const isReceita = tx.type === 'receita';
     const amountColor = isReceita ? colors.success : colors.foreground;
+    // Puxar o nome do cartão se estivermos na visualização "Todos"
+    const txCard = isAll ? accounts.find((a: Account) => a.id === tx.accountId) : null;
 
     return (
       <TouchableOpacity
@@ -278,7 +336,9 @@ export function CartaoScreen() {
             <Text style={[styles.txDesc, { color: colors.foreground }]} numberOfLines={1}>{tx.description}</Text>
             {tx.paid && <Ionicons name='checkmark-circle' size={14} color={colors.success} />}
           </View>
-          <Text style={[styles.txDate, { color: colors.mutedForeground }]}>{formatDateShort(tx.date)}</Text>
+          <Text style={[styles.txDate, { color: colors.mutedForeground }]}>
+            {formatDateShort(tx.date)} {isAll && txCard ? `• ${txCard.name}` : ''}
+          </Text>
         </View>
         <Text style={[styles.txAmount, { color: amountColor }]}>{isReceita ? '+' : '-'}{formatCurrency(tx.amount)}</Text>
       </TouchableOpacity>
@@ -289,6 +349,16 @@ export function CartaoScreen() {
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <View style={[styles.carouselContainer, { borderBottomColor: colors.border, backgroundColor: colors.card }]}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.carouselContent}>
+          {/* 👉 BOTÃO "TODOS" */}
+          <TouchableOpacity
+            onPress={() => setSelectedCardId('all')}
+            style={[styles.cardSelectorItem, { backgroundColor: selectedCardId === 'all' ? colors.primary : 'transparent', borderColor: selectedCardId === 'all' ? colors.primary : colors.border }]}
+          >
+            <Ionicons name="albums" size={16} color={selectedCardId === 'all' ? '#FFF' : colors.foreground} style={{ marginRight: 6 }} />
+            <Text style={{ fontSize: 13, fontWeight: '600', color: selectedCardId === 'all' ? '#FFF' : colors.foreground }}>Todos</Text>
+          </TouchableOpacity>
+
+          {/* LISTA DE CARTÕES */}
           {creditCards.map((card: Account) => {
             const isSelected = card.id === selectedCardId;
             return (
@@ -323,7 +393,7 @@ export function CartaoScreen() {
 
           <View style={[styles.cardVisual, { backgroundColor: selectedCard.color }]}>
             <View style={styles.cardHeader}>
-              <Ionicons name="card" size={28} color="#FFF" />
+              <Ionicons name={selectedCard.icon as any} size={28} color="#FFF" />
               <Text style={styles.cardBrand}>{selectedCard.name.toUpperCase()}</Text>
             </View>
 
@@ -356,30 +426,32 @@ export function CartaoScreen() {
             </View>
           </View>
 
-          {/* 👉 ROW DE BOTÕES: PAGAR E ANTECIPAR */}
-          <View style={styles.actionButtonsRow}>
-            <TouchableOpacity
-              style={[styles.payButton, { backgroundColor: pendingInvoice > 0 ? colors.primary : colors.border, flex: 1 }]}
-              disabled={pendingInvoice <= 0}
-              onPress={handlePayInvoice}
-            >
-              <Ionicons name={pendingInvoice > 0 ? 'wallet-outline' : 'checkmark-circle-outline'} size={20} color={pendingInvoice > 0 ? '#FFF' : colors.mutedForeground} />
-              <Text style={[styles.payButtonText, { color: pendingInvoice > 0 ? '#FFF' : colors.mutedForeground }]}>
-                {pendingInvoice > 0 ? `Pagar Fatura` : 'Paga'}
-              </Text>
-            </TouchableOpacity>
+          {/* 👉 OCULTA OS BOTÕES DE AÇÃO SE ESTIVER VISUALIZANDO "TODOS" */}
+          {!isAll && (
+            <View style={styles.actionButtonsRow}>
+              <TouchableOpacity
+                style={[styles.payButton, { backgroundColor: pendingInvoice > 0 ? colors.primary : colors.border, flex: 1 }]}
+                disabled={pendingInvoice <= 0}
+                onPress={handlePayInvoice}
+              >
+                <Ionicons name={pendingInvoice > 0 ? 'wallet-outline' : 'checkmark-circle-outline'} size={20} color={pendingInvoice > 0 ? '#FFF' : colors.mutedForeground} />
+                <Text style={[styles.payButtonText, { color: pendingInvoice > 0 ? '#FFF' : colors.mutedForeground }]}>
+                  {pendingInvoice > 0 ? `Pagar Fatura` : 'Paga'}
+                </Text>
+              </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[styles.payButton, { backgroundColor: globalPendingDebt > 0 ? colors.secondary : colors.border, marginLeft: 12, paddingHorizontal: 16 }]}
-              disabled={globalPendingDebt <= 0}
-              onPress={handleOpenAnticipate}
-            >
-              <Ionicons name="flash-outline" size={20} color={globalPendingDebt > 0 ? colors.foreground : colors.mutedForeground} />
-              <Text style={[styles.payButtonText, { color: globalPendingDebt > 0 ? colors.foreground : colors.mutedForeground }]}>
-                Antecipar
-              </Text>
-            </TouchableOpacity>
-          </View>
+              <TouchableOpacity
+                style={[styles.payButton, { backgroundColor: globalPendingDebt > 0 ? colors.secondary : colors.border, marginLeft: 12, paddingHorizontal: 16 }]}
+                disabled={globalPendingDebt <= 0}
+                onPress={handleOpenAnticipate}
+              >
+                <Ionicons name="flash-outline" size={20} color={globalPendingDebt > 0 ? colors.foreground : colors.mutedForeground} />
+                <Text style={[styles.payButtonText, { color: globalPendingDebt > 0 ? colors.foreground : colors.mutedForeground }]}>
+                  Antecipar
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
           <View style={styles.sectionHeader}>
             <View>
@@ -387,7 +459,8 @@ export function CartaoScreen() {
               <Text style={[styles.itemCount, { color: colors.mutedForeground }]}>{invoiceTransactions.length} itens</Text>
             </View>
 
-            {invoiceTransactions.length > 0 && (
+            {/* 👉 SÓ PERMITE EXCLUIR TODOS SE FOR UM CARTÃO ESPECÍFICO */}
+            {invoiceTransactions.length > 0 && !isAll && (
               <TouchableOpacity style={styles.deleteAllBtn} onPress={handleDeleteAllFromInvoice}>
                 <Ionicons name="trash-outline" size={16} color={colors.destructive} />
                 <Text style={[styles.deleteAllText, { color: colors.destructive }]}>Excluir Todos</Text>
@@ -405,7 +478,7 @@ export function CartaoScreen() {
         </ScrollView>
       )}
 
-      {/* MODAL DE PAGAR FATURA */}
+      {/* MODALS DE PAGAMENTO, ANTECIPAÇÃO E OPÇÕES (Mantidos inalterados) */}
       <Modal visible={isPaymentModalOpen} transparent animationType='slide'>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -443,7 +516,6 @@ export function CartaoScreen() {
         </View>
       </Modal>
 
-      {/* 👉 MODAL DE ANTECIPAR FATURA */}
       <Modal visible={isAnticipateModalOpen} transparent animationType='slide'>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -554,7 +626,7 @@ const styles = StyleSheet.create({
   chip: { width: 42, height: 28, backgroundColor: '#cca633', borderRadius: 6, opacity: 0.9 },
   cardStatus: { backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6 },
   cardStatusText: { color: '#FFF', fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
-  actionButtonsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, // 👈 Novo
+  actionButtonsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   payButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, borderRadius: 16, gap: 8 },
   payButtonText: { fontSize: 16, fontWeight: '700' },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 12, marginBottom: 8 },
