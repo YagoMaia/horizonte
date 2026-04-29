@@ -318,9 +318,16 @@ export function HorizonteScreen() {
               Meta Diária Hoje
             </Text>
             {currentBudget > 0 ? (
-              <Text style={[styles.dailyValue, { color: colors.primary }]}>
-                {formatShort(currentDailyPlan)}
-              </Text>
+              // 👉 NOVO: Verifica se a meta de hoje é maior que zero
+              currentDailyPlan > 0 ? (
+                <Text style={[styles.dailyValue, { color: colors.primary }]}>
+                  {formatShort(currentDailyPlan)}
+                </Text>
+              ) : (
+                <Text style={[styles.dailyValue, { color: colors.destructive, fontSize: 13, textTransform: 'uppercase' }]}>
+                  Limite Atingido
+                </Text>
+              )
             ) : (
               <TouchableOpacity onPress={() => setConfigModalVisible(true)}>
                 <Text
@@ -487,18 +494,25 @@ export function HorizonteScreen() {
                     <View
                       style={[
                         styles.miniBadge,
-                        { backgroundColor: colors.primary },
+                        // 👉 NOVO: A bolinha do "M" fica vermelha se o limite for atingido
+                        { backgroundColor: d.dailyPlan > 0 ? colors.primary : colors.destructive },
                       ]}
                     >
                       <Text style={styles.miniBadgeText}>M</Text>
                     </View>
+
+                    {/* 👉 NOVO: Mostra o valor OU o aviso de limite */}
                     <Text
                       style={[
                         styles.indicatorText,
-                        { color: colors.mutedForeground },
+                        {
+                          color: d.dailyPlan > 0 ? colors.mutedForeground : colors.destructive,
+                          fontWeight: d.dailyPlan > 0 ? '400' : '700',
+                          fontSize: d.dailyPlan > 0 ? 13 : 10
+                        },
                       ]}
                     >
-                      {formatShort(d.dailyPlan || 0)}
+                      {d.dailyPlan > 0 ? formatShort(d.dailyPlan) : 'LIMITE ATINGIDO'}
                     </Text>
 
                     {mostrarBadge && (
