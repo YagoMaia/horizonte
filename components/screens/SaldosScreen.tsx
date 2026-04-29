@@ -180,19 +180,67 @@ export function SaldosScreen() {
         <View style={styles.accountsRow}>
           {accounts.map((acc: Account) => {
             const isCreditCard = acc.type === 'cartao_credito';
-            const currentInvoice = isCreditCard ? calculateCreditCardInvoice(acc, transactions) : 0;
-            const cardLimit = acc.creditLimit || (acc.balance > 0 ? acc.balance : 0);
-            const mainDisplayValue = isCreditCard ? Math.max(0, cardLimit - currentInvoice) : acc.balance;
+
+            // Calcula a fatura atual se for cartão
+            const currentInvoice = isCreditCard
+              ? calculateCreditCardInvoice(acc, transactions)
+              : 0;
+
+            // Define o valor principal: 
+            // Se for cartão -> valor da fatura
+            // Se for conta -> saldo em conta
+            const mainDisplayValue = isCreditCard ? currentInvoice : acc.balance;
 
             return (
-              <View key={acc.id} style={[styles.accountCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                <View style={[styles.accountIcon, { backgroundColor: acc.color + '15' }]}>
-                  <Ionicons name={acc.icon as any} size={18} color={acc.color} />
+              <View
+                key={acc.id}
+                style={[
+                  styles.accountCard,
+                  { backgroundColor: colors.card, borderColor: colors.border },
+                ]}
+              >
+                <View
+                  style={[
+                    styles.accountIcon,
+                    { backgroundColor: acc.color + '15' },
+                  ]}
+                >
+                  <Ionicons
+                    name={acc.icon as any}
+                    size={18}
+                    color={acc.color}
+                  />
                 </View>
                 <View style={styles.accountTextContainer}>
-                  <Text style={[styles.accountName, { color: colors.mutedForeground }]} numberOfLines={1}>{acc.name}</Text>
-                  <Text style={[styles.accountBalance, { color: colors.foreground }]}>{formatCurrency(mainDisplayValue)}</Text>
-                  {isCreditCard && <Text style={[styles.secondaryText, { color: colors.mutedForeground }]}>Fatura: {formatCurrency(currentInvoice)}</Text>}
+                  <Text
+                    style={[
+                      styles.accountName,
+                      { color: colors.mutedForeground },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {acc.name}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.accountBalance,
+                      { color: colors.foreground },
+                    ]}
+                  >
+                    {formatCurrency(mainDisplayValue)}
+                  </Text>
+
+                  {/* Adiciona um identificador visual discreto apenas para cartões */}
+                  {isCreditCard && (
+                    <Text
+                      style={[
+                        styles.secondaryText,
+                        { color: colors.mutedForeground, fontSize: 10 }
+                      ]}
+                    >
+                      Fatura atual
+                    </Text>
+                  )}
                 </View>
               </View>
             );

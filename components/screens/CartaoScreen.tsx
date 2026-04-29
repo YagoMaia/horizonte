@@ -21,7 +21,6 @@ import {
 } from '@/lib/utils';
 import { Account, Transaction } from '@/constants/types';
 
-import { TransactionDetailModal } from '../TransactionDetailModal';
 import { AddTransactionModal } from '../AddTransactionModal';
 
 const MONTH_NAMES = [
@@ -110,11 +109,9 @@ export function CartaoScreen() {
     targetMonth,
     targetYear,
     invoiceTransactions,
-    limit,
     availableLimit,
     limitUsagePercent,
     invoiceStatus,
-    statusColor,
     globalPendingDebt,
     isAll,
   } = useMemo(() => {
