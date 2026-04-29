@@ -12,6 +12,9 @@ import { useTheme } from '@/hooks/useTheme'
 import { formatCurrency } from '@/lib/utils'
 import { useStoreContext } from '@/context/StoreContext'
 
+// 👉 IMPORTANDO O GRÁFICO AQUI
+import { BalanceChart } from '../BalanceChart'
+
 type Period = 'semana' | 'mes' | 'ano'
 
 const MONTH_NAMES = [
@@ -26,10 +29,8 @@ export function TotaisScreen() {
   const [period, setPeriod] = useState<Period>('mes')
   const [view, setView] = useState<'despesas' | 'receitas'>('despesas')
 
-  // 👉 NOVO: Estado para controlar a navegação no tempo
   const [refDate, setRefDate] = useState(new Date())
 
-  // 👉 NOVO: Funções de avançar e retroceder no tempo
   const handlePrev = () => {
     const newDate = new Date(refDate)
     if (period === 'semana') newDate.setDate(newDate.getDate() - 7)
@@ -46,12 +47,10 @@ export function TotaisScreen() {
     setRefDate(newDate)
   }
 
-  // Gera o texto bonito para o cabeçalho de navegação
   const periodLabel = useMemo(() => {
     if (period === 'ano') return refDate.getFullYear().toString()
     if (period === 'mes') return `${MONTH_NAMES[refDate.getMonth()]} ${refDate.getFullYear()}`
 
-    // Semana (Calcula o range de 7 dias)
     const end = new Date(refDate)
     const start = new Date(refDate)
     start.setDate(start.getDate() - 6)
@@ -61,8 +60,6 @@ export function TotaisScreen() {
     return `${startStr} - ${endStr}`
   }, [refDate, period])
 
-
-  // --- LÓGICA DE FILTRAGEM (Atualizada para usar a refDate) ---
   const filtered = useMemo(() => {
     const end = new Date(refDate.getFullYear(), refDate.getMonth(), refDate.getDate(), 23, 59, 59, 999)
     const start = new Date(end)
@@ -86,7 +83,6 @@ export function TotaisScreen() {
     })
   }, [transactions, period, showPending, refDate])
 
-  // --- CÁLCULOS DE PERFORMANCE (Atualizada para calcular dias reais passados) ---
   const stats = useMemo(() => {
     const income = filtered.filter(t => t.type === 'receita').reduce((s, t) => s + t.amount, 0)
     const expense = filtered.filter(t => t.type === 'despesa').reduce((s, t) => s + t.amount, 0)
@@ -94,7 +90,6 @@ export function TotaisScreen() {
     const performance = income - expense
     const economizadoPercent = income > 0 ? Math.max(0, (performance / income) * 100) : 0
 
-    // Cálculo dinâmico de dias para o "Diário Médio"
     const now = new Date()
     let days = 1
 
@@ -103,11 +98,11 @@ export function TotaisScreen() {
     } else if (period === 'mes') {
       const isCurrentMonth = refDate.getMonth() === now.getMonth() && refDate.getFullYear() === now.getFullYear()
       if (isCurrentMonth) {
-        days = now.getDate() // Mês atual: divide apenas pelos dias que já vivemos
+        days = now.getDate()
       } else {
-        days = new Date(refDate.getFullYear(), refDate.getMonth() + 1, 0).getDate() // Mês fechado: total de dias no mês
+        days = new Date(refDate.getFullYear(), refDate.getMonth() + 1, 0).getDate()
       }
-    } else { // Ano
+    } else {
       const isCurrentYear = refDate.getFullYear() === now.getFullYear()
       if (isCurrentYear) {
         const startOfYear = new Date(now.getFullYear(), 0, 0)
@@ -127,7 +122,6 @@ export function TotaisScreen() {
     }
   }, [filtered, period, refDate])
 
-  // --- AGRUPAMENTO POR TAG ---
   const byTag = useMemo(() => {
     const targetType = view === 'despesas' ? 'despesa' : 'receita'
     const relevant = filtered.filter(tx => tx.type === targetType)
@@ -173,7 +167,7 @@ export function TotaisScreen() {
             style={[styles.segBtn, period === p && { backgroundColor: colors.card }]}
             onPress={() => {
               setPeriod(p)
-              setRefDate(new Date()) // Volta para o presente ao trocar de aba
+              setRefDate(new Date())
             }}
           >
             <Text style={[styles.segBtnText, { color: period === p ? colors.foreground : colors.mutedForeground }]}>
@@ -183,7 +177,7 @@ export function TotaisScreen() {
         ))}
       </View>
 
-      {/* 👉 NOVO: Navegador do Tempo */}
+      {/* Navegador do Tempo */}
       <View style={[styles.periodNav, { borderBottomColor: colors.border, backgroundColor: colors.card }]}>
         <TouchableOpacity onPress={handlePrev} style={styles.navBtn}>
           <Ionicons name='chevron-back' size={20} color={colors.foreground} />
@@ -259,6 +253,13 @@ export function TotaisScreen() {
           </View>
         </View>
       </View>
+
+      {/* 👉 INSERINDO O GRÁFICO AQUI */}
+      <BalanceChart
+        transactions={transactions}
+        period={period}
+        refDate={refDate}
+      />
 
       {/* View toggle (Despesas vs Receitas) */}
       <View style={[styles.segmented, { backgroundColor: colors.secondary, marginTop: 10 }]}>
