@@ -153,7 +153,7 @@ export function useStore() {
           });
         }
       }
-      else if (tx.recurrence === 'mensal' || tx.recurrence === 'anual' || tx.recurrence === 'semanal' || tx.recurrence === 'diaria') {
+      else if (tx.recurrence === 'mensal' || tx.recurrence === 'anual' || tx.recurrence === 'semanal' || tx.recurrence === 'diaria' || tx.recurrence === 'quinto_dia_util') {
         const baseId = Date.now().toString();
         const baseDate = new Date(tx.date);
 
@@ -161,7 +161,7 @@ export function useStore() {
         const maxRecurrences = tx.calculatedRecurrenceCount || 24;
 
         for (let i = 0; i < maxRecurrences; i++) {
-          const currentDate = new Date(baseDate);
+          let currentDate = new Date(baseDate);
 
           // Ajusta a data dependendo do tipo de recorrência
           if (tx.recurrence === 'mensal') {
@@ -172,6 +172,22 @@ export function useStore() {
             currentDate.setDate(baseDate.getDate() + (i * 7));
           } else if (tx.recurrence === 'diaria') {
             currentDate.setDate(baseDate.getDate() + i);
+          } else if (tx.recurrence === 'quinto_dia_util') {
+            // Calcula o 5º dia útil para o mês atual + i
+            const targetMonth = baseDate.getMonth() + i;
+            const targetYear = baseDate.getFullYear();
+            
+            let businessDaysCount = 0;
+            let day = 1;
+            while (businessDaysCount < 5) {
+              const d = new Date(targetYear, targetMonth, day);
+              const dayOfWeek = d.getDay();
+              if (dayOfWeek !== 0 && dayOfWeek !== 6) { // 0 = Domingo, 6 = Sábado
+                businessDaysCount++;
+              }
+              if (businessDaysCount < 5) day++;
+            }
+            currentDate = new Date(targetYear, targetMonth, day, 12, 0, 0);
           }
 
           const isPaid = i === 0 ? tx.paid : false;

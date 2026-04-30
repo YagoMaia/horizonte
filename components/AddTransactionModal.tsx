@@ -54,6 +54,7 @@ const RECURRENCE_OPTIONS: { value: RecurrenceType; label: string }[] = [
   { value: 'diaria', label: 'Diária' },
   { value: 'semanal', label: 'Semanal' },
   { value: 'mensal', label: 'Mensal' },
+  { value: 'quinto_dia_util', label: '5º Dia Útil' },
   { value: 'anual', label: 'Anual' },
 ];
 
@@ -321,7 +322,7 @@ export function AddTransactionModal({
         return;
       }
 
-      if (finalRecurrence === 'mensal') {
+      if (finalRecurrence === 'mensal' || finalRecurrence === 'quinto_dia_util') {
         const monthsDiff =
           (endD.getFullYear() - startD.getFullYear()) * 12 +
           (endD.getMonth() - startD.getMonth());
