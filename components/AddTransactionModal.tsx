@@ -87,7 +87,6 @@ export function AddTransactionModal({
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
   
-  // 👉 Função para formatar o valor como máscara de moeda
   const formatCurrencyMask = (value: string) => {
     const cleanValue = value.replace(/\D/g, '');
     const amountNumber = Number(cleanValue) / 100;
@@ -120,6 +119,7 @@ export function AddTransactionModal({
     'main' | 'start' | 'end' | null
   >(null);
   const [calendarMonth, setCalendarMonth] = useState(new Date());
+  const [isFastNavOpen, setIsFastNavOpen] = useState(false);
 
   const isCreditCardSelected = useMemo(() => {
     const acc = accounts.find((a) => a.id === accountId);
@@ -133,7 +133,6 @@ export function AddTransactionModal({
     }
   }, [isCreditCardSelected, type]);
 
-  // Sincroniza com valores iniciais quando o modal abre (para novos lançamentos)
   React.useEffect(() => {
     if (visible && !isEditing) {
       if (initialAccountId) setAccountId(initialAccountId);
@@ -165,6 +164,7 @@ export function AddTransactionModal({
     setRecurrenceEnd('');
     setCalendarTarget(null);
     setTargetAccountId('');
+    setIsFastNavOpen(false);
   };
 
   React.useEffect(() => {
@@ -172,7 +172,6 @@ export function AddTransactionModal({
       if (transactionToEdit) {
         setType(transactionToEdit.type);
         setDescription(transactionToEdit.description);
-        // 👉 Aplica a máscara ao carregar para edição
         setAmount(formatCurrencyMask(String(Math.round(transactionToEdit.amount * 100))));
         setAccountId(transactionToEdit.accountId);
         setSelectedTags(transactionToEdit.tagIds);
@@ -213,6 +212,19 @@ export function AddTransactionModal({
         ? new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0]))
         : new Date();
 
+    const handleToday = () => {
+      const todayStr = getFormattedDate(0);
+      if (calendarTarget === 'main') setDate(todayStr);
+      if (calendarTarget === 'start') setRecurrenceStart(todayStr);
+      if (calendarTarget === 'end') setRecurrenceEnd(todayStr);
+      setCalendarMonth(new Date());
+      setCalendarTarget(null);
+    };
+
+    const fastYears = [];
+    const currentYear = new Date().getFullYear();
+    for (let y = currentYear - 5; y <= currentYear + 10; y++) fastYears.push(y);
+
     return (
       <Modal transparent={true} visible={!!calendarTarget} animationType='fade'>
         <View style={styles.calendarOverlay}>
@@ -222,99 +234,152 @@ export function AddTransactionModal({
               { backgroundColor: colors.card, borderColor: colors.border },
             ]}
           >
-            <View style={styles.calendarHeader}>
-              <TouchableOpacity
-                onPress={() => setCalendarMonth(new Date(year, month - 1, 1))}
-              >
-                <Ionicons
-                  name='chevron-back'
-                  size={20}
-                  color={colors.foreground}
-                />
-              </TouchableOpacity>
-              <Text
-                style={[styles.calendarMonthText, { color: colors.foreground }]}
-              >
-                {MONTHS[month]} {year}
-              </Text>
-              <TouchableOpacity
-                onPress={() => setCalendarMonth(new Date(year, month + 1, 1))}
-              >
-                <Ionicons
-                  name='chevron-forward'
-                  size={20}
-                  color={colors.foreground}
-                />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.calendarGrid}>
-              {WEEK_DAYS.map((wd, i) => (
-                <View key={`wd-${i}`} style={styles.calendarDayCell}>
-                  <Text style={{ fontSize: 10, color: colors.mutedForeground }}>
-                    {wd[0]}
-                  </Text>
-                </View>
-              ))}
-              {days.map((d, i) => {
-                if (!d)
-                  return (
-                    <View key={`empty-${i}`} style={styles.calendarDayCell} />
-                  );
-
-                const isSelected =
-                  parsedCurrentDate.getDate() === d &&
-                  parsedCurrentDate.getMonth() === month &&
-                  parsedCurrentDate.getFullYear() === year;
-                const isToday =
-                  today.getDate() === d &&
-                  today.getMonth() === month &&
-                  today.getFullYear() === year;
-
-                return (
-                  <TouchableOpacity
-                    key={`day-${d}`}
-                    style={styles.calendarDayCell}
-                    onPress={() => {
-                      const newDate = `${String(d).padStart(2, '0')}/${String(month + 1).padStart(2, '0')}/${year}`;
-                      if (calendarTarget === 'main') setDate(newDate);
-                      if (calendarTarget === 'start') setRecurrenceStart(newDate);
-                      if (calendarTarget === 'end') setRecurrenceEnd(newDate);
-                      setCalendarTarget(null);
-                    }}
-                  >
-                    <View
-                      style={[
-                        styles.dayInner,
-                        isSelected && { backgroundColor: colors.primary },
-                        isToday &&
-                        !isSelected && {
-                          borderWidth: 1,
-                          borderColor: colors.primary,
-                        },
-                      ]}
-                    >
-                      <Text
-                        style={{
-                          color: isSelected ? '#FFF' : colors.foreground,
-                          fontSize: 13,
+            {isFastNavOpen ? (
+              <View style={{ height: 320 }}>
+                <Text style={[styles.calendarMonthText, { color: colors.foreground, textAlign: 'center', marginBottom: 16 }]}>
+                  Navegação Rápida
+                </Text>
+                <View style={{ flex: 1, flexDirection: 'row', gap: 12 }}>
+                  <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
+                    {MONTHS.map((m, i) => (
+                      <TouchableOpacity 
+                        key={m} 
+                        style={[styles.fastNavItem, month === i && { backgroundColor: colors.primary + '20' }]}
+                        onPress={() => {
+                          setCalendarMonth(new Date(year, i, 1));
+                          setIsFastNavOpen(false);
                         }}
                       >
-                        {d}
+                        <Text style={[styles.fastNavText, { color: month === i ? colors.primary : colors.foreground }]}>{m}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                  <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
+                    {fastYears.map(y => (
+                      <TouchableOpacity 
+                        key={y} 
+                        style={[styles.fastNavItem, year === y && { backgroundColor: colors.primary + '20' }]}
+                        onPress={() => {
+                          setCalendarMonth(new Date(y, month, 1));
+                          setIsFastNavOpen(false);
+                        }}
+                      >
+                        <Text style={[styles.fastNavText, { color: year === y ? colors.primary : colors.foreground }]}>{y}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+                <TouchableOpacity style={[styles.calendarCloseBtn, { marginTop: 10 }]} onPress={() => setIsFastNavOpen(false)}>
+                  <Text style={{ color: colors.primary, fontWeight: '600' }}>Voltar</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <>
+                <View style={styles.calendarHeader}>
+                  <TouchableOpacity
+                    onPress={() => setCalendarMonth(new Date(year, month - 1, 1))}
+                  >
+                    <Ionicons
+                      name='chevron-back'
+                      size={20}
+                      color={colors.foreground}
+                    />
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => setIsFastNavOpen(true)} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                    <Text
+                      style={[styles.calendarMonthText, { color: colors.foreground }]}
+                    >
+                      {MONTHS[month]} {year}
+                    </Text>
+                    <Ionicons name="caret-down" size={12} color={colors.mutedForeground} />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => setCalendarMonth(new Date(year, month + 1, 1))}
+                  >
+                    <Ionicons
+                      name='chevron-forward'
+                      size={20}
+                      color={colors.foreground}
+                    />
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.calendarGrid}>
+                  {WEEK_DAYS.map((wd, i) => (
+                    <View key={`wd-${i}`} style={styles.calendarDayCell}>
+                      <Text style={{ fontSize: 10, color: colors.mutedForeground }}>
+                        {wd[0]}
                       </Text>
                     </View>
+                  ))}
+                  {days.map((d, i) => {
+                    if (!d)
+                      return (
+                        <View key={`empty-${i}`} style={styles.calendarDayCell} />
+                      );
+
+                    const isSelected =
+                      parsedCurrentDate.getDate() === d &&
+                      parsedCurrentDate.getMonth() === month &&
+                      parsedCurrentDate.getFullYear() === year;
+                    const isToday =
+                      today.getDate() === d &&
+                      today.getMonth() === month &&
+                      today.getFullYear() === year;
+
+                    return (
+                      <TouchableOpacity
+                        key={`day-${d}`}
+                        style={styles.calendarDayCell}
+                        onPress={() => {
+                          const newDate = `${String(d).padStart(2, '0')}/${String(month + 1).padStart(2, '0')}/${year}`;
+                          if (calendarTarget === 'main') setDate(newDate);
+                          if (calendarTarget === 'start') setRecurrenceStart(newDate);
+                          if (calendarTarget === 'end') setRecurrenceEnd(newDate);
+                          setCalendarTarget(null);
+                        }}
+                      >
+                        <View
+                          style={[
+                            styles.dayInner,
+                            isSelected && { backgroundColor: colors.primary },
+                            isToday &&
+                            !isSelected && {
+                              borderWidth: 1,
+                              borderColor: colors.primary,
+                            },
+                          ]}
+                        >
+                          <Text
+                            style={{
+                              color: isSelected ? '#FFF' : colors.foreground,
+                              fontSize: 13,
+                            }}
+                          >
+                            {d}
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                <View style={styles.calendarFooter}>
+                  <TouchableOpacity style={styles.todayBtn} onPress={handleToday}>
+                    <Ionicons name="today-outline" size={16} color={colors.primary} />
+                    <Text style={{ color: colors.primary, fontWeight: '600', fontSize: 13 }}>Hoje</Text>
                   </TouchableOpacity>
-                );
-              })}
-            </View>
-            <TouchableOpacity
-              style={styles.calendarCloseBtn}
-              onPress={() => setCalendarTarget(null)}
-            >
-              <Text style={{ color: colors.primary, fontWeight: '600' }}>
-                Cancelar
-              </Text>
-            </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.calendarCancelBtn}
+                    onPress={() => setCalendarTarget(null)}
+                  >
+                    <Text style={{ color: colors.mutedForeground, fontWeight: '500' }}>
+                      Fechar
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
           </View>
         </View>
       </Modal>
@@ -346,14 +411,12 @@ export function AddTransactionModal({
       ).toISOString();
     };
 
-    // 👉 Converte o valor mascarado de volta para número (ex: "1.234,56" -> 1234.56)
     const numericAmount = parseFloat(amount.replace(/\./g, '').replace(',', '.'));
 
     const isInstallment = isCreditCardSelected && installments > 1;
     const finalRecurrence = isInstallment ? 'unica' : recurrence;
 
-    // 👉 CORREÇÃO: Calcula a quantidade exata de repetições com base na data final
-    let calculatedMaxRecurrences = 24; // Padrão máximo caso não haja data de fim definida
+    let calculatedMaxRecurrences = 24; 
 
     if (finalRecurrence !== 'unica' && recurrenceEnd) {
       const startD = new Date(parseToISO(recurrenceStart));
@@ -368,7 +431,7 @@ export function AddTransactionModal({
         const monthsDiff =
           (endD.getFullYear() - startD.getFullYear()) * 12 +
           (endD.getMonth() - startD.getMonth());
-        calculatedMaxRecurrences = monthsDiff + 1; // +1 para incluir o mês de início
+        calculatedMaxRecurrences = monthsDiff + 1; 
       } else if (finalRecurrence === 'anual') {
         calculatedMaxRecurrences = (endD.getFullYear() - startD.getFullYear()) + 1;
       } else if (finalRecurrence === 'semanal') {
@@ -400,7 +463,6 @@ export function AddTransactionModal({
       totalInstallments: isCreditCardSelected ? installments : 1,
       paymentMethod: isCreditCardSelected ? 'credito' : 'debito',
       targetAccountId: type === 'transferencia' ? targetAccountId : undefined,
-      // 👉 Repassa o cálculo exato para o store respeitar o limite
       calculatedRecurrenceCount: calculatedMaxRecurrences,
     };
 
@@ -892,7 +954,6 @@ export function AddTransactionModal({
             </Text>
           </View>
         )}
-        {/* Renderiza o modal de calendário se estiver ativo */}
         {renderCalendar()}
         <RecurrenceActionModal
           visible={recurrenceActionVisible}
@@ -1032,5 +1093,37 @@ const styles = StyleSheet.create({
     marginTop: 20,
     alignItems: 'center',
     paddingVertical: 12,
+  },
+  calendarFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(0,0,0,0.1)',
+  },
+  todayBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: 'rgba(0,0,0,0.05)',
+  },
+  calendarCancelBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  fastNavItem: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    marginBottom: 4,
+  },
+  fastNavText: {
+    fontSize: 14,
+    fontWeight: '500',
   },
 });
