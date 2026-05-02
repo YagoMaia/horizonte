@@ -23,47 +23,8 @@ export function useStore() {
   const [showPending, setShowPendingState] = useState<boolean>(true);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = async () => {
-    try {
-      const [txRaw, accRaw, tagsRaw, budgetsRaw, showPendingRaw] =
-        await Promise.all([
-          AsyncStorage.getItem(STORAGE_KEYS.TRANSACTIONS),
-          AsyncStorage.getItem(STORAGE_KEYS.ACCOUNTS),
-          AsyncStorage.getItem(STORAGE_KEYS.TAGS),
-          AsyncStorage.getItem(STORAGE_KEYS.MONTHLY_BUDGETS),
-          AsyncStorage.getItem(STORAGE_KEYS.SHOW_PENDING),
-        ]);
-
-      setTransactions(txRaw ? JSON.parse(txRaw) : DEFAULT_TRANSACTIONS);
-      setAccounts(accRaw ? JSON.parse(accRaw) : DEFAULT_ACCOUNTS);
-      setTags(tagsRaw ? JSON.parse(tagsRaw) : DEFAULT_TAGS);
-      setMonthlyBudgets(budgetsRaw ? JSON.parse(budgetsRaw) : {});
-
-      if (showPendingRaw !== null) {
-        setShowPendingState(JSON.parse(showPendingRaw));
-      }
-    } catch (e) {
-      setTransactions(DEFAULT_TRANSACTIONS);
-      setAccounts(DEFAULT_ACCOUNTS);
-      setTags(DEFAULT_TAGS);
-      setMonthlyBudgets({});
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const setShowPending = useCallback(async (value: boolean) => {
-    await AsyncStorage.setItem(
-      STORAGE_KEYS.SHOW_PENDING,
-      JSON.stringify(value),
-    );
-    setShowPendingState(value);
-  }, []);
-
+  // --- MÉTODOS DE SALVAMENTO (Devem vir antes de serem usados em outros callbacks) ---
+  
   const saveTransactions = useCallback(async (data: Transaction[]) => {
     await AsyncStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(data));
     setTransactions(data);
@@ -77,6 +38,91 @@ export function useStore() {
   const saveTags = useCallback(async (data: Tag[]) => {
     await AsyncStorage.setItem(STORAGE_KEYS.TAGS, JSON.stringify(data));
     setTags(data);
+  }, []);
+
+  // --- MÉTODOS DE PROCESSAMENTO ---
+
+  const autoProcessOverdueTransactions = useCallback(async (currentTransactions: Transaction[], currentAccounts: Account[]) => {
+    const today = new Date();
+    today.setHours(23, 59, 59, 999); 
+
+    let hasChanges = false;
+    let updatedAccounts = [...currentAccounts];
+    const updatedTransactions = currentTransactions.map(tx => {
+      const txDate = new Date(tx.date);
+      const isOverdue = txDate <= today;
+      
+      const targetAccount = updatedAccounts.find(a => a.id === tx.accountId);
+      const isCreditCard = targetAccount?.type === 'cartao_credito';
+
+      if (!tx.paid && !isCreditCard && isOverdue) {
+        hasChanges = true;
+        
+        updatedAccounts = updatedAccounts.map(acc => {
+          if (acc.id === tx.accountId) {
+            const delta = tx.type === 'receita' ? tx.amount : -tx.amount;
+            return { ...acc, balance: acc.balance + delta };
+          }
+          if (tx.type === 'transferencia' && acc.id === tx.targetAccountId) {
+            return { ...acc, balance: acc.balance + tx.amount };
+          }
+          return acc;
+        });
+
+        return { ...tx, paid: true };
+      }
+      return tx;
+    });
+
+    if (hasChanges) {
+      await saveTransactions(updatedTransactions);
+      await saveAccounts(updatedAccounts);
+    }
+  }, [saveTransactions, saveAccounts]);
+
+  const loadData = useCallback(async () => {
+    try {
+      const [txRaw, accRaw, tagsRaw, budgetsRaw, showPendingRaw] =
+        await Promise.all([
+          AsyncStorage.getItem(STORAGE_KEYS.TRANSACTIONS),
+          AsyncStorage.getItem(STORAGE_KEYS.ACCOUNTS),
+          AsyncStorage.getItem(STORAGE_KEYS.TAGS),
+          AsyncStorage.getItem(STORAGE_KEYS.MONTHLY_BUDGETS),
+          AsyncStorage.getItem(STORAGE_KEYS.SHOW_PENDING),
+        ]);
+
+      const loadedTransactions = txRaw ? JSON.parse(txRaw) : DEFAULT_TRANSACTIONS;
+      const loadedAccounts = accRaw ? JSON.parse(accRaw) : DEFAULT_ACCOUNTS;
+
+      setTransactions(loadedTransactions);
+      setAccounts(loadedAccounts);
+      setTags(tagsRaw ? JSON.parse(tagsRaw) : DEFAULT_TAGS);
+      setMonthlyBudgets(budgetsRaw ? JSON.parse(budgetsRaw) : {});
+
+      if (showPendingRaw !== null) {
+        setShowPendingState(JSON.parse(showPendingRaw));
+      }
+
+      await autoProcessOverdueTransactions(loadedTransactions, loadedAccounts);
+    } catch (e) {
+      console.error("Erro ao carregar dados:", e);
+    } finally {
+      setLoading(false);
+    }
+  }, [autoProcessOverdueTransactions]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  // --- DEMAIS MÉTODOS ---
+
+  const setShowPending = useCallback(async (value: boolean) => {
+    await AsyncStorage.setItem(
+      STORAGE_KEYS.SHOW_PENDING,
+      JSON.stringify(value),
+    );
+    setShowPendingState(value);
   }, []);
 
   const clearAllData = useCallback(async () => {
@@ -157,13 +203,11 @@ export function useStore() {
         const baseId = Date.now().toString();
         const baseDate = new Date(tx.date);
 
-        // 👉 AQUI ESTÁ O SEGREDO: usa o limite enviado pelo modal. Se não existir, usa 24.
         const maxRecurrences = tx.calculatedRecurrenceCount || 24;
 
         for (let i = 0; i < maxRecurrences; i++) {
           let currentDate = new Date(baseDate);
 
-          // Ajusta a data dependendo do tipo de recorrência
           if (tx.recurrence === 'mensal') {
             currentDate.setMonth(baseDate.getMonth() + i);
           } else if (tx.recurrence === 'anual') {
@@ -173,7 +217,6 @@ export function useStore() {
           } else if (tx.recurrence === 'diaria') {
             currentDate.setDate(baseDate.getDate() + i);
           } else if (tx.recurrence === 'quinto_dia_util') {
-            // Calcula o 5º dia útil para o mês atual + i
             const targetMonth = baseDate.getMonth() + i;
             const targetYear = baseDate.getFullYear();
             
@@ -182,7 +225,7 @@ export function useStore() {
             while (businessDaysCount < 5) {
               const d = new Date(targetYear, targetMonth, day);
               const dayOfWeek = d.getDay();
-              if (dayOfWeek !== 0 && dayOfWeek !== 6) { // 0 = Domingo, 6 = Sábado
+              if (dayOfWeek !== 0 && dayOfWeek !== 6) { 
                 businessDaysCount++;
               }
               if (businessDaysCount < 5) day++;
@@ -518,7 +561,6 @@ export function useStore() {
         return tx;
       });
 
-      // 👉 ALTERAÇÃO: 'type' mudou para 'despesa'
       const paymentTx: Transaction = {
         id: Date.now().toString(),
         description: `Pagamento Fatura - ${cardAccount.name}`,
@@ -526,7 +568,7 @@ export function useStore() {
         type: 'despesa',
         date: new Date().toISOString(),
         accountId: sourceAccountId,
-        tagIds: [], // Você pode adicionar uma tag de "Cartão" aqui se desejar
+        tagIds: [], 
         paymentMethod: 'debito',
         paid: true,
         recurrence: 'unica',
@@ -547,7 +589,6 @@ export function useStore() {
     [transactions, accounts, saveTransactions, saveAccounts],
   );
 
-  // 👉 NOVA FUNÇÃO DE ANTECIPAÇÃO AQUI:
   const anticipateCreditCardPayment = useCallback(
     async (
       creditCardId: string,
@@ -561,7 +602,6 @@ export function useStore() {
 
       const baseId = Date.now().toString();
 
-      // Despesa na conta corrente (o dinheiro sai agora)
       const paymentTx: Transaction = {
         id: `${baseId}-out`,
         description: `Antecipação - ${cardAccount.name}`,
@@ -571,17 +611,13 @@ export function useStore() {
         accountId: sourceAccountId,
         tagIds: [],
         paymentMethod: 'debito',
-        paid: true, // Já foi debitado
+        paid: true, 
         recurrence: 'unica',
       };
 
-      // Receita no cartão de crédito (abate o valor da fatura alvo e libera limite)
-      // Precisamos ajustar a data para que, ao passar por getInvoiceForTx, resulte no targetMonth/Year
       const closingDay = cardAccount.closingDay || 25;
       const dueDay = cardAccount.dueDay || 5;
       
-      // Se dueDay < closingDay, a fatura de um mês "M" é composta por gastos do mês "M-1" (ou M-2 se for após o fechamento)
-      // Seguindo a lógica inversa do getInvoiceForTx:
       const monthOffset = (dueDay < closingDay ? 1 : 0);
       const creditTxDate = new Date(targetYear, targetMonth - monthOffset, 1, 12, 0, 0);
 
@@ -594,7 +630,7 @@ export function useStore() {
         accountId: creditCardId,
         tagIds: [],
         paymentMethod: 'credito',
-        paid: false, // Fica "false" para que o sistema subtraia este valor do pendingInvoice
+        paid: false, 
         recurrence: 'unica',
       };
 
@@ -613,12 +649,10 @@ export function useStore() {
     [transactions, accounts, saveTransactions, saveAccounts]
   );
 
-  // 👉 NOVA FUNÇÃO: Deleta múltiplos IDs em lote de forma segura
   const deleteMultipleTransactions = useCallback(
     async (txIds: string[]) => {
       let idsToRemove = new Set<string>();
 
-      // 1. Mapeia todos os IDs e suas respectivas parcelas (família)
       txIds.forEach((id) => {
         const targetTx = transactions.find((t) => t.id === id);
         if (!targetTx) return;
@@ -626,7 +660,6 @@ export function useStore() {
         idsToRemove.add(id);
         const isPartOfFamily = targetTx.groupId || id.includes('-');
 
-        // Se for compra parcelada, pegamos todas as parcelas dela
         if (isPartOfFamily) {
           const baseId = targetTx.groupId || id.split('-')[0];
           const familyTxs = transactions.filter(
@@ -638,12 +671,10 @@ export function useStore() {
 
       const finalIdsToRemove = Array.from(idsToRemove);
 
-      // 2. Filtra as transações removendo todos os IDs mapeados de uma vez
       const updated = transactions.filter((t) => !finalIdsToRemove.includes(t.id));
       let updatedAccounts = [...accounts];
       const txsToDelete = transactions.filter((t) => finalIdsToRemove.includes(t.id));
 
-      // 3. Atualiza os saldos das contas (se as compras que estão sendo apagadas já foram pagas)
       txsToDelete.forEach((deletedTx) => {
         if (deletedTx.paid) {
           updatedAccounts = updatedAccounts.map((acc) => {
@@ -659,7 +690,6 @@ export function useStore() {
         }
       });
 
-      // 4. Salva no banco apenas 1 vez
       await saveTransactions(updated);
       await saveAccounts(updatedAccounts);
     },

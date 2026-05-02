@@ -85,7 +85,13 @@ export function TotaisScreen() {
 
   const stats = useMemo(() => {
     const income = filtered.filter(t => t.type === 'receita').reduce((s, t) => s + t.amount, 0)
-    const expense = filtered.filter(t => t.type === 'despesa').reduce((s, t) => s + t.amount, 0)
+    
+    // 👉 Filtramos apenas despesas que NÃO sejam de crédito (conforme solicitado)
+    const expense = filtered.filter(t => {
+      if (t.type !== 'despesa') return false
+      if (t.paymentMethod === 'credito') return false
+      return true
+    }).reduce((s, t) => s + t.amount, 0)
 
     const performance = income - expense
     const economizadoPercent = income > 0 ? Math.max(0, (performance / income) * 100) : 0
@@ -124,7 +130,15 @@ export function TotaisScreen() {
 
   const byTag = useMemo(() => {
     const targetType = view === 'despesas' ? 'despesa' : 'receita'
-    const relevant = filtered.filter(tx => tx.type === targetType)
+    
+    // 👉 Filtramos apenas lançamentos que não sejam de crédito (débito/dinheiro)
+    const relevant = filtered.filter(tx => {
+      if (tx.type !== targetType) return false
+      // Se for despesa, só mostramos o que NÃO for crédito (conforme solicitado pelo usuário)
+      if (tx.type === 'despesa' && tx.paymentMethod === 'credito') return false
+      return true
+    })
+
     const totalView = relevant.reduce((sum, tx) => sum + tx.amount, 0)
 
     const map: Record<string, number> = {}
