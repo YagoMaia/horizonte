@@ -514,31 +514,68 @@ export function AddTransactionModal({
               <Text style={[styles.label, { color: colors.mutedForeground }]}>
                 Conta de Origem
               </Text>
-              <View style={styles.chipRow}>
-                {accounts.map((acc) => (
-                  <TouchableOpacity
-                    key={acc.id}
-                    style={[
-                      styles.chip,
-                      {
-                        borderColor: acc.color,
-                        backgroundColor:
-                          accountId === acc.id ? acc.color : 'transparent',
-                      },
-                    ]}
-                    onPress={() => setAccountId(acc.id)}
-                  >
-                    <Text
-                      style={[
-                        styles.chipText,
-                        { color: accountId === acc.id ? '#FFF' : acc.color },
-                      ]}
-                    >
-                      {acc.name}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
+
+              {accounts.filter(a => a.type !== 'cartao_credito').length > 0 && (
+                <View style={{ marginTop: 4 }}>
+                  <Text style={{ fontSize: 12, fontWeight: '600', color: colors.foreground, marginBottom: 8 }}>Contas Bancárias</Text>
+                  <View style={styles.chipRow}>
+                    {accounts.filter(a => a.type !== 'cartao_credito').map((acc) => (
+                      <TouchableOpacity
+                        key={acc.id}
+                        style={[
+                          styles.chip,
+                          {
+                            borderColor: acc.color,
+                            backgroundColor:
+                              accountId === acc.id ? acc.color : 'transparent',
+                          },
+                        ]}
+                        onPress={() => setAccountId(acc.id)}
+                      >
+                        <Text
+                          style={[
+                            styles.chipText,
+                            { color: accountId === acc.id ? '#FFF' : acc.color },
+                          ]}
+                        >
+                          {acc.name}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              )}
+
+              {accounts.filter(a => a.type === 'cartao_credito').length > 0 && (
+                <View style={{ marginTop: 12 }}>
+                  <Text style={{ fontSize: 12, fontWeight: '600', color: colors.foreground, marginBottom: 8 }}>Cartões de Crédito</Text>
+                  <View style={styles.chipRow}>
+                    {accounts.filter(a => a.type === 'cartao_credito').map((acc) => (
+                      <TouchableOpacity
+                        key={acc.id}
+                        style={[
+                          styles.chip,
+                          {
+                            borderColor: acc.color,
+                            backgroundColor:
+                              accountId === acc.id ? acc.color : 'transparent',
+                          },
+                        ]}
+                        onPress={() => setAccountId(acc.id)}
+                      >
+                        <Text
+                          style={[
+                            styles.chipText,
+                            { color: accountId === acc.id ? '#FFF' : acc.color },
+                          ]}
+                        >
+                          {acc.name}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              )}
             </View>
 
             <View
