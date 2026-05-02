@@ -45,7 +45,6 @@ interface AddTransactionModalProps {
   onAdd: (tx: any) => void;
   onUpdate?: (tx: any, mode: 'single' | 'future' | 'all') => void;
   accounts: Account[];
-  tags: any[];
   transactionToEdit?: Transaction | null;
   initialAccountId?: string;
   initialType?: TransactionType;
@@ -66,7 +65,6 @@ export function AddTransactionModal({
   onAdd,
   onUpdate,
   accounts,
-  tags,
   transactionToEdit,
   initialAccountId,
   initialType,
@@ -102,7 +100,6 @@ export function AddTransactionModal({
   };
 
   const [accountId, setAccountId] = useState(initialAccountId ?? accounts[0]?.id ?? '');
-  const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [recurrence, setRecurrence] = useState<RecurrenceType>('unica');
   const [paid, setPaid] = useState(true);
   const [targetAccountId, setTargetAccountId] = useState('');
@@ -152,7 +149,6 @@ export function AddTransactionModal({
     setDescription('');
     setAmount('');
     setAccountId(initialAccountId ?? accounts[0]?.id ?? '');
-    setSelectedTags([]);
     setRecurrence('unica');
     
     const acc = accounts.find(a => a.id === (initialAccountId || accounts[0]?.id));
@@ -174,7 +170,6 @@ export function AddTransactionModal({
         setDescription(transactionToEdit.description);
         setAmount(formatCurrencyMask(String(Math.round(transactionToEdit.amount * 100))));
         setAccountId(transactionToEdit.accountId);
-        setSelectedTags(transactionToEdit.tagIds);
         setRecurrence(transactionToEdit.recurrence);
         setPaid(transactionToEdit.paid);
         setInstallments(transactionToEdit.totalInstallments || 1);
@@ -386,14 +381,6 @@ export function AddTransactionModal({
     );
   };
 
-  const toggleTag = (tagId: string) => {
-    setSelectedTags((prev) =>
-      prev.includes(tagId)
-        ? prev.filter((id) => id !== tagId)
-        : [...prev, tagId],
-    );
-  };
-
   const handleSubmit = () => {
     if (!hasAccounts || !amount || !accountId) return;
     if (type === 'transferencia' && !targetAccountId) {
@@ -451,7 +438,6 @@ export function AddTransactionModal({
         ? parseToISO(date)
         : parseToISO(recurrenceStart),
       accountId,
-      tagIds: selectedTags,
       recurrence: finalRecurrence,
       paid,
       recurrenceStartDate: (!isInstallment && finalRecurrence !== 'unica')
@@ -751,42 +737,6 @@ export function AddTransactionModal({
                 )}
               </View>
             )}
-
-            <View style={styles.field}>
-              <Text style={[styles.label, { color: colors.mutedForeground }]}>
-                Tags
-              </Text>
-              <View style={styles.chipRow}>
-                {tags.map((tag) => (
-                  <TouchableOpacity
-                    key={tag.id}
-                    style={[
-                      styles.chip,
-                      {
-                        borderColor: tag.color,
-                        backgroundColor: selectedTags.includes(tag.id)
-                          ? tag.color
-                          : 'transparent',
-                      },
-                    ]}
-                    onPress={() => toggleTag(tag.id)}
-                  >
-                    <Text
-                      style={[
-                        styles.chipText,
-                        {
-                          color: selectedTags.includes(tag.id)
-                            ? '#FFF'
-                            : tag.color,
-                        },
-                      ]}
-                    >
-                      {tag.name}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
 
             {!isCreditCardSelected && (
               <>

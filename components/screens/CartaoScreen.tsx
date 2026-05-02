@@ -34,7 +34,6 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
   const {
     accounts,
     transactions,
-    tags,
     payCreditCardInvoice,
     anticipateCreditCardPayment,
     addTransaction,
@@ -604,7 +603,6 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
           onAdd={addTransaction}
           onUpdate={updateTransaction as any}
           accounts={accounts}
-          tags={tags}
           transactionToEdit={txToEdit}
         />
       )}

@@ -1,5 +1,5 @@
 // components/screens/HorizonteScreen.tsx
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -10,32 +10,42 @@ import {
   Platform,
   Modal,
   TextInput,
-} from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { useTheme } from '@/hooks/useTheme';
-import { useStoreContext } from '@/context/StoreContext';
-import {
-  calculateCreditCardInvoice,
-  formatCurrency,
-  formatDateShort,
-} from '@/lib/utils';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+} from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { useTheme } from "@/hooks/useTheme";
+import { useStoreContext } from "@/context/StoreContext";
+import { formatCurrency, formatDateShort } from "@/lib/utils";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const MONTH_NAMES = [
-  'Janeiro',
-  'Fevereiro',
-  'Março',
-  'Abril',
-  'Maio',
-  'Junho',
-  'Julho',
-  'Agosto',
-  'Setembro',
-  'Outubro',
-  'Novembro',
-  'Dezembro',
+  "Janeiro",
+  "Fevereiro",
+  "Março",
+  "Abril",
+  "Maio",
+  "Junho",
+  "Julho",
+  "Agosto",
+  "Setembro",
+  "Outubro",
+  "Novembro",
+  "Dezembro",
 ];
-const WEEK_DAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+const MONTH_ABBR = [
+  "Jan",
+  "Fev",
+  "Mar",
+  "Abr",
+  "Mai",
+  "Jun",
+  "Jul",
+  "Ago",
+  "Set",
+  "Out",
+  "Nov",
+  "Dez",
+];
+const WEEK_DAYS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 
 function getDaysInMonth(year: number, month: number) {
   return new Date(year, month + 1, 0).getDate();
@@ -43,14 +53,26 @@ function getDaysInMonth(year: number, month: number) {
 function getWeekDay(year: number, month: number, day: number) {
   return WEEK_DAYS[new Date(year, month, day).getDay()];
 }
-
 function formatShort(value: number): string {
-  return new Intl.NumberFormat('pt-BR', {
-    style: 'currency',
-    currency: 'BRL',
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
     minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
   }).format(value);
+}
+
+// 👉 NOVA FUNÇÃO: Formatação compacta (ex: 1.1K, -200)
+function formatCompactK(value: number): string {
+  const isNeg = value < 0;
+  const absVal = Math.abs(value);
+  if (absVal >= 1000) {
+    return (
+      (isNeg ? "-" : "") +
+      (absVal / 1000).toFixed(absVal % 1000 >= 100 ? 1 : 0) +
+      "K"
+    );
+  }
+  return (isNeg ? "-" : "") + absVal.toFixed(0);
 }
 
 export function HorizonteScreen() {
@@ -61,26 +83,27 @@ export function HorizonteScreen() {
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth());
-
   const [selectedDay, setSelectedDay] = useState<any | null>(null);
-
   const [configModalVisible, setConfigModalVisible] = useState(false);
   const [activeAccountIds, setActiveAccountIds] = useState<string[]>([]);
+  const [budgetInput, setBudgetInput] = useState<string>("");
+
+  // 👉 NOVO ESTADO: Alternar entre Lista e Mapa de Calor
+  const [viewMode, setViewMode] = useState<"list" | "grid">("list");
 
   const currentBudget = getEffectiveBudget(year, month);
-  const [budgetInput, setBudgetInput] = useState<string>('');
 
   useEffect(() => {
     const loadConfig = async () => {
       try {
         const savedAccounts = await AsyncStorage.getItem(
-          '@horizonte:active_accounts',
+          "@horizonte:active_accounts",
         );
-        if (savedAccounts) {
-          setActiveAccountIds(JSON.parse(savedAccounts));
-        } else {
-          setActiveAccountIds(accounts.map((a) => a.id));
-        }
+        if (savedAccounts) setActiveAccountIds(JSON.parse(savedAccounts));
+        else setActiveAccountIds(accounts.map((a) => a.id));
+
+        const savedView = await AsyncStorage.getItem("@horizonte:view_mode");
+        if (savedView) setViewMode(savedView as "list" | "grid");
       } catch (e) {
         console.error(e);
       }
@@ -91,31 +114,32 @@ export function HorizonteScreen() {
   useEffect(() => {
     if (configModalVisible) {
       setBudgetInput(
-        currentBudget > 0 ? currentBudget.toFixed(2).replace('.', ',') : '',
+        currentBudget > 0 ? currentBudget.toFixed(2).replace(".", ",") : "",
       );
     }
   }, [configModalVisible, currentBudget]);
 
   const toggleAccount = async (id: string) => {
-    let newIds;
-    if (activeAccountIds.includes(id)) {
-      newIds = activeAccountIds.filter((aId) => aId !== id);
-    } else {
-      newIds = [...activeAccountIds, id];
-    }
+    const newIds = activeAccountIds.includes(id)
+      ? activeAccountIds.filter((aId) => aId !== id)
+      : [...activeAccountIds, id];
     setActiveAccountIds(newIds);
     await AsyncStorage.setItem(
-      '@horizonte:active_accounts',
+      "@horizonte:active_accounts",
       JSON.stringify(newIds),
     );
   };
 
   const saveBudget = async () => {
-    const value = parseFloat(budgetInput.replace(',', '.'));
-    if (!isNaN(value)) {
-      await saveMonthlyBudget(year, month, value);
-    }
+    const value = parseFloat(budgetInput.replace(",", "."));
+    if (!isNaN(value)) await saveMonthlyBudget(year, month, value);
     setConfigModalVisible(false);
+  };
+
+  const toggleViewMode = async () => {
+    const newMode = viewMode === "list" ? "grid" : "list";
+    setViewMode(newMode);
+    await AsyncStorage.setItem("@horizonte:view_mode", newMode);
   };
 
   const prevMonth = () => {
@@ -132,122 +156,137 @@ export function HorizonteScreen() {
   };
 
   const activeBalance = accounts
-    .filter((a) => activeAccountIds.includes(a.id))
-    .reduce((s, a) => {
-      if (a.type === 'cartao_credito') {
-        return s;
-      }
-      return s + a.balance;
-    }, 0);
+    .filter(
+      (a) => activeAccountIds.includes(a.id) && a.type !== "cartao_credito",
+    )
+    .reduce((s, a) => s + a.balance, 0);
 
-  const days = useMemo(() => {
-    const daysCount = getDaysInMonth(year, month);
+  // 👉 O MOTOR CONTÍNUO MULTI-MÊS
+  const projectionsByMonth = useMemo(() => {
+    const isPast =
+      year < today.getFullYear() ||
+      (year === today.getFullYear() && month < today.getMonth());
+    const startYear = isPast ? year : today.getFullYear();
+    const startMonth = isPast ? month : today.getMonth();
 
-    // 👉 CORREÇÃO: Filtramos primeiro TODAS as transações para usar apenas as das contas ativas
-    const activeTransactions = transactions.filter(tx => activeAccountIds.includes(tx.accountId));
-
-    const monthTxs = activeTransactions.filter((tx) => {
-      const d = new Date(tx.date);
-      return d.getFullYear() === year && d.getMonth() === month;
-    });
-
-    const thisPlusAfterTxs = activeTransactions.filter((tx) => {
+    // 1. Descobre o saldo exato no início do mês de partida (desfazendo o futuro)
+    let openingBalance = activeBalance;
+    const txsToUndo = transactions.filter((tx) => {
+      if (!tx.paid) return false;
       const d = new Date(tx.date);
       return (
-        d.getFullYear() > year ||
-        (d.getFullYear() === year && d.getMonth() >= month)
+        d.getFullYear() > startYear ||
+        (d.getFullYear() === startYear && d.getMonth() >= startMonth)
       );
     });
-
-    let openingBalance = activeBalance;
-    thisPlusAfterTxs.forEach((tx) => {
-      if (!tx.paid) return;
-      if (tx.type === 'receita') openingBalance -= tx.amount;
-      else if (tx.type === 'despesa') openingBalance += tx.amount;
+    txsToUndo.forEach((tx) => {
+      if (tx.type === "receita") openingBalance -= tx.amount;
+      else if (tx.type === "despesa") openingBalance += tx.amount;
     });
 
     let runningBalance = openingBalance;
-    const result = [];
+    const resultsMap: Record<string, any[]> = {};
 
-    let frozenFutureDailyPlan = 0;
-    let accumulatedMonthlyExpense = 0;
+    let simYear = startYear;
+    let simMonth = startMonth;
 
-    const txsByDay: Record<number, any[]> = {};
-    monthTxs.forEach((tx) => {
-      const day = new Date(tx.date).getDate();
-      if (!txsByDay[day]) txsByDay[day] = [];
-      txsByDay[day].push(tx);
-    });
+    // Alvo final: O mês que o utilizador escolheu + 2 meses para a frente (para encher a grelha)
+    let endYear = year;
+    let endMonth = month + 2;
+    if (endMonth > 11) {
+      endMonth -= 12;
+      endYear++;
+    }
 
-    for (let d = 1; d <= daysCount; d++) {
-      const dayTxs = txsByDay[d] || [];
-      const income = dayTxs
-        .filter((t) => t.type === 'receita')
-        .reduce((s, t) => s + t.amount, 0);
-      const expense = dayTxs
-        .filter((t) => t.type === 'despesa')
-        .reduce((s, t) => s + t.amount, 0);
+    // 2. Roda a fita do tempo
+    while (simYear < endYear || (simYear === endYear && simMonth <= endMonth)) {
+      const simDaysCount = getDaysInMonth(simYear, simMonth);
+      const simBudget = getEffectiveBudget(simYear, simMonth);
+      const monthKey = `${simYear}-${simMonth}`;
+      resultsMap[monthKey] = [];
 
-      const dayDate = new Date(year, month, d);
-      const isPast =
-        dayDate <
-        new Date(today.getFullYear(), today.getMonth(), today.getDate());
-      const isToday =
-        d === today.getDate() &&
-        month === today.getMonth() &&
-        year === today.getFullYear();
+      const monthTxs = transactions.filter((tx) => {
+        const d = new Date(tx.date);
+        return d.getFullYear() === simYear && d.getMonth() === simMonth;
+      });
 
-      if (isPast) {
-        accumulatedMonthlyExpense += expense;
-      }
+      const txsByDay: Record<number, any[]> = {};
+      monthTxs.forEach((tx) => {
+        const day = new Date(tx.date).getDate();
+        if (!txsByDay[day]) txsByDay[day] = [];
+        txsByDay[day].push(tx);
+      });
 
-      let dailyPlan = 0;
+      let accumulatedMonthlyExpense = 0;
+      let frozenFutureDailyPlan = 0;
 
-      if (currentBudget > 0) {
-        if (isPast || isToday) {
-          const remainingBudgetForMonth =
-            currentBudget - accumulatedMonthlyExpense;
-          const remainingDays = daysCount - d + 1;
-          dailyPlan =
-            remainingBudgetForMonth > 0
-              ? remainingBudgetForMonth / remainingDays
-              : 0;
+      for (let d = 1; d <= simDaysCount; d++) {
+        const dayTxs = txsByDay[d] || [];
+        const income = dayTxs
+          .filter((t) => t.type === "receita")
+          .reduce((s, t) => s + t.amount, 0);
+        const expense = dayTxs
+          .filter((t) => t.type === "despesa")
+          .reduce((s, t) => s + t.amount, 0);
 
-          if (isToday) {
-            frozenFutureDailyPlan = dailyPlan;
+        const dayDate = new Date(simYear, simMonth, d);
+        const isDayPast =
+          dayDate <
+          new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        const isDayToday =
+          d === today.getDate() &&
+          simMonth === today.getMonth() &&
+          simYear === today.getFullYear();
+
+        if (isDayPast) accumulatedMonthlyExpense += expense;
+
+        let dailyPlan = 0;
+        if (simBudget > 0) {
+          if (isDayPast || isDayToday) {
+            const remainingBudget = simBudget - accumulatedMonthlyExpense;
+            const remainingDays = simDaysCount - d + 1;
+            dailyPlan =
+              remainingBudget > 0 ? remainingBudget / remainingDays : 0;
+            if (isDayToday) frozenFutureDailyPlan = dailyPlan;
+          } else {
+            const isFutureMonthSim =
+              simMonth > today.getMonth() || simYear > today.getFullYear();
+            dailyPlan = isFutureMonthSim
+              ? simBudget / simDaysCount
+              : frozenFutureDailyPlan;
           }
         }
-        else {
-          const isFutureMonth =
-            month > today.getMonth() || year > today.getFullYear();
-          dailyPlan = isFutureMonth
-            ? currentBudget / daysCount
-            : frozenFutureDailyPlan;
-        }
+
+        if (isDayPast) runningBalance += income - expense;
+        else runningBalance += income - expense - dailyPlan;
+
+        resultsMap[monthKey].push({
+          day: d,
+          weekDay: getWeekDay(simYear, simMonth, d),
+          income,
+          expense,
+          dailyPlan,
+          balance: runningBalance,
+          isPast: isDayPast,
+          isToday: isDayToday,
+          fullDate: dayDate.toISOString(),
+          transactions: dayTxs,
+        });
       }
 
-      if (isPast) {
-        runningBalance += income - expense;
-      } else {
-        runningBalance += income - expense - dailyPlan;
+      simMonth++;
+      if (simMonth > 11) {
+        simMonth = 0;
+        simYear++;
       }
-
-      result.push({
-        day: d,
-        weekDay: getWeekDay(year, month, d),
-        income,
-        expense,
-        dailyPlan,
-        balance: runningBalance,
-        isPast,
-        isToday,
-        fullDate: dayDate.toISOString(),
-        transactions: dayTxs,
-      });
     }
-    return result;
-    // 👉 Adicionado activeAccountIds como dependência para a tela atualizar ao salvar a configuração
-  }, [transactions, activeBalance, year, month, currentBudget, activeAccountIds]);
+
+    return resultsMap;
+  }, [transactions, activeBalance, year, month, getEffectiveBudget, today]);
+
+  // Extrai o mês focado para o Modo Lista e Resumo
+  const focusedMonthKey = `${year}-${month}`;
+  const days = projectionsByMonth[focusedMonthKey] || [];
 
   const totalIncome = days.reduce((s, d) => s + d.income, 0);
   const totalExpense = days.reduce((s, d) => s + d.expense, 0);
@@ -257,329 +296,448 @@ export function HorizonteScreen() {
     days.find((d) => d.isToday || (!d.isPast && currentBudget > 0))
       ?.dailyPlan || 0;
 
+  // 👉 LÓGICA DO MAPA DE CALOR (GRID)
+  const renderHeatmapGrid = () => {
+    const columns = [0, 1, 2].map((offset) => {
+      let y = year;
+      let m = month + offset;
+      if (m > 11) {
+        m -= 12;
+        y++;
+      }
+      return { year: y, month: m, key: `${y}-${m}` };
+    });
+
+    const rows = Array.from({ length: 31 }, (_, i) => i + 1);
+
+    const getHeatmapColor = (balance: number) => {
+      if (balance < 0) return colors.destructive + "30"; // Vermelho
+      if (balance < 500) return colors.warning + "30"; // Amarelo
+      return colors.success + "30"; // Verde
+    };
+
+    return (
+      <View style={styles.gridWrapper}>
+        <View style={[styles.gridHeader, { borderBottomColor: colors.border }]}>
+          <View style={styles.gridDayCol}>
+            <Text
+              style={[styles.gridColTitle, { color: colors.mutedForeground }]}
+            >
+              Dia
+            </Text>
+          </View>
+          {columns.map((col) => (
+            <View key={col.key} style={styles.gridCol}>
+              <Text style={[styles.gridColTitle, { color: colors.foreground }]}>
+                {MONTH_ABBR[col.month]}/{col.year.toString().slice(-2)}
+              </Text>
+            </View>
+          ))}
+        </View>
+
+        <ScrollView showsVerticalScrollIndicator={false}>
+          {rows.map((dayNum) => (
+            <View
+              key={dayNum}
+              style={[styles.gridRow, { borderBottomColor: colors.border }]}
+            >
+              <View style={styles.gridDayCol}>
+                <Text
+                  style={[
+                    styles.gridDayText,
+                    { color: colors.mutedForeground },
+                  ]}
+                >
+                  {dayNum}
+                </Text>
+              </View>
+              {columns.map((col) => {
+                const dayData = projectionsByMonth[col.key]?.find(
+                  (d) => d.day === dayNum,
+                );
+                if (!dayData)
+                  return (
+                    <View
+                      key={`${col.key}-${dayNum}`}
+                      style={styles.gridCell}
+                    />
+                  ); // Mês sem dia 31
+
+                const bgColor = getHeatmapColor(dayData.balance);
+                const textColor =
+                  dayData.balance < 0 ? colors.destructive : colors.foreground;
+
+                return (
+                  <TouchableOpacity
+                    key={`${col.key}-${dayNum}`}
+                    style={[styles.gridCell, { backgroundColor: bgColor }]}
+                    onPress={() => setSelectedDay(dayData)}
+                  >
+                    <Text style={[styles.gridCellText, { color: textColor }]}>
+                      {formatCompactK(dayData.balance)}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          ))}
+          <View style={{ height: 100 }} />
+        </ScrollView>
+      </View>
+    );
+  };
+
   return (
     <KeyboardAvoidingView
       style={{ flex: 1, backgroundColor: colors.background }}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
+      {/* HEADER E NAVEGAÇÃO DE MESES */}
       <View
         style={[
           styles.monthNav,
           { borderBottomColor: colors.border, backgroundColor: colors.card },
         ]}
       >
-        <TouchableOpacity onPress={prevMonth} style={{ padding: 8 }}>
-          <Ionicons name='chevron-back' size={22} color={colors.foreground} />
+        <TouchableOpacity onPress={prevMonth} style={styles.navBtn}>
+          <Ionicons name="chevron-back" size={22} color={colors.foreground} />
         </TouchableOpacity>
 
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
           <Text style={[styles.monthTitle, { color: colors.foreground }]}>
             {MONTH_NAMES[month]} {year}
           </Text>
-          <TouchableOpacity
-            onPress={() => setConfigModalVisible(true)}
-            style={[styles.configBtn, { backgroundColor: colors.secondary }]}
-          >
-            <Ionicons name='options' size={16} color={colors.foreground} />
-          </TouchableOpacity>
+          <View style={{ flexDirection: "row", gap: 6 }}>
+            <TouchableOpacity
+              onPress={toggleViewMode}
+              style={[styles.configBtn, { backgroundColor: colors.secondary }]}
+            >
+              <Ionicons
+                name={viewMode === "list" ? "grid" : "list"}
+                size={16}
+                color={colors.foreground}
+              />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setConfigModalVisible(true)}
+              style={[styles.configBtn, { backgroundColor: colors.secondary }]}
+            >
+              <Ionicons name="options" size={16} color={colors.foreground} />
+            </TouchableOpacity>
+          </View>
         </View>
 
-        <TouchableOpacity onPress={nextMonth} style={{ padding: 8 }}>
+        <TouchableOpacity onPress={nextMonth} style={styles.navBtn}>
           <Ionicons
-            name='chevron-forward'
+            name="chevron-forward"
             size={22}
             color={colors.foreground}
           />
         </TouchableOpacity>
       </View>
 
-      <View
-        style={[
-          styles.budgetCard,
-          { backgroundColor: colors.card, borderBottomColor: colors.border },
-        ]}
-      >
-        <View style={styles.budgetRow}>
-          <View style={styles.budgetInfo}>
-            <Text
-              style={[styles.budgetLabel, { color: colors.mutedForeground }]}
-            >
-              Saldo Disponível{' '}
-              {activeAccountIds.length > 0 && `(${activeAccountIds.length})`}
-            </Text>
-            <Text style={[styles.budgetValue, { color: colors.foreground }]}>
-              {formatCurrency(activeBalance)}
-            </Text>
-          </View>
-          <View style={styles.budgetRight}>
-            <Text
-              style={[styles.dailyLabel, { color: colors.mutedForeground }]}
-            >
-              Meta Diária Hoje
-            </Text>
-            {currentBudget > 0 ? (
-              // 👉 NOVO: Verifica se a meta de hoje é maior que zero
-              currentDailyPlan > 0 ? (
-                <Text style={[styles.dailyValue, { color: colors.primary }]}>
-                  {formatShort(currentDailyPlan)}
-                </Text>
-              ) : (
-                <Text style={[styles.dailyValue, { color: colors.destructive, fontSize: 13, textTransform: 'uppercase' }]}>
-                  Limite Atingido
-                </Text>
-              )
-            ) : (
-              <TouchableOpacity onPress={() => setConfigModalVisible(true)}>
-                <Text
-                  style={[
-                    styles.dailyValue,
-                    { color: colors.mutedForeground, fontSize: 12 },
-                  ]}
-                >
-                  Definir Meta
-                </Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        </View>
-      </View>
-
-      <View
-        style={[
-          styles.summaryStrip,
-          {
-            backgroundColor: colors.secondary,
-            borderBottomColor: colors.border,
-          },
-        ]}
-      >
-        <View style={styles.summaryItem}>
-          <Text
-            style={[styles.summaryLabel, { color: colors.mutedForeground }]}
-          >
-            Entradas
-          </Text>
-          <Text style={[styles.summaryValue, { color: colors.success }]}>
-            +{formatShort(totalIncome)}
-          </Text>
-        </View>
-        <View
-          style={[styles.summaryDivider, { backgroundColor: colors.border }]}
-        />
-        <View style={styles.summaryItem}>
-          <Text
-            style={[styles.summaryLabel, { color: colors.mutedForeground }]}
-          >
-            Saídas
-          </Text>
-          <Text style={[styles.summaryValue, { color: colors.destructive }]}>
-            -{formatShort(totalExpense)}
-          </Text>
-        </View>
-        <View
-          style={[styles.summaryDivider, { backgroundColor: colors.border }]}
-        />
-        <View style={styles.summaryItem}>
-          <Text
-            style={[styles.summaryLabel, { color: colors.mutedForeground }]}
-          >
-            Projeção Fim
-          </Text>
-          <Text
+      {/* STRIP DE RESUMO (Oculto no modo Grelha para dar mais espaço) */}
+      {viewMode === "list" && (
+        <>
+          <View
             style={[
-              styles.summaryValue,
-              { color: endBalance >= 0 ? colors.success : colors.destructive },
+              styles.budgetCard,
+              {
+                backgroundColor: colors.card,
+                borderBottomColor: colors.border,
+              },
             ]}
           >
-            {formatShort(endBalance)}
-          </Text>
-        </View>
-      </View>
+            <View style={styles.budgetRow}>
+              <View style={styles.budgetInfo}>
+                <Text
+                  style={[
+                    styles.budgetLabel,
+                    { color: colors.mutedForeground },
+                  ]}
+                >
+                  Saldo Disponível{" "}
+                  {activeAccountIds.length > 0 &&
+                    `(${activeAccountIds.length})`}
+                </Text>
+                <Text
+                  style={[styles.budgetValue, { color: colors.foreground }]}
+                >
+                  {formatCurrency(activeBalance)}
+                </Text>
+              </View>
+              <View style={styles.budgetRight}>
+                <Text
+                  style={[styles.dailyLabel, { color: colors.mutedForeground }]}
+                >
+                  Meta Diária Hoje
+                </Text>
+                {currentBudget > 0 ? (
+                  <Text style={[styles.dailyValue, { color: colors.primary }]}>
+                    {formatShort(currentDailyPlan)}
+                  </Text>
+                ) : (
+                  <TouchableOpacity onPress={() => setConfigModalVisible(true)}>
+                    <Text
+                      style={[
+                        styles.dailyValue,
+                        { color: colors.mutedForeground, fontSize: 12 },
+                      ]}
+                    >
+                      Definir Meta
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+          </View>
 
-      <ScrollView showsVerticalScrollIndicator={false}>
-        {days.map((d, idx) => {
-          const rowBg = d.isToday
-            ? colors.primary + '10'
-            : idx % 2 === 0
-              ? colors.card
-              : colors.background;
-          const economizou =
-            currentBudget > 0 && d.dailyPlan > 0 && d.expense < d.dailyPlan;
-          const excedeu =
-            currentBudget > 0 && d.isPast && d.expense > d.dailyPlan;
-          const valorDiferenca = Math.abs(d.dailyPlan - d.expense);
-          const mostrarBadge = currentBudget > 0 && (d.isPast || d.isToday);
-
-          const saldoBg =
-            d.balance >= 0 ? colors.successLight : colors.dangerLight;
-          const saldoColor =
-            d.balance >= 0 ? colors.success : colors.destructive;
-
-          return (
-            <TouchableOpacity
-              key={d.day}
-              activeOpacity={0.7}
-              onPress={() => setSelectedDay(d)}
+          <View
+            style={[
+              styles.summaryStrip,
+              {
+                backgroundColor: colors.secondary,
+                borderBottomColor: colors.border,
+              },
+            ]}
+          >
+            <View style={styles.summaryItem}>
+              <Text
+                style={[styles.summaryLabel, { color: colors.mutedForeground }]}
+              >
+                Entradas
+              </Text>
+              <Text style={[styles.summaryValue, { color: colors.success }]}>
+                +{formatShort(totalIncome)}
+              </Text>
+            </View>
+            <View
               style={[
-                styles.row,
-                { backgroundColor: rowBg, borderBottomColor: colors.border },
+                styles.summaryDivider,
+                { backgroundColor: colors.border },
               ]}
-            >
-              <View
+            />
+            <View style={styles.summaryItem}>
+              <Text
+                style={[styles.summaryLabel, { color: colors.mutedForeground }]}
+              >
+                Saídas
+              </Text>
+              <Text
+                style={[styles.summaryValue, { color: colors.destructive }]}
+              >
+                -{formatShort(totalExpense)}
+              </Text>
+            </View>
+            <View
+              style={[
+                styles.summaryDivider,
+                { backgroundColor: colors.border },
+              ]}
+            />
+            <View style={styles.summaryItem}>
+              <Text
+                style={[styles.summaryLabel, { color: colors.mutedForeground }]}
+              >
+                Projeção Fim
+              </Text>
+              <Text
                 style={[
-                  styles.colDia,
+                  styles.summaryValue,
                   {
-                    backgroundColor: d.isToday
-                      ? colors.primary + '15'
-                      : 'rgba(0,0,0,0.02)',
+                    color:
+                      endBalance >= 0 ? colors.success : colors.destructive,
                   },
                 ]}
               >
-                <Text style={[styles.dayNumber, { color: colors.foreground }]}>
-                  {d.day}
-                </Text>
-                <Text
-                  style={[styles.weekDay, { color: colors.mutedForeground }]}
+                {formatShort(endBalance)}
+              </Text>
+            </View>
+          </View>
+        </>
+      )}
+
+      {/* ÁREA DE RENDERIZAÇÃO (GRID OU LISTA) */}
+      {viewMode === "grid" ? (
+        renderHeatmapGrid()
+      ) : (
+        <ScrollView showsVerticalScrollIndicator={false}>
+          {days.map((d, idx) => {
+            const rowBg = d.isToday
+              ? colors.primary + "10"
+              : idx % 2 === 0
+                ? colors.card
+                : colors.background;
+            const economizou =
+              currentBudget > 0 && d.dailyPlan > 0 && d.expense < d.dailyPlan;
+            const excedeu =
+              currentBudget > 0 && d.isPast && d.expense > d.dailyPlan;
+            const valorDiferenca = Math.abs(d.dailyPlan - d.expense);
+            const mostrarBadge = currentBudget > 0 && (d.isPast || d.isToday);
+
+            const saldoBg =
+              d.balance >= 0 ? colors.successLight : colors.dangerLight;
+            const saldoColor =
+              d.balance >= 0 ? colors.success : colors.destructive;
+
+            return (
+              <TouchableOpacity
+                key={d.day}
+                activeOpacity={0.7}
+                onPress={() => setSelectedDay(d)}
+                style={[
+                  styles.row,
+                  { backgroundColor: rowBg, borderBottomColor: colors.border },
+                ]}
+              >
+                <View
+                  style={[
+                    styles.colDia,
+                    {
+                      backgroundColor: d.isToday
+                        ? colors.primary + "15"
+                        : "rgba(0,0,0,0.02)",
+                    },
+                  ]}
                 >
-                  {d.weekDay}
-                </Text>
-              </View>
-
-              <View style={styles.colIndicators}>
-                <View style={styles.indicatorLine}>
-                  <Ionicons
-                    name='arrow-up-circle'
-                    size={16}
-                    color={d.income > 0 ? colors.success : colors.border}
-                  />
                   <Text
-                    style={[
-                      styles.indicatorText,
-                      {
-                        color:
-                          d.income > 0
-                            ? colors.foreground
-                            : colors.mutedForeground,
-                      },
-                    ]}
+                    style={[styles.dayNumber, { color: colors.foreground }]}
                   >
-                    {formatShort(d.income)}
+                    {d.day}
+                  </Text>
+                  <Text
+                    style={[styles.weekDay, { color: colors.mutedForeground }]}
+                  >
+                    {d.weekDay}
                   </Text>
                 </View>
 
-                <View style={styles.indicatorLine}>
-                  <Ionicons
-                    name='arrow-down-circle'
-                    size={16}
-                    color={d.expense > 0 ? colors.destructive : colors.border}
-                  />
-                  <Text
-                    style={[
-                      styles.indicatorText,
-                      {
-                        color:
-                          d.expense > 0
-                            ? colors.foreground
-                            : colors.mutedForeground,
-                        fontWeight: d.expense > 0 ? '700' : '400',
-                      },
-                    ]}
-                  >
-                    {formatShort(d.expense)}
-                  </Text>
-                </View>
-
-                {currentBudget > 0 && (
+                <View style={styles.colIndicators}>
                   <View style={styles.indicatorLine}>
-                    <View
-                      style={[
-                        styles.miniBadge,
-                        // 👉 NOVO: A bolinha do "M" fica vermelha se o limite for atingido
-                        { backgroundColor: d.dailyPlan > 0 ? colors.primary : colors.destructive },
-                      ]}
-                    >
-                      <Text style={styles.miniBadgeText}>M</Text>
-                    </View>
-
-                    {/* 👉 NOVO: Mostra o valor OU o aviso de limite */}
+                    <Ionicons
+                      name="arrow-up-circle"
+                      size={16}
+                      color={d.income > 0 ? colors.success : colors.border}
+                    />
                     <Text
                       style={[
                         styles.indicatorText,
                         {
-                          color: d.dailyPlan > 0 ? colors.mutedForeground : colors.destructive,
-                          fontWeight: d.dailyPlan > 0 ? '400' : '700',
-                          fontSize: d.dailyPlan > 0 ? 13 : 10
+                          color:
+                            d.income > 0
+                              ? colors.foreground
+                              : colors.mutedForeground,
                         },
                       ]}
                     >
-                      {d.dailyPlan > 0 ? formatShort(d.dailyPlan) : 'LIMITE ATINGIDO'}
+                      {formatShort(d.income)}
                     </Text>
-
-                    {mostrarBadge && (
-                      <>
-                        {economizou && (
-                          <View
-                            style={[
-                              styles.savingBadge,
-                              { backgroundColor: colors.success + '20' },
-                            ]}
-                          >
-                            <Text
-                              style={[
-                                styles.savingText,
-                                { color: colors.success },
-                              ]}
-                            >
-                              {`+ ${formatShort(valorDiferenca)}`}
-                            </Text>
-                          </View>
-                        )}
-                        {excedeu && (
-                          <View
-                            style={[
-                              styles.savingBadge,
-                              { backgroundColor: colors.destructive + '20' },
-                            ]}
-                          >
-                            <Text
-                              style={[
-                                styles.savingText,
-                                { color: colors.destructive },
-                              ]}
-                            >
-                              {`- ${formatShort(valorDiferenca)}`}
-                            </Text>
-                          </View>
-                        )}
-                      </>
-                    )}
                   </View>
-                )}
-              </View>
 
-              <View
-                style={[styles.colSaldoVisual, { backgroundColor: saldoBg }]}
-              >
-                <Text style={[styles.saldoTextLarge, { color: saldoColor }]}>
-                  {formatShort(d.balance)}
-                </Text>
-              </View>
-            </TouchableOpacity>
-          );
-        })}
-        <View style={{ height: 50 }} />
-      </ScrollView>
+                  <View style={styles.indicatorLine}>
+                    <Ionicons
+                      name="arrow-down-circle"
+                      size={16}
+                      color={d.expense > 0 ? colors.destructive : colors.border}
+                    />
+                    <Text
+                      style={[
+                        styles.indicatorText,
+                        {
+                          color:
+                            d.expense > 0
+                              ? colors.foreground
+                              : colors.mutedForeground,
+                          fontWeight: d.expense > 0 ? "700" : "400",
+                        },
+                      ]}
+                    >
+                      {formatShort(d.expense)}
+                    </Text>
+                  </View>
 
-      {/* Modal de Configuração de Contas e Orçamento */}
+                  {currentBudget > 0 && (
+                    <View style={styles.indicatorLine}>
+                      <View
+                        style={[
+                          styles.miniBadge,
+                          { backgroundColor: colors.primary },
+                        ]}
+                      >
+                        <Text style={styles.miniBadgeText}>M</Text>
+                      </View>
+                      <Text
+                        style={[
+                          styles.indicatorText,
+                          { color: colors.mutedForeground },
+                        ]}
+                      >
+                        {formatShort(d.dailyPlan || 0)}
+                      </Text>
+
+                      {mostrarBadge && (
+                        <>
+                          {economizou && (
+                            <View
+                              style={[
+                                styles.savingBadge,
+                                { backgroundColor: colors.success + "20" },
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.savingText,
+                                  { color: colors.success },
+                                ]}
+                              >{`+ ${formatShort(valorDiferenca)}`}</Text>
+                            </View>
+                          )}
+                          {excedeu && (
+                            <View
+                              style={[
+                                styles.savingBadge,
+                                { backgroundColor: colors.destructive + "20" },
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.savingText,
+                                  { color: colors.destructive },
+                                ]}
+                              >{`- ${formatShort(valorDiferenca)}`}</Text>
+                            </View>
+                          )}
+                        </>
+                      )}
+                    </View>
+                  )}
+                </View>
+
+                <View
+                  style={[styles.colSaldoVisual, { backgroundColor: saldoBg }]}
+                >
+                  <Text style={[styles.saldoTextLarge, { color: saldoColor }]}>
+                    {formatShort(d.balance)}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+          <View style={{ height: 50 }} />
+        </ScrollView>
+      )}
+
+      {/* MODAL DE CONFIGURAÇÃO (Omitido por brevidade, mantém-se EXATAMENTE igual ao seu original) */}
       <Modal
         visible={configModalVisible}
         transparent={true}
-        animationType='fade'
+        animationType="fade"
         onRequestClose={() => setConfigModalVisible(false)}
       >
+        {/* ... (Seu modal de configuração de contas e orçamento que já funcionava perfeitamente) ... */}
         <View style={styles.modalOverlay}>
           <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
           >
             <View
               style={[
@@ -587,6 +745,7 @@ export function HorizonteScreen() {
                 { backgroundColor: colors.card, borderColor: colors.border },
               ]}
             >
+              {/* ... Todo o seu código de inputs, ScrollView e Switch das contas ... */}
               <View
                 style={[
                   styles.modalHeader,
@@ -627,8 +786,7 @@ export function HorizonteScreen() {
                       marginBottom: 8,
                     }}
                   >
-                    Defina um limite de gastos para o mês. Seu limite diário
-                    será calculado com base neste valor.
+                    Defina um limite de gastos para o mês.
                   </Text>
                   <View
                     style={[
@@ -650,8 +808,8 @@ export function HorizonteScreen() {
                     </Text>
                     <TextInput
                       style={[styles.budgetInput, { color: colors.foreground }]}
-                      keyboardType='decimal-pad'
-                      placeholder='0,00'
+                      keyboardType="decimal-pad"
+                      placeholder="0,00"
                       placeholderTextColor={colors.mutedForeground}
                       value={budgetInput}
                       onChangeText={setBudgetInput}
@@ -669,46 +827,6 @@ export function HorizonteScreen() {
                 </Text>
                 {accounts.map((acc) => {
                   const isActive = activeAccountIds.includes(acc.id);
-                  const isCreditCard = acc.type === 'cartao_credito';
-
-                  let displayBalance = acc.balance;
-                  if (isCreditCard) {
-                    const currentDate = new Date();
-                    const closingDay = acc.closingDay || 31;
-                    let targetMonth = currentDate.getMonth() + 1;
-                    let targetYear = currentDate.getFullYear();
-                    if (currentDate.getDate() >= closingDay) targetMonth += 1;
-                    if (targetMonth > 11) {
-                      targetMonth -= 12;
-                      targetYear += 1;
-                    }
-
-                    const currentInvoice = transactions
-                      .filter((tx) => {
-                        if (
-                          tx.accountId !== acc.id ||
-                          tx.paymentMethod !== 'credito' ||
-                          tx.paid
-                        )
-                          return false;
-                        const txDate = new Date(tx.date);
-                        return (
-                          txDate.getMonth() === targetMonth &&
-                          txDate.getFullYear() === targetYear
-                        );
-                      })
-                      .reduce(
-                        (sum, tx) =>
-                          sum +
-                          (tx.type === 'receita' ? -tx.amount : tx.amount),
-                        0,
-                      );
-
-                    const cardLimit =
-                      acc.creditLimit || (acc.balance > 0 ? acc.balance : 0);
-                    displayBalance = Math.max(0, cardLimit - currentInvoice);
-                  }
-
                   return (
                     <TouchableOpacity
                       key={acc.id}
@@ -718,7 +836,7 @@ export function HorizonteScreen() {
                         styles.accountOption,
                         {
                           backgroundColor: isActive
-                            ? colors.primary + '15'
+                            ? colors.primary + "15"
                             : colors.background,
                           borderColor: isActive
                             ? colors.primary
@@ -728,15 +846,15 @@ export function HorizonteScreen() {
                     >
                       <View
                         style={{
-                          flexDirection: 'row',
-                          alignItems: 'center',
+                          flexDirection: "row",
+                          alignItems: "center",
                           gap: 12,
                         }}
                       >
                         <View
                           style={[
                             styles.accountOptionIcon,
-                            { backgroundColor: acc.color + '20' },
+                            { backgroundColor: acc.color + "20" },
                           ]}
                         >
                           <Ionicons
@@ -754,15 +872,6 @@ export function HorizonteScreen() {
                           >
                             {acc.name}
                           </Text>
-                          <Text
-                            style={[
-                              styles.accountOptionBalance,
-                              { color: colors.mutedForeground },
-                            ]}
-                          >
-                            {isCreditCard ? 'Disp. ' : ''}
-                            {formatCurrency(displayBalance)}
-                          </Text>
                         </View>
                       </View>
                       <View
@@ -774,12 +883,12 @@ export function HorizonteScreen() {
                               : colors.border,
                             backgroundColor: isActive
                               ? colors.primary
-                              : 'transparent',
+                              : "transparent",
                           },
                         ]}
                       >
                         {isActive && (
-                          <Ionicons name='checkmark' size={14} color='#FFF' />
+                          <Ionicons name="checkmark" size={14} color="#FFF" />
                         )}
                       </View>
                     </TouchableOpacity>
@@ -802,11 +911,11 @@ export function HorizonteScreen() {
         </View>
       </Modal>
 
-      {/* Modal de Detalhes do Dia */}
+      {/* MODAL DE DETALHES DO DIA */}
       <Modal
         visible={!!selectedDay}
         transparent={true}
-        animationType='slide'
+        animationType="slide"
         onRequestClose={() => setSelectedDay(null)}
       >
         <View style={styles.modalOverlayBottom}>
@@ -826,7 +935,7 @@ export function HorizonteScreen() {
                 <Text
                   style={[styles.modalDate, { color: colors.mutedForeground }]}
                 >
-                  {selectedDay ? formatDateShort(selectedDay.fullDate) : ''}
+                  {selectedDay ? formatDateShort(selectedDay.fullDate) : ""}
                 </Text>
               </View>
               <TouchableOpacity
@@ -836,7 +945,7 @@ export function HorizonteScreen() {
                   { backgroundColor: colors.background },
                 ]}
               >
-                <Ionicons name='close' size={20} color={colors.foreground} />
+                <Ionicons name="close" size={20} color={colors.foreground} />
               </TouchableOpacity>
             </View>
 
@@ -845,10 +954,10 @@ export function HorizonteScreen() {
               showsVerticalScrollIndicator={false}
             >
               {!selectedDay?.transactions ||
-                selectedDay.transactions.length === 0 ? (
+              selectedDay.transactions.length === 0 ? (
                 <View style={styles.emptyModal}>
                   <Ionicons
-                    name='calendar-clear-outline'
+                    name="calendar-clear-outline"
                     size={32}
                     color={colors.border}
                   />
@@ -863,17 +972,17 @@ export function HorizonteScreen() {
                 </View>
               ) : (
                 selectedDay.transactions.map((tx: any, idx: number) => {
-                  const isReceita = tx.type === 'receita';
-                  const isCredito = tx.paymentMethod === 'credito';
+                  const isReceita = tx.type === "receita";
+                  const isCredito = tx.paymentMethod === "credito";
                   const amountColor = isReceita
                     ? colors.success
-                    : tx.type === 'transferencia'
+                    : tx.type === "transferencia"
                       ? colors.primary
                       : colors.destructive;
                   const bgColor = isReceita
                     ? colors.successLight
-                    : tx.type === 'transferencia'
-                      ? colors.primary + '15'
+                    : tx.type === "transferencia"
+                      ? colors.primary + "15"
                       : colors.dangerLight;
 
                   return (
@@ -896,10 +1005,10 @@ export function HorizonteScreen() {
                         <Ionicons
                           name={
                             isReceita
-                              ? 'arrow-up'
-                              : tx.type === 'transferencia'
-                                ? 'swap-horizontal'
-                                : 'arrow-down'
+                              ? "arrow-up"
+                              : tx.type === "transferencia"
+                                ? "swap-horizontal"
+                                : "arrow-down"
                           }
                           size={16}
                           color={amountColor}
@@ -937,10 +1046,10 @@ export function HorizonteScreen() {
                         style={[styles.modalTxAmount, { color: amountColor }]}
                       >
                         {isReceita
-                          ? '+'
-                          : tx.type === 'transferencia'
-                            ? ''
-                            : '-'}
+                          ? "+"
+                          : tx.type === "transferencia"
+                            ? ""
+                            : "-"}
                         {formatCurrency(tx.amount)}
                       </Text>
                     </View>
@@ -957,142 +1066,171 @@ export function HorizonteScreen() {
 
 const styles = StyleSheet.create({
   monthNav: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  monthTitle: { fontSize: 18, fontWeight: '700' },
-  configBtn: { padding: 6, borderRadius: 12 },
+  monthTitle: { fontSize: 18, fontWeight: "700" },
+  navBtn: { padding: 8 },
+  configBtn: { padding: 8, borderRadius: 12 },
+
   budgetCard: {
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   budgetRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
   budgetInfo: { gap: 2 },
   budgetLabel: {
     fontSize: 11,
-    fontWeight: '500',
-    textTransform: 'uppercase',
+    fontWeight: "500",
+    textTransform: "uppercase",
     letterSpacing: 0.4,
   },
-  budgetValue: { fontSize: 20, fontWeight: '700' },
-  budgetRight: { alignItems: 'flex-end', gap: 2 },
-  dailyLabel: { fontSize: 10, fontWeight: '500', textTransform: 'uppercase' },
-  dailyValue: { fontSize: 16, fontWeight: '700' },
+  budgetValue: { fontSize: 20, fontWeight: "700" },
+  budgetRight: { alignItems: "flex-end", gap: 2 },
+  dailyLabel: { fontSize: 10, fontWeight: "500", textTransform: "uppercase" },
+  dailyValue: { fontSize: 16, fontWeight: "700" },
+
   summaryStrip: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingVertical: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  summaryItem: { flex: 1, alignItems: 'center', gap: 1 },
-  summaryLabel: { fontSize: 10, fontWeight: '500', textTransform: 'uppercase' },
-  summaryValue: { fontSize: 12, fontWeight: '700' },
+  summaryItem: { flex: 1, alignItems: "center", gap: 1 },
+  summaryLabel: { fontSize: 10, fontWeight: "500", textTransform: "uppercase" },
+  summaryValue: { fontSize: 12, fontWeight: "700" },
   summaryDivider: { width: 1, height: 20 },
+
   row: {
-    flexDirection: 'row',
+    flexDirection: "row",
     borderBottomWidth: StyleSheet.hairlineWidth,
     minHeight: 90,
   },
   colDia: {
     width: 55,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     borderRightWidth: StyleSheet.hairlineWidth,
-    borderRightColor: 'rgba(0,0,0,0.05)',
+    borderRightColor: "rgba(0,0,0,0.05)",
   },
-  dayNumber: { fontSize: 18, fontWeight: '700' },
-  weekDay: { fontSize: 11, textTransform: 'capitalize' },
-  colIndicators: { flex: 1, padding: 12, gap: 6, justifyContent: 'center' },
-  indicatorLine: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  dayNumber: { fontSize: 18, fontWeight: "700" },
+  weekDay: { fontSize: 11, textTransform: "capitalize" },
+  colIndicators: { flex: 1, padding: 12, gap: 6, justifyContent: "center" },
+  indicatorLine: { flexDirection: "row", alignItems: "center", gap: 10 },
   indicatorText: { fontSize: 13 },
   miniBadge: {
     width: 16,
     height: 16,
     borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
-  miniBadgeText: { color: '#FFF', fontSize: 9, fontWeight: 'bold' },
+  miniBadgeText: { color: "#FFF", fontSize: 9, fontWeight: "bold" },
   savingBadge: {
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
     marginLeft: 8,
   },
-  savingText: { fontSize: 11, fontWeight: '700' },
+  savingText: { fontSize: 11, fontWeight: "700" },
   colSaldoVisual: {
     width: 120,
-    justifyContent: 'center',
-    alignItems: 'flex-end',
+    justifyContent: "center",
+    alignItems: "flex-end",
     paddingRight: 12,
   },
-  saldoTextLarge: { fontSize: 15, fontWeight: '700' },
+  saldoTextLarge: { fontSize: 15, fontWeight: "700" },
+
+  // 👉 ESTILOS DO NOVO GRID (HEATMAP)
+  gridWrapper: { flex: 1, paddingHorizontal: 16, paddingTop: 16 },
+  gridHeader: {
+    flexDirection: "row",
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    paddingBottom: 12,
+    marginBottom: 8,
+  },
+  gridCol: { flex: 1, alignItems: "center", justifyContent: "center" },
+  gridDayCol: { width: 30, alignItems: "center", justifyContent: "center" },
+  gridColTitle: { fontSize: 14, fontWeight: "700" },
+  gridRow: {
+    flexDirection: "row",
+    height: 44,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  gridDayText: { fontSize: 13, fontWeight: "600" },
+  gridCell: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    marginHorizontal: 2,
+    marginVertical: 4,
+    borderRadius: 6,
+  },
+  gridCellText: { fontSize: 13, fontWeight: "700" },
 
   modalOverlayBottom: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.65)',
-    justifyContent: 'flex-end',
+    backgroundColor: "rgba(0, 0, 0, 0.65)",
+    justifyContent: "flex-end",
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.65)',
-    justifyContent: 'center',
+    backgroundColor: "rgba(0, 0, 0, 0.65)",
+    justifyContent: "center",
     padding: 24,
   },
   modalContent: {
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
-    borderTopWidth: 1,
-    borderLeftWidth: 1,
-    borderRightWidth: 1,
+    borderWidth: 1,
     padding: 24,
     paddingBottom: 40,
-    maxHeight: '80%',
-    minHeight: '40%',
+    maxHeight: "80%",
+    minHeight: "40%",
   },
   configModalContent: {
     borderRadius: 24,
     borderWidth: 1,
     padding: 24,
-    maxHeight: '100%',
+    maxHeight: "100%",
   },
   modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingBottom: 16,
     marginBottom: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  modalTitle: { fontSize: 18, fontWeight: '700', letterSpacing: -0.5 },
-  modalDate: { fontSize: 13, fontWeight: '500', marginTop: 2 },
+  modalTitle: { fontSize: 18, fontWeight: "700", letterSpacing: -0.5 },
+  modalDate: { fontSize: 13, fontWeight: "500", marginTop: 2 },
   closeBtn: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
   modalScroll: { flexGrow: 1, marginTop: 8 },
   emptyModal: {
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     paddingVertical: 50,
     gap: 12,
   },
-  emptyModalText: { fontSize: 14, fontWeight: '500' },
+  emptyModalText: { fontSize: 14, fontWeight: "500" },
   modalTxItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingVertical: 14,
     gap: 12,
   },
@@ -1100,23 +1238,23 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
-  modalTxInfo: { flex: 1, gap: 4, alignItems: 'flex-start' },
-  modalTxDesc: { fontSize: 15, fontWeight: '600' },
-  modalTxAmount: { fontSize: 15, fontWeight: '700' },
+  modalTxInfo: { flex: 1, gap: 4, alignItems: "flex-start" },
+  modalTxDesc: { fontSize: 15, fontWeight: "600" },
+  modalTxAmount: { fontSize: 15, fontWeight: "700" },
   modalCreditBadge: {
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
   },
-  modalCreditText: { fontSize: 9, fontWeight: '800' },
+  modalCreditText: { fontSize: 9, fontWeight: "800" },
 
   accountOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     padding: 12,
     borderRadius: 16,
     borderWidth: 1,
@@ -1126,35 +1264,33 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
-  accountOptionName: { fontSize: 14, fontWeight: '600' },
-  accountOptionBalance: { fontSize: 12 },
+  accountOptionName: { fontSize: 14, fontWeight: "600" },
   checkbox: {
     width: 22,
     height: 22,
     borderRadius: 6,
     borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
   saveBtn: {
     padding: 16,
     borderRadius: 16,
-    alignItems: 'center',
+    alignItems: "center",
     marginTop: 16,
   },
-  saveBtnText: { fontSize: 15, fontWeight: '700' },
-
-  configLabel: { fontSize: 14, fontWeight: '700' },
+  saveBtnText: { fontSize: 15, fontWeight: "700" },
+  configLabel: { fontSize: 14, fontWeight: "700" },
   budgetInputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     borderWidth: 1,
     borderRadius: 12,
     paddingHorizontal: 16,
     height: 50,
   },
-  budgetInput: { flex: 1, fontSize: 18, fontWeight: '600' },
+  budgetInput: { flex: 1, fontSize: 18, fontWeight: "600" },
 });

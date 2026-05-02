@@ -23,9 +23,6 @@ const RIGHT_TABS: { id: TabType; label: string; icon: string }[] = [
   { id: 'menu', label: 'Menu', icon: 'menu-outline' },
 ]
 
-// Nota: Se você ainda precisar da aba 'tags' no futuro, 
-// pode movê-la para dentro da tela de Menu ou Totais.
-
 export function BottomNavigation({ activeTab, onTabChange, onAddClick }: BottomNavigationProps) {
   const { colors } = useTheme()
   const insets = useSafeAreaInsets()

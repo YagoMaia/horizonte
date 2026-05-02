@@ -37,7 +37,6 @@ export function SaldosScreen() {
   const { colors } = useTheme();
   const {
     accounts,
-    tags,
     transactions,
     totalBalance,
     monthlyIncome,
@@ -57,15 +56,13 @@ export function SaldosScreen() {
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
   const [filterType, setFilterType] = useState<TransactionType | 'todas'>('todas');
   const [filterAccountId, setFilterAccountId] = useState<string | 'todas'>('todas');
-  const [filterTagId, setFilterTagId] = useState<string | 'todas'>('todas');
 
   // ESTADOS PARA NAVEGAÇÃO DE DATA
   const [currentDate, setCurrentDate] = useState(new Date());
 
   const activeFiltersCount =
     (filterType !== 'todas' ? 1 : 0) +
-    (filterAccountId !== 'todas' ? 1 : 0) +
-    (filterTagId !== 'todas' ? 1 : 0);
+    (filterAccountId !== 'todas' ? 1 : 0);
 
   const rowRefs = React.useRef(new Map()).current;
   let currentlyOpenRowId: string | null = null;
@@ -80,7 +77,7 @@ export function SaldosScreen() {
     setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + offset, 1));
   };
 
-  // MOTOR DE BUSCA ATUALIZADO (Filtro por Mês + Categorias)
+  // MOTOR DE BUSCA ATUALIZADO (Filtro por Mês)
   const displayedTransactions = useMemo(() => {
     return transactions
       .filter((tx) => {
@@ -101,13 +98,10 @@ export function SaldosScreen() {
           }
         }
 
-        // Regra 4: Filtro de Tag
-        if (filterTagId !== 'todas' && !tx.tagIds.includes(filterTagId)) return false;
-
         return true;
       })
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [transactions, currentDate, filterType, filterAccountId, filterTagId]);
+  }, [transactions, currentDate, filterType, filterAccountId]);
 
   const paginatedTransactions = useMemo(() => {
     return displayedTransactions.slice(0, displayLimit);
@@ -122,12 +116,11 @@ export function SaldosScreen() {
   React.useEffect(() => {
     setDisplayLimit(20);
     closeCurrentlyOpenRow();
-  }, [currentDate, filterType, filterAccountId, filterTagId]);
+  }, [currentDate, filterType, filterAccountId]);
 
   const clearFilters = () => {
     setFilterType('todas');
     setFilterAccountId('todas');
-    setFilterTagId('todas');
   };
 
   const handleDeletePrompt = (txId: string) => {
@@ -290,7 +283,6 @@ export function SaldosScreen() {
     const isFirst = index === 0;
     const isLast = index === paginatedTransactions.length - 1;
     const isReceita = tx.type === 'receita';
-    const tag = tx.tagIds?.length > 0 ? tags.find((t) => t.id === tx.tagIds[0]) : null;
     const account = accounts.find((a) => a.id === tx.accountId);
 
     return (
@@ -307,8 +299,8 @@ export function SaldosScreen() {
           onPress={() => setSelectedTx(tx)}
           activeOpacity={1}
         >
-          <View style={[styles.txIcon, { backgroundColor: (tag?.color || colors.primary) + '15' }]}>
-            <Ionicons name={(tag?.icon || 'receipt') as any} size={18} color={tag?.color || colors.primary} />
+          <View style={[styles.txIcon, { backgroundColor: colors.primary + '15' }]}>
+            <Ionicons name="receipt" size={18} color={colors.primary} />
           </View>
           <View style={styles.txInfo}>
             <Text style={[styles.txDesc, { color: colors.foreground }]} numberOfLines={1}>{tx.description}</Text>
@@ -344,7 +336,7 @@ export function SaldosScreen() {
 
       <TransactionDetailModal transaction={isEditing ? null : selectedTx} onClose={() => setSelectedTx(null)} onEdit={() => setIsEditing(true)} />
       {isEditing && selectedTx && (
-        <AddTransactionModal visible={isEditing} onClose={() => { setIsEditing(false); setSelectedTx(null); }} onAdd={addTransaction} onUpdate={updateTransaction} accounts={accounts} tags={tags} transactionToEdit={selectedTx} />
+        <AddTransactionModal visible={isEditing} onClose={() => { setIsEditing(false); setSelectedTx(null); }} onAdd={addTransaction} onUpdate={updateTransaction} accounts={accounts} transactionToEdit={selectedTx} />
       )}
 
       {/* Modal de Filtros (Simplificado sem o switch de previstos) */}
@@ -432,44 +424,6 @@ export function SaldosScreen() {
                   >
                     <Text style={[styles.chipText, { color: filterAccountId === acc.id ? '#FFF' : acc.color }]}>
                       {acc.name}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-
-              {/* FILTRO POR CATEGORIA (TAGS) */}
-              <Text style={[styles.filterGroupLabel, { color: colors.mutedForeground, marginTop: 20 }]}>
-                Categorias
-              </Text>
-              <View style={styles.chipRow}>
-                <TouchableOpacity
-                  style={[
-                    styles.chip,
-                    {
-                      borderColor: colors.border,
-                      backgroundColor: filterTagId === 'todas' ? colors.primary : 'transparent',
-                    },
-                  ]}
-                  onPress={() => setFilterTagId('todas')}
-                >
-                  <Text style={[styles.chipText, { color: filterTagId === 'todas' ? '#FFF' : colors.foreground }]}>
-                    Todas
-                  </Text>
-                </TouchableOpacity>
-                {tags.map((tag) => (
-                  <TouchableOpacity
-                    key={tag.id}
-                    style={[
-                      styles.chip,
-                      {
-                        borderColor: tag.color,
-                        backgroundColor: filterTagId === tag.id ? tag.color : 'transparent',
-                      },
-                    ]}
-                    onPress={() => setFilterTagId(tag.id)}
-                  >
-                    <Text style={[styles.chipText, { color: filterTagId === tag.id ? '#FFF' : tag.color }]}>
-                      {tag.name}
                     </Text>
                   </TouchableOpacity>
                 ))}

@@ -33,13 +33,12 @@ const RECURRENCE_LABELS: Record<string, string> = {
 
 export function TransactionDetailModal({ transaction, onClose, onEdit }: TransactionDetailModalProps) {
   const { colors } = useTheme()
-  const { accounts, tags, deleteTransaction } = useStoreContext()
+  const { accounts, deleteTransaction } = useStoreContext()
   const insets = useSafeAreaInsets()
 
   if (!transaction) return null
 
   const account = accounts.find(a => a.id === transaction.accountId)
-  const txTags = tags.filter(t => transaction.tagIds.includes(t.id))
   const isReceita = transaction.type === 'receita'
   const isTransf = transaction.type === 'transferencia'
   const amountColor = isReceita ? colors.success : isTransf ? colors.primary : colors.destructive
@@ -153,19 +152,6 @@ export function TransactionDetailModal({ transaction, onClose, onEdit }: Transac
             } colors={colors} />
             <DetailRow label="Conta" value={account?.name ?? '—'} colors={colors} />
             <DetailRow label="Recorrência" value={RECURRENCE_LABELS[transaction.recurrence] ?? '—'} colors={colors} />
-            {txTags.length > 0 && (
-              <View style={[styles.detailRow, { borderTopColor: colors.border }]}>
-                <Text style={[styles.detailLabel, { color: colors.mutedForeground }]}>Tags</Text>
-                <View style={styles.tagsRow}>
-                  {txTags.map(tag => (
-                    <View key={tag.id} style={[styles.tagChip, { backgroundColor: tag.color + '20' }]}>
-                      <View style={[styles.tagDot, { backgroundColor: tag.color }]} />
-                      <Text style={[styles.tagChipText, { color: tag.color }]}>{tag.name}</Text>
-                    </View>
-                  ))}
-                </View>
-              </View>
-            )}
             {transaction.notes && (
               <DetailRow label="Notas" value={transaction.notes} colors={colors} />
             )}
@@ -250,15 +236,4 @@ const styles = StyleSheet.create({
   },
   detailLabel: { fontSize: 13 },
   detailValue: { fontSize: 14, fontWeight: '500' },
-  tagsRow: { flexDirection: 'row', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' },
-  tagChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 12,
-  },
-  tagDot: { width: 6, height: 6, borderRadius: 3 },
-  tagChipText: { fontSize: 12, fontWeight: '500' },
 })

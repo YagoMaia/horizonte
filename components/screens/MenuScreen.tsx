@@ -56,13 +56,12 @@ function MenuItem({ icon, label, value, onPress, danger, colors }: MenuItemProps
 }
 
 interface MenuScreenProps {
-  onNavigateToTags: () => void;
 }
 
-export function MenuScreen({ onNavigateToTags }: MenuScreenProps) {
+export function MenuScreen({ }: MenuScreenProps) {
   const { colors } = useTheme()
   // Puxamos a função 'monthlyBudgets' caso você a tenha exportado no StoreContext
-  const { accounts, transactions, tags, monthlyBudgets, totalBalance, clearAllData } = useStoreContext()
+  const { accounts, transactions, monthlyBudgets, totalBalance, clearAllData } = useStoreContext()
 
   // --- EXPORTAR PARA EXCEL (CSV) ---
   const handleExportCSV = async () => {
@@ -73,7 +72,7 @@ export function MenuScreen({ onNavigateToTags }: MenuScreenProps) {
       }
 
       const BOM = '\uFEFF';
-      let csvString = BOM + 'Data;Tipo;Descricao;Valor;Categoria;Conta;Status\n'
+      let csvString = BOM + 'Data;Tipo;Descricao;Valor;Conta;Status\n'
 
       transactions.forEach((tx) => {
         const dateObj = new Date(tx.date)
@@ -84,13 +83,12 @@ export function MenuScreen({ onNavigateToTags }: MenuScreenProps) {
 
         const type = tx.type === 'receita' ? 'Receita' : 'Despesa'
         const amount = tx.amount.toFixed(2).replace('.', ',')
-        const category = tags.find((t) => t.id === tx.tagIds[0])?.name || 'Sem Categoria'
         const account = accounts.find((a) => a.id === tx.accountId)?.name || 'N/A'
         const status = tx.paid ? 'Pago' : 'Pendente'
 
         const cleanDescription = tx.description.replace(/;/g, ',')
 
-        csvString += `${formattedDate};${type};${cleanDescription};${amount};${category};${account};${status}\n`
+        csvString += `${formattedDate};${type};${cleanDescription};${amount};${account};${status}\n`
       })
 
       const fileName = `Horizonte_Relatorio_${new Date().getTime()}.csv`
@@ -132,7 +130,6 @@ export function MenuScreen({ onNavigateToTags }: MenuScreenProps) {
         data: {
           accounts,
           transactions,
-          tags,
           monthlyBudgets: monthlyBudgets || {}
         }
       };
@@ -301,10 +298,6 @@ export function MenuScreen({ onNavigateToTags }: MenuScreenProps) {
           <Text style={[styles.statValue, { color: colors.foreground }]}>{transactions.length}</Text>
           <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>Lançamentos</Text>
         </View>
-        <View style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text style={[styles.statValue, { color: colors.foreground }]}>{tags.length}</Text>
-          <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>Tags</Text>
-        </View>
       </View>
 
       {/* Accounts section */}
@@ -341,10 +334,7 @@ export function MenuScreen({ onNavigateToTags }: MenuScreenProps) {
       {/* Settings */}
       <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>CONFIGURAÇÕES</Text>
       <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <MenuItem icon="pricetags-outline" label="Gerenciar Tags" onPress={onNavigateToTags} colors={colors} />
-        <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
-          <MenuItem icon="moon-outline" label="Tema escuro" value="Automático" colors={colors} />
-        </View>
+        <MenuItem icon="moon-outline" label="Tema escuro" value="Automático" colors={colors} />
         <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
           <MenuItem icon="language-outline" label="Idioma" value="Português (BR)" colors={colors} />
         </View>

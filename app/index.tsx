@@ -17,7 +17,6 @@ import { AddTransactionModal } from '@/components/AddTransactionModal'
 import { SaldosScreen } from '@/components/screens/SaldosScreen'
 import { TotaisScreen } from '@/components/screens/TotaisScreen'
 import { HorizonteScreen } from '@/components/screens/HorizonteScreen'
-import { TagsScreen } from '@/components/screens/TagsScreen'
 import { ContasScreen } from '@/components/screens/ContasScreen'
 import { MenuScreen } from '@/components/screens/MenuScreen'
 import { CartaoScreen } from '@/components/screens/CartaoScreen'
@@ -46,7 +45,7 @@ export default function HomePage() {
     switch (activeTab) {
       case 'saldos': return <SaldosScreen />
       case 'totais': return <TotaisScreen />
-      case 'horizonte': return <HorizonteScreen />
+      case 'horizonte': return <HorizonteScreen2 />
       case 'contas': return <ContasScreen />
       case 'cartao': 
         return (
@@ -60,8 +59,7 @@ export default function HomePage() {
             }} 
           />
         )
-      case 'tags': return <TagsScreen />
-      case 'menu': return <MenuScreen onNavigateToTags={() => setActiveTab('tags')} />
+      case 'menu': return <MenuScreen />
       default: return <SaldosScreen />
     }
   }
@@ -145,7 +143,6 @@ export default function HomePage() {
         onClose={() => setModalVisible(false)}
         onAdd={store.addTransaction}
         accounts={store.accounts}
-        tags={store.tags}
         initialAccountId={defaultValues.accountId}
         initialType={defaultValues.type}
       />

@@ -1,17 +1,10 @@
 // constants/types.ts
 
-export type TabType = 'saldos' | 'totais' | 'horizonte' | 'contas' | 'tags' | 'menu' | 'cartao'
+export type TabType = 'saldos' | 'totais' | 'horizonte' | 'contas' | 'menu' | 'cartao'
 
 export type TransactionType = 'receita' | 'despesa' | 'transferencia'
 
 export type RecurrenceType = 'unica' | 'diaria' | 'semanal' | 'mensal' | 'anual' | 'quinto_dia_util'
-
-export interface Tag {
-  id: string
-  name: string
-  color: string
-  icon: string
-}
 
 export interface Account {
   id: string
@@ -34,7 +27,6 @@ export interface Transaction {
   date: string
   accountId: string
   toAccountId?: string
-  tagIds: string[]
   recurrence: RecurrenceType
   paid: boolean
   notes?: string
