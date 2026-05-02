@@ -27,15 +27,18 @@ export function getDaysInMonth(year: number, month: number): number {
 }
 
 export function generateDailyProjection(
-  transactions: any[],
-  accounts: any[],
+  transactions: Transaction[],
+  accounts: Account[],
   daysAhead = 30,
 ) {
   const today = new Date();
-  const totalBalance = accounts.reduce(
-    (sum: number, a: any) => sum + a.balance,
-    0,
-  );
+  today.setHours(0, 0, 0, 0);
+
+  // Consideramos apenas contas que não são cartão de crédito para o "caixa" disponível
+  let runningBalance = accounts
+    .filter(a => a.type !== 'cartao_credito')
+    .reduce((sum, a) => sum + a.balance, 0);
+
   const days = [];
 
   for (let i = 0; i < daysAhead; i++) {
@@ -43,21 +46,28 @@ export function generateDailyProjection(
     date.setDate(today.getDate() + i);
     const dateStr = date.toISOString().split('T')[0];
 
+    // Filtramos transações do dia que afetam o caixa (não ignoramos transferências aqui)
     const dayTxs = transactions.filter((t) => {
       const txDate = new Date(t.date).toISOString().split('T')[0];
-      return txDate === dateStr;
+      return txDate === dateStr && !t.paid; // Apenas as não pagas (futuras)
     });
 
     const income = dayTxs
-      .filter((t: any) => t.type === 'receita')
-      .reduce((s: number, t: any) => s + t.amount, 0);
+      .filter((t) => t.type === 'receita')
+      .reduce((s, t) => s + t.amount, 0);
+
     const expense = dayTxs
-      .filter((t: any) => t.type === 'despesa')
-      .reduce((s: number, t: any) => s + t.amount, 0);
+      .filter((t) => t.type === 'despesa')
+      .reduce((s, t) => s + t.amount, 0);
+
+    // Ajuste de transferências (se sair de conta corrente para algo fora do radar ou vice-versa)
+    // Simplificação: aqui assumimos que se está no array de transactions futuras, ela deve ser processada
+    
+    runningBalance += (income - expense);
 
     days.push({
       date: dateStr,
-      balance: totalBalance + income - expense,
+      balance: runningBalance,
       income,
       expense,
       transactions: dayTxs,

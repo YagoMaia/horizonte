@@ -170,18 +170,28 @@ export function HorizonteScreen() {
     const startMonth = isPast ? month : today.getMonth();
 
     // 1. Descobre o saldo exato no início do mês de partida (desfazendo o futuro)
+    // Consideramos apenas as contas ativas no planejamento
     let openingBalance = activeBalance;
+    
+    // Transações já pagas que aconteceram do início do mês de partida até hoje
+    // Precisamos retroceder o saldo até o dia 01 do mês de partida
     const txsToUndo = transactions.filter((tx) => {
       if (!tx.paid) return false;
       const d = new Date(tx.date);
-      return (
-        d.getFullYear() > startYear ||
-        (d.getFullYear() === startYear && d.getMonth() >= startMonth)
-      );
+      const isFromStartMonthOnwards = d.getFullYear() > startYear || (d.getFullYear() === startYear && d.getMonth() >= startMonth);
+      return isFromStartMonthOnwards;
     });
+
     txsToUndo.forEach((tx) => {
-      if (tx.type === "receita") openingBalance -= tx.amount;
-      else if (tx.type === "despesa") openingBalance += tx.amount;
+      const isFromActiveAccount = activeAccountIds.includes(tx.accountId);
+      const isToActiveAccount = tx.type === 'transferencia' && tx.targetAccountId && activeAccountIds.includes(tx.targetAccountId);
+
+      if (tx.type === 'receita' && isFromActiveAccount) openingBalance -= tx.amount;
+      else if (tx.type === 'despesa' && isFromActiveAccount) openingBalance += tx.amount;
+      else if (tx.type === 'transferencia') {
+        if (isFromActiveAccount) openingBalance += tx.amount; // Saiu da conta ativa, devolvemos
+        if (isToActiveAccount) openingBalance -= tx.amount;   // Entrou na conta ativa, removemos
+      }
     });
 
     let runningBalance = openingBalance;
@@ -222,11 +232,25 @@ export function HorizonteScreen() {
 
       for (let d = 1; d <= simDaysCount; d++) {
         const dayTxs = txsByDay[d] || [];
-        const income = dayTxs
-          .filter((t) => t.type === "receita")
+        
+        // Filtramos transações que afetam o CAIXA (contas ativas)
+        // ⚠️ IMPORTANTE: Compras no CRÉDITO não afetam o caixa no dia da compra!
+        const effectiveDayTxs = dayTxs.filter(tx => tx.paymentMethod !== 'credito');
+
+        const income = effectiveDayTxs
+          .filter((t) => {
+            if (t.type === 'receita' && activeAccountIds.includes(t.accountId)) return true;
+            if (t.type === 'transferencia' && t.targetAccountId && activeAccountIds.includes(t.targetAccountId) && !activeAccountIds.includes(t.accountId)) return true;
+            return false;
+          })
           .reduce((s, t) => s + t.amount, 0);
-        const expense = dayTxs
-          .filter((t) => t.type === "despesa")
+
+        const expense = effectiveDayTxs
+          .filter((t) => {
+            if (t.type === 'despesa' && activeAccountIds.includes(t.accountId)) return true;
+            if (t.type === 'transferencia' && activeAccountIds.includes(t.accountId) && (!t.targetAccountId || !activeAccountIds.includes(t.targetAccountId))) return true;
+            return false;
+          })
           .reduce((s, t) => s + t.amount, 0);
 
         const dayDate = new Date(simYear, simMonth, d);
@@ -257,8 +281,18 @@ export function HorizonteScreen() {
           }
         }
 
-        if (isDayPast) runningBalance += income - expense;
-        else runningBalance += income - expense - dailyPlan;
+        // Atualiza o saldo corrido:
+        // No passado, usamos o que já aconteceu (income/expense de transações pagas)
+        // No futuro, usamos o que está previsto (transações não pagas + dailyPlan)
+        
+        const dayNet = income - expense;
+        if (isDayPast) {
+          // Se for passado, as transações efetivas já estão no activeBalance (openingBalance ajustado)
+          runningBalance += dayNet;
+        } else {
+          // Se for hoje ou futuro, subtraímos a meta diária planejada
+          runningBalance += dayNet - dailyPlan;
+        }
 
         resultsMap[monthKey].push({
           day: d,
@@ -270,7 +304,7 @@ export function HorizonteScreen() {
           isPast: isDayPast,
           isToday: isDayToday,
           fullDate: dayDate.toISOString(),
-          transactions: dayTxs,
+          transactions: dayTxs, // Mantemos todas para exibição no modal
         });
       }
 
@@ -282,7 +316,7 @@ export function HorizonteScreen() {
     }
 
     return resultsMap;
-  }, [transactions, activeBalance, year, month, getEffectiveBudget, today]);
+  }, [transactions, activeBalance, activeAccountIds, year, month, getEffectiveBudget, today]);
 
   // Extrai o mês focado para o Modo Lista e Resumo
   const focusedMonthKey = `${year}-${month}`;

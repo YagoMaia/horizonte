@@ -45,7 +45,7 @@ export default function HomePage() {
     switch (activeTab) {
       case 'saldos': return <SaldosScreen />
       case 'totais': return <TotaisScreen />
-      case 'horizonte': return <HorizonteScreen2 />
+      case 'horizonte': return <HorizonteScreen />
       case 'contas': return <ContasScreen />
       case 'cartao': 
         return (
