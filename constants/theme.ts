@@ -1,12 +1,10 @@
 // constants/theme.ts
-export const Colors = {
+export const baseColors = {
   light: {
     background: '#FAFAFA',
     foreground: '#1A1A1A',
     card: '#FFFFFF',
     cardForeground: '#1A1A1A',
-    primary: '#E64A19',       // Vibrant Orange
-    primaryForeground: '#FFFFFF',
     secondary: '#F5F5F5',
     secondaryForeground: '#333333',
     muted: '#F0F0F0',
@@ -24,15 +22,12 @@ export const Colors = {
     dangerLight: '#FFEBEE',
     border: '#E8E8E8',
     input: '#E8E8E8',
-    ring: '#E64A19',
   },
   dark: {
     background: '#121212',
     foreground: '#F0F0F0',
     card: '#1E1E1E',
     cardForeground: '#F0F0F0',
-    primary: '#FF7043',
-    primaryForeground: '#1A1A1A',
     secondary: '#2A2A2A',
     secondaryForeground: '#F0F0F0',
     muted: '#2A2A2A',
@@ -50,9 +45,34 @@ export const Colors = {
     dangerLight: '#3D1A1A',
     border: '#2E2E2E',
     input: '#2E2E2E',
-    ring: '#FF7043',
   },
 }
 
 export type ColorScheme = 'light' | 'dark'
+
+export const getThemeColors = (scheme: ColorScheme, primaryColor: string) => {
+  const base = baseColors[scheme]
+  return {
+    ...base,
+    primary: primaryColor,
+    primaryForeground: scheme === 'light' ? '#FFFFFF' : '#1A1A1A',
+    ring: primaryColor,
+  }
+}
+
+// Backward compatibility (default colors)
+export const Colors = {
+  light: getThemeColors('light', '#E64A19'),
+  dark: getThemeColors('dark', '#FF7043'),
+}
+
 export type ThemeColors = typeof Colors.light
+
+export const PRIMARY_COLORS = [
+  { label: 'Laranja', value: '#E64A19' }, // Original
+  { label: 'Azul', value: '#1976D2' },
+  { label: 'Verde', value: '#388E3C' },
+  { label: 'Roxo', value: '#7B1FA2' },
+  { label: 'Preto', value: '#212121' },
+]
+

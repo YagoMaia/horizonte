@@ -39,8 +39,6 @@ export function SaldosScreen() {
     accounts,
     transactions,
     totalBalance,
-    monthlyIncome,
-    monthlyExpense,
     addTransaction,
     updateTransaction,
     deleteTransaction,
@@ -76,6 +74,31 @@ export function SaldosScreen() {
   const changeMonth = (offset: number) => {
     setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + offset, 1));
   };
+
+  // CÁLCULO DE ENTRADAS E SAÍDAS DO MÊS ATUAL (Corrigido para evitar bitributação)
+  const currentMonthStats = useMemo(() => {
+    let income = 0;
+    let expense = 0;
+
+    transactions.forEach((tx) => {
+      const txDate = new Date(tx.date);
+      // Filtra pelo mês atual e apenas transações pagas
+      if (
+        txDate.getMonth() === currentDate.getMonth() &&
+        txDate.getFullYear() === currentDate.getFullYear() &&
+        tx.paid
+      ) {
+        if (tx.type === 'receita') {
+          income += tx.amount;
+        } else if (tx.type === 'despesa' && tx.paymentMethod !== 'credito') {
+          // Ignora compras no crédito (a fatura, quando paga, entrará como débito aqui)
+          expense += tx.amount;
+        }
+      }
+    });
+
+    return { income, expense };
+  }, [transactions, currentDate]);
 
   // MOTOR DE BUSCA ATUALIZADO (Filtro por Mês)
   const displayedTransactions = useMemo(() => {
@@ -157,12 +180,12 @@ export function SaldosScreen() {
         <View style={styles.balanceRow}>
           <View style={styles.balanceStat}>
             <Ionicons name='arrow-up-circle' size={16} color='rgba(255,255,255,0.8)' />
-            <Text style={styles.balanceStatText}>{formatCurrency(monthlyIncome)}</Text>
+            <Text style={styles.balanceStatText}>{formatCurrency(currentMonthStats.income)}</Text>
           </View>
           <View style={styles.balanceDivider} />
           <View style={styles.balanceStat}>
             <Ionicons name='arrow-down-circle' size={16} color='rgba(255,255,255,0.8)' />
-            <Text style={styles.balanceStatText}>{formatCurrency(monthlyExpense)}</Text>
+            <Text style={styles.balanceStatText}>{formatCurrency(currentMonthStats.expense)}</Text>
           </View>
         </View>
       </View>
