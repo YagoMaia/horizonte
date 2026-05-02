@@ -208,6 +208,52 @@ export function HorizonteScreen() {
       endYear++;
     }
 
+    // 👉 PRÉ-CÁLCULO DE FATURAS DE CARTÃO DE CRÉDITO (NÃO PAGAS)
+    const virtualInvoiceTxs: Record<string, any[]> = {};
+    accounts.filter(a => a.type === 'cartao_credito').forEach(card => {
+      const closingDay = card.closingDay || 25;
+      const dueDay = card.dueDay || 5;
+      
+      const cardUnpaidTxs = transactions.filter(tx => 
+        tx.accountId === card.id && tx.paymentMethod === 'credito' && !tx.paid
+      );
+      
+      const invoiceTotals: Record<string, number> = {};
+      
+      cardUnpaidTxs.forEach(tx => {
+        const d = new Date(tx.date);
+        let m = d.getMonth() + 1;
+        let y = d.getFullYear();
+        if (d.getDate() >= closingDay) m += 1;
+        if (dueDay < closingDay) m += 1;
+        while (m > 12) { m -= 12; y += 1; }
+        
+        const invoiceMonth = m - 1;
+        const invoiceYear = y;
+        const dateKey = `${invoiceYear}-${invoiceMonth}-${dueDay}`;
+        
+        invoiceTotals[dateKey] = (invoiceTotals[dateKey] || 0) + (tx.type === 'receita' ? -tx.amount : tx.amount);
+      });
+      
+      Object.entries(invoiceTotals).forEach(([dateKey, amount]) => {
+        if (amount > 0) {
+          if (!virtualInvoiceTxs[dateKey]) virtualInvoiceTxs[dateKey] = [];
+          const [y, m, d] = dateKey.split('-').map(Number);
+          virtualInvoiceTxs[dateKey].push({
+            id: `virtual-invoice-${card.id}-${dateKey}`,
+            description: `Fatura ${card.name}`,
+            amount: amount,
+            type: 'despesa',
+            date: new Date(y, m, d).toISOString(),
+            accountId: card.id,
+            paymentMethod: 'debito', // Para não ser filtrado no effectiveDayTxs
+            paid: false,
+            isVirtual: true, // Tag para identificar que impacta o caixa independente da conta
+          });
+        }
+      });
+    });
+
     // 2. Roda a fita do tempo
     while (simYear < endYear || (simYear === endYear && simMonth <= endMonth)) {
       const simDaysCount = getDaysInMonth(simYear, simMonth);
@@ -231,7 +277,9 @@ export function HorizonteScreen() {
       let frozenFutureDailyPlan = 0;
 
       for (let d = 1; d <= simDaysCount; d++) {
-        const dayTxs = txsByDay[d] || [];
+        const dbTxs = txsByDay[d] || [];
+        const vTxs = virtualInvoiceTxs[`${simYear}-${simMonth}-${d}`] || [];
+        const dayTxs = [...dbTxs, ...vTxs];
         
         // Filtramos transações que afetam o CAIXA (contas ativas)
         // ⚠️ IMPORTANTE: Compras no CRÉDITO não afetam o caixa no dia da compra!
@@ -239,6 +287,7 @@ export function HorizonteScreen() {
 
         const income = effectiveDayTxs
           .filter((t) => {
+            if (t.isVirtual) return t.type === 'receita';
             if (t.type === 'receita' && activeAccountIds.includes(t.accountId)) return true;
             if (t.type === 'transferencia' && t.targetAccountId && activeAccountIds.includes(t.targetAccountId) && !activeAccountIds.includes(t.accountId)) return true;
             return false;
@@ -247,6 +296,7 @@ export function HorizonteScreen() {
 
         const expense = effectiveDayTxs
           .filter((t) => {
+            if (t.isVirtual) return t.type === 'despesa';
             if (t.type === 'despesa' && activeAccountIds.includes(t.accountId)) return true;
             if (t.type === 'transferencia' && activeAccountIds.includes(t.accountId) && (!t.targetAccountId || !activeAccountIds.includes(t.targetAccountId))) return true;
             return false;
