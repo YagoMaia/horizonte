@@ -28,8 +28,9 @@ const MONTH_NAMES = [
   'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
 ];
 
-export function CartaoScreen() {
+export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account | null) => void }) {
   const { colors } = useTheme();
+  // ... rest of useStoreContext ...
   const {
     accounts,
     transactions,
@@ -65,6 +66,13 @@ export function CartaoScreen() {
     }
     return creditCards.find((c: Account) => c.id === selectedCardId) || null;
   }, [creditCards, selectedCardId]);
+
+  // Informa ao pai qual cartão está selecionado para pré-configurar o modal de transação
+  useEffect(() => {
+    if (onSelectCard) {
+      onSelectCard(selectedCardId === 'all' ? null : selectedCard);
+    }
+  }, [selectedCard, selectedCardId, onSelectCard]);
 
   const [monthOffset, setMonthOffset] = useState(0);
 

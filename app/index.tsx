@@ -27,6 +27,12 @@ export default function HomePage() {
   const store = useStoreContext()
   const [activeTab, setActiveTab] = useState<TabType>('saldos')
   const [modalVisible, setModalVisible] = useState(false)
+  
+  // 👉 Estado para armazenar valores padrão dinâmicos para o modal
+  const [defaultValues, setDefaultValues] = useState<{
+    accountId?: string;
+    type?: 'despesa' | 'receita' | 'transferencia';
+  }>({});
 
   if (store.loading) {
     return (
@@ -42,7 +48,18 @@ export default function HomePage() {
       case 'totais': return <TotaisScreen />
       case 'horizonte': return <HorizonteScreen />
       case 'contas': return <ContasScreen />
-      case 'cartao': return <CartaoScreen />
+      case 'cartao': 
+        return (
+          <CartaoScreen 
+            onSelectCard={(card) => {
+              if (card) {
+                setDefaultValues({ accountId: card.id, type: 'despesa' });
+              } else {
+                setDefaultValues({});
+              }
+            }} 
+          />
+        )
       case 'tags': return <TagsScreen />
       case 'menu': return <MenuScreen onNavigateToTags={() => setActiveTab('tags')} />
       default: return <SaldosScreen />
@@ -51,7 +68,7 @@ export default function HomePage() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
-      {/* Header */}
+      {/* ... header code ... */}
       <View style={[styles.header, { borderBottomColor: colors.border, backgroundColor: colors.card }]}>
         <View style={styles.headerLeft}>
           <View style={[styles.logo, { backgroundColor: colors.primary }]}>
@@ -67,7 +84,10 @@ export default function HomePage() {
               styles.headerBtn,
               { backgroundColor: activeTab === 'contas' ? colors.primary + '20' : 'transparent' }
             ]}
-            onPress={() => setActiveTab(activeTab === 'contas' ? 'saldos' : 'contas')}
+            onPress={() => {
+              if (activeTab !== 'contas') setDefaultValues({});
+              setActiveTab(activeTab === 'contas' ? 'saldos' : 'contas');
+            }}
             activeOpacity={0.7}
           >
             <Ionicons
@@ -83,7 +103,10 @@ export default function HomePage() {
               styles.horizonBtn,
               { backgroundColor: activeTab === 'horizonte' ? colors.primary : colors.secondary }
             ]}
-            onPress={() => setActiveTab(activeTab === 'horizonte' ? 'saldos' : 'horizonte')}
+            onPress={() => {
+              if (activeTab !== 'horizonte') setDefaultValues({});
+              setActiveTab(activeTab === 'horizonte' ? 'saldos' : 'horizonte');
+            }}
             activeOpacity={0.8}
           >
             <Ionicons
@@ -109,7 +132,10 @@ export default function HomePage() {
       {/* Bottom Nav */}
       <BottomNavigation
         activeTab={activeTab}
-        onTabChange={setActiveTab}
+        onTabChange={(tab) => {
+          if (tab !== 'cartao') setDefaultValues({});
+          setActiveTab(tab);
+        }}
         onAddClick={() => setModalVisible(true)}
       />
 
@@ -120,6 +146,8 @@ export default function HomePage() {
         onAdd={store.addTransaction}
         accounts={store.accounts}
         tags={store.tags}
+        initialAccountId={defaultValues.accountId}
+        initialType={defaultValues.type}
       />
     </SafeAreaView>
   )

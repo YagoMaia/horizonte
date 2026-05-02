@@ -47,6 +47,8 @@ interface AddTransactionModalProps {
   accounts: Account[];
   tags: any[];
   transactionToEdit?: Transaction | null;
+  initialAccountId?: string;
+  initialType?: TransactionType;
 }
 
 const RECURRENCE_OPTIONS: { value: RecurrenceType; label: string }[] = [
@@ -66,6 +68,8 @@ export function AddTransactionModal({
   accounts,
   tags,
   transactionToEdit,
+  initialAccountId,
+  initialType,
 }: AddTransactionModalProps) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
@@ -79,10 +83,10 @@ export function AddTransactionModal({
     return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
   };
 
-  const [type, setType] = useState<TransactionType>('despesa');
+  const [type, setType] = useState<TransactionType>(initialType ?? 'despesa');
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
-  const [accountId, setAccountId] = useState(accounts[0]?.id ?? '');
+  const [accountId, setAccountId] = useState(initialAccountId ?? accounts[0]?.id ?? '');
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [recurrence, setRecurrence] = useState<RecurrenceType>('unica');
   const [paid, setPaid] = useState(true);
@@ -113,14 +117,32 @@ export function AddTransactionModal({
     }
   }, [isCreditCardSelected, type]);
 
+  // Sincroniza com valores iniciais quando o modal abre (para novos lançamentos)
+  React.useEffect(() => {
+    if (visible && !isEditing) {
+      if (initialAccountId) setAccountId(initialAccountId);
+      if (initialType) setType(initialType);
+      
+      const acc = accounts.find(a => a.id === (initialAccountId || accountId));
+      if (acc?.type === 'cartao_credito') {
+        setPaid(false);
+      } else {
+        setPaid(true);
+      }
+    }
+  }, [visible, initialAccountId, initialType, isEditing]);
+
   const resetState = () => {
-    setType('despesa');
+    setType(initialType ?? 'despesa');
     setDescription('');
     setAmount('');
-    setAccountId(accounts[0]?.id ?? '');
+    setAccountId(initialAccountId ?? accounts[0]?.id ?? '');
     setSelectedTags([]);
     setRecurrence('unica');
-    setPaid(true);
+    
+    const acc = accounts.find(a => a.id === (initialAccountId || accounts[0]?.id));
+    setPaid(acc?.type === 'cartao_credito' ? false : true);
+    
     setInstallments(1);
     setDate(getFormattedDate(0));
     setRecurrenceStart(getFormattedDate(0));
