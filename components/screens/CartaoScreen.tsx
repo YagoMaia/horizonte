@@ -276,7 +276,7 @@ export function CartaoScreen() {
     }
 
     try {
-      await anticipateCreditCardPayment(selectedCard.id, anticipateSourceAccountId, amount);
+      await anticipateCreditCardPayment(selectedCard.id, anticipateSourceAccountId, amount, targetMonth, targetYear);
       setIsAnticipateModalOpen(false);
       Alert.alert('Sucesso', 'Fatura antecipada e limite liberado!');
     } catch (e) {

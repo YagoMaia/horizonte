@@ -170,21 +170,39 @@ export function MenuScreen({ onNavigateToTags }: MenuScreenProps) {
   // --- RESTAURAR BACKUP (LÊ JSON E SOBRESCREVE) ---
   const handleRestoreBackup = async () => {
     try {
+      let fileContent: string;
+
       if (Platform.OS === 'web') {
-        alert('A restauração de backup via arquivo ainda não está suportada na web.');
-        return;
+        const result = await DocumentPicker.getDocumentAsync({
+          type: 'application/json',
+        });
+
+        if (result.canceled || !result.assets || result.assets.length === 0) return;
+
+        const file = result.assets[0].file;
+        if (!file) {
+          Alert.alert('Erro', 'Não foi possível acessar o arquivo selecionado.');
+          return;
+        }
+
+        fileContent = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (e) => resolve(e.target?.result as string);
+          reader.onerror = (e) => reject(new Error('Erro ao ler arquivo'));
+          reader.readAsText(file);
+        });
+      } else {
+        // 1. Pede para o usuário escolher o arquivo
+        const result = await DocumentPicker.getDocumentAsync({
+          type: 'application/json',
+          copyToCacheDirectory: true,
+        });
+
+        if (result.canceled || !result.assets || result.assets.length === 0) return;
+
+        const fileUri = result.assets[0].uri;
+        fileContent = await FileSystem.readAsStringAsync(fileUri);
       }
-
-      // 1. Pede para o usuário escolher o arquivo
-      const result = await DocumentPicker.getDocumentAsync({
-        type: 'application/json',
-        copyToCacheDirectory: true,
-      });
-
-      if (result.canceled) return;
-
-      const fileUri = result.assets[0].uri;
-      const fileContent = await FileSystem.readAsStringAsync(fileUri);
       
       // 2. Faz o parse do JSON
       let parsedData;
@@ -202,39 +220,52 @@ export function MenuScreen({ onNavigateToTags }: MenuScreenProps) {
         return;
       }
 
-      // 4. Confirmação crítica de substituição
-      Alert.alert(
-        'Restaurar Dados',
-        `Isso irá apagar todos os dados atuais e restaurar o backup com ${extractedData.transactions.length} lançamentos. Tem certeza?`,
-        [
-          { text: 'Cancelar', style: 'cancel' },
-          {
-            text: 'Sim, Restaurar',
-            style: 'destructive',
-            onPress: async () => {
-              try {
-                // Gravamos diretamente no AsyncStorage para garantir integridade estrutural
-                await AsyncStorage.setItem('@horizonte:accounts', JSON.stringify(extractedData.accounts));
-                await AsyncStorage.setItem('@horizonte:transactions', JSON.stringify(extractedData.transactions));
-                if (extractedData.tags) {
-                  await AsyncStorage.setItem('@horizonte:tags', JSON.stringify(extractedData.tags));
-                }
-                if (extractedData.monthlyBudgets) {
-                  await AsyncStorage.setItem('@horizonte:monthly_budgets', JSON.stringify(extractedData.monthlyBudgets));
-                }
-
-                // Exige recarregamento para que os React Hooks puxem a nova base limpa
-                Alert.alert(
-                  'Sucesso!', 
-                  'Backup restaurado. Por favor, feche e abra o aplicativo novamente para carregar os novos dados.'
-                );
-              } catch (err) {
-                Alert.alert('Erro', 'Falha ao gravar os dados restaurados no dispositivo.');
-              }
-            }
+      const performRestore = async () => {
+        try {
+          // Gravamos diretamente no AsyncStorage para garantir integridade estrutural
+          await AsyncStorage.setItem('@horizonte:accounts', JSON.stringify(extractedData.accounts));
+          await AsyncStorage.setItem('@horizonte:transactions', JSON.stringify(extractedData.transactions));
+          if (extractedData.tags) {
+            await AsyncStorage.setItem('@horizonte:tags', JSON.stringify(extractedData.tags));
           }
-        ]
-      );
+          if (extractedData.monthlyBudgets) {
+            await AsyncStorage.setItem('@horizonte:monthly_budgets', JSON.stringify(extractedData.monthlyBudgets));
+          }
+
+          // Exige recarregamento para que os React Hooks puxem a nova base limpa
+          const successMessage = Platform.OS === 'web' 
+            ? 'Backup restaurado com sucesso! A página será recarregada.' 
+            : 'Backup restaurado. Por favor, feche e abra o aplicativo novamente para carregar os novos dados.';
+          
+          Alert.alert('Sucesso!', successMessage);
+          
+          if (Platform.OS === 'web') {
+            setTimeout(() => window.location.reload(), 1500);
+          }
+        } catch (err) {
+          Alert.alert('Erro', 'Falha ao gravar os dados restaurados no dispositivo.');
+        }
+      };
+
+      // 4. Confirmação crítica de substituição
+      if (Platform.OS === 'web') {
+        if (window.confirm(`Isso irá apagar todos os dados atuais e restaurar o backup com ${extractedData.transactions.length} lançamentos. Tem certeza?`)) {
+          await performRestore();
+        }
+      } else {
+        Alert.alert(
+          'Restaurar Dados',
+          `Isso irá apagar todos os dados atuais e restaurar o backup com ${extractedData.transactions.length} lançamentos. Tem certeza?`,
+          [
+            { text: 'Cancelar', style: 'cancel' },
+            {
+              text: 'Sim, Restaurar',
+              style: 'destructive',
+              onPress: performRestore
+            }
+          ]
+        );
+      }
     } catch (error) {
       console.error(error);
       Alert.alert('Erro', 'Ocorreu um problema ao tentar ler o arquivo de backup.');

@@ -553,6 +553,8 @@ export function useStore() {
       creditCardId: string,
       sourceAccountId: string,
       amount: number,
+      targetMonth: number,
+      targetYear: number,
     ) => {
       const cardAccount = accounts.find((a) => a.id === creditCardId);
       if (!cardAccount) return;
@@ -573,13 +575,22 @@ export function useStore() {
         recurrence: 'unica',
       };
 
-      // Receita no cartão de crédito (abate o valor da fatura atual e libera limite)
+      // Receita no cartão de crédito (abate o valor da fatura alvo e libera limite)
+      // Precisamos ajustar a data para que, ao passar por getInvoiceForTx, resulte no targetMonth/Year
+      const closingDay = cardAccount.closingDay || 25;
+      const dueDay = cardAccount.dueDay || 5;
+      
+      // Se dueDay < closingDay, a fatura de um mês "M" é composta por gastos do mês "M-1" (ou M-2 se for após o fechamento)
+      // Seguindo a lógica inversa do getInvoiceForTx:
+      const monthOffset = (dueDay < closingDay ? 1 : 0);
+      const creditTxDate = new Date(targetYear, targetMonth - monthOffset, 1, 12, 0, 0);
+
       const creditTx: Transaction = {
         id: `${baseId}-in`,
         description: `Pagamento Antecipado`,
         amount: amount,
         type: 'receita',
-        date: new Date().toISOString(), // Cai direto na fatura atual
+        date: creditTxDate.toISOString(), 
         accountId: creditCardId,
         tagIds: [],
         paymentMethod: 'credito',
