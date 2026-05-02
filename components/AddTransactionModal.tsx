@@ -86,6 +86,22 @@ export function AddTransactionModal({
   const [type, setType] = useState<TransactionType>(initialType ?? 'despesa');
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
+  
+  // 👉 Função para formatar o valor como máscara de moeda
+  const formatCurrencyMask = (value: string) => {
+    const cleanValue = value.replace(/\D/g, '');
+    const amountNumber = Number(cleanValue) / 100;
+    
+    return amountNumber.toLocaleString('pt-BR', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  };
+
+  const handleAmountChange = (text: string) => {
+    setAmount(formatCurrencyMask(text));
+  };
+
   const [accountId, setAccountId] = useState(initialAccountId ?? accounts[0]?.id ?? '');
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [recurrence, setRecurrence] = useState<RecurrenceType>('unica');
@@ -156,7 +172,8 @@ export function AddTransactionModal({
       if (transactionToEdit) {
         setType(transactionToEdit.type);
         setDescription(transactionToEdit.description);
-        setAmount(String(transactionToEdit.amount).replace('.', ','));
+        // 👉 Aplica a máscara ao carregar para edição
+        setAmount(formatCurrencyMask(String(Math.round(transactionToEdit.amount * 100))));
         setAccountId(transactionToEdit.accountId);
         setSelectedTags(transactionToEdit.tagIds);
         setRecurrence(transactionToEdit.recurrence);
@@ -329,6 +346,9 @@ export function AddTransactionModal({
       ).toISOString();
     };
 
+    // 👉 Converte o valor mascarado de volta para número (ex: "1.234,56" -> 1234.56)
+    const numericAmount = parseFloat(amount.replace(/\./g, '').replace(',', '.'));
+
     const isInstallment = isCreditCardSelected && installments > 1;
     const finalRecurrence = isInstallment ? 'unica' : recurrence;
 
@@ -362,7 +382,7 @@ export function AddTransactionModal({
 
     const txData = {
       description: description.trim(),
-      amount: parseFloat(amount.replace(',', '.')),
+      amount: numericAmount,
       type,
       date: (recurrence === 'unica' || isInstallment)
         ? parseToISO(date)
@@ -591,9 +611,9 @@ export function AddTransactionModal({
                   },
                 ]}
                 value={amount}
-                onChangeText={setAmount}
+                onChangeText={handleAmountChange}
                 placeholder='0,00'
-                keyboardType='decimal-pad'
+                keyboardType='numeric'
                 placeholderTextColor={colors.mutedForeground}
               />
             </View>
@@ -662,7 +682,7 @@ export function AddTransactionModal({
                     }}
                   >
                     Serão lançadas {installments} parcelas de R${' '}
-                    {(parseFloat(amount.replace(',', '.')) / installments)
+                    {(parseFloat(amount.replace(/\./g, '').replace(',', '.')) / installments)
                       .toFixed(2)
                       .replace('.', ',')}
                   </Text>
