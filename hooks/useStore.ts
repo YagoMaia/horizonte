@@ -1,24 +1,21 @@
 // hooks/useStore.ts
 import { useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Transaction, Account, Tag } from '@/constants/types';
+import { Transaction, Account } from '@/constants/types';
 
 const STORAGE_KEYS = {
   TRANSACTIONS: '@horizonte:transactions',
   ACCOUNTS: '@horizonte:accounts',
-  TAGS: '@horizonte:tags',
   MONTHLY_BUDGETS: '@horizonte:monthly_budgets',
   SHOW_PENDING: '@horizonte:show_pending',
 };
 
-const DEFAULT_TAGS: Tag[] = [];
 const DEFAULT_ACCOUNTS: Account[] = [];
 const DEFAULT_TRANSACTIONS: Transaction[] = [];
 
 export function useStore() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
-  const [tags, setTags] = useState<Tag[]>([]);
   const [monthlyBudgets, setMonthlyBudgets] = useState<Record<string, number>>({});
   const [showPending, setShowPendingState] = useState<boolean>(true);
   const [loading, setLoading] = useState(true);
@@ -33,11 +30,6 @@ export function useStore() {
   const saveAccounts = useCallback(async (data: Account[]) => {
     await AsyncStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(data));
     setAccounts(data);
-  }, []);
-
-  const saveTags = useCallback(async (data: Tag[]) => {
-    await AsyncStorage.setItem(STORAGE_KEYS.TAGS, JSON.stringify(data));
-    setTags(data);
   }, []);
 
   // --- MÉTODOS DE PROCESSAMENTO ---
@@ -82,11 +74,10 @@ export function useStore() {
 
   const loadData = useCallback(async () => {
     try {
-      const [txRaw, accRaw, tagsRaw, budgetsRaw, showPendingRaw] =
+      const [txRaw, accRaw, budgetsRaw, showPendingRaw] =
         await Promise.all([
           AsyncStorage.getItem(STORAGE_KEYS.TRANSACTIONS),
           AsyncStorage.getItem(STORAGE_KEYS.ACCOUNTS),
-          AsyncStorage.getItem(STORAGE_KEYS.TAGS),
           AsyncStorage.getItem(STORAGE_KEYS.MONTHLY_BUDGETS),
           AsyncStorage.getItem(STORAGE_KEYS.SHOW_PENDING),
         ]);
@@ -96,7 +87,6 @@ export function useStore() {
 
       setTransactions(loadedTransactions);
       setAccounts(loadedAccounts);
-      setTags(tagsRaw ? JSON.parse(tagsRaw) : DEFAULT_TAGS);
       setMonthlyBudgets(budgetsRaw ? JSON.parse(budgetsRaw) : {});
 
       if (showPendingRaw !== null) {
@@ -129,13 +119,11 @@ export function useStore() {
     await AsyncStorage.multiRemove([
       STORAGE_KEYS.TRANSACTIONS,
       STORAGE_KEYS.ACCOUNTS,
-      STORAGE_KEYS.TAGS,
       STORAGE_KEYS.MONTHLY_BUDGETS,
       STORAGE_KEYS.SHOW_PENDING,
     ]);
     setTransactions(DEFAULT_TRANSACTIONS);
     setAccounts(DEFAULT_ACCOUNTS);
-    setTags(DEFAULT_TAGS);
     setMonthlyBudgets({});
     setShowPendingState(true);
   }, []);
@@ -440,7 +428,6 @@ export function useStore() {
             description: `${cleanDescription}${oldSuffix}`,
             accountId: updatedTx.accountId,
             type: updatedTx.type,
-            tagIds: updatedTx.tagIds,
             date: newMutantDate.toISOString(),
           };
 
@@ -568,7 +555,6 @@ export function useStore() {
         type: 'despesa',
         date: new Date().toISOString(),
         accountId: sourceAccountId,
-        tagIds: [], 
         paymentMethod: 'debito',
         paid: true,
         recurrence: 'unica',
@@ -609,7 +595,6 @@ export function useStore() {
         type: 'despesa',
         date: new Date().toISOString(),
         accountId: sourceAccountId,
-        tagIds: [],
         paymentMethod: 'debito',
         paid: true, 
         recurrence: 'unica',
@@ -628,7 +613,6 @@ export function useStore() {
         type: 'receita',
         date: creditTxDate.toISOString(), 
         accountId: creditCardId,
-        tagIds: [],
         paymentMethod: 'credito',
         paid: false, 
         recurrence: 'unica',
@@ -699,7 +683,6 @@ export function useStore() {
   return {
     transactions,
     accounts,
-    tags,
     monthlyBudgets,
     getEffectiveBudget,
     saveMonthlyBudget,
@@ -713,7 +696,6 @@ export function useStore() {
     deleteTransaction,
     updateTransaction,
     saveAccounts,
-    saveTags,
     clearAllData,
     payCreditCardInvoice,
     anticipateCreditCardPayment,

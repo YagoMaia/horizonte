@@ -1,5 +1,5 @@
 // components/screens/MenuScreen.tsx
-import React from 'react'
+import React, { useState } from 'react'
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   Alert,
   Platform,
+  Modal,
 } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { useTheme } from '@/hooks/useTheme'
@@ -17,6 +18,7 @@ import * as FileSystem from 'expo-file-system'
 import * as Sharing from 'expo-sharing'
 import * as DocumentPicker from 'expo-document-picker'
 import AsyncStorage from '@react-native-async-storage/async-storage'
+import { PRIMARY_COLORS } from '@/constants/theme'
 
 interface MenuItemProps {
   icon: string
@@ -56,13 +58,23 @@ function MenuItem({ icon, label, value, onPress, danger, colors }: MenuItemProps
 }
 
 interface MenuScreenProps {
-  onNavigateToTags: () => void;
 }
 
-export function MenuScreen({ onNavigateToTags }: MenuScreenProps) {
-  const { colors } = useTheme()
+export function MenuScreen({ }: MenuScreenProps) {
+  const { colors, themeMode, setThemeMode, primaryColor, setPrimaryColor } = useTheme()
   // Puxamos a função 'monthlyBudgets' caso você a tenha exportado no StoreContext
-  const { accounts, transactions, tags, monthlyBudgets, totalBalance, clearAllData } = useStoreContext()
+  const { accounts, transactions, monthlyBudgets, totalBalance, clearAllData } = useStoreContext()
+
+  const [themeModalVisible, setThemeModalVisible] = useState(false)
+  const [colorModalVisible, setColorModalVisible] = useState(false)
+
+  const themeModeLabel = {
+    light: 'Claro',
+    dark: 'Escuro',
+    system: 'Automático'
+  }[themeMode]
+
+  const currentColorLabel = PRIMARY_COLORS.find(c => c.value === primaryColor)?.label || 'Customizada'
 
   // --- EXPORTAR PARA EXCEL (CSV) ---
   const handleExportCSV = async () => {
@@ -73,7 +85,7 @@ export function MenuScreen({ onNavigateToTags }: MenuScreenProps) {
       }
 
       const BOM = '\uFEFF';
-      let csvString = BOM + 'Data;Tipo;Descricao;Valor;Categoria;Conta;Status\n'
+      let csvString = BOM + 'Data;Tipo;Descricao;Valor;Conta;Status\n'
 
       transactions.forEach((tx) => {
         const dateObj = new Date(tx.date)
@@ -84,13 +96,12 @@ export function MenuScreen({ onNavigateToTags }: MenuScreenProps) {
 
         const type = tx.type === 'receita' ? 'Receita' : 'Despesa'
         const amount = tx.amount.toFixed(2).replace('.', ',')
-        const category = tags.find((t) => t.id === tx.tagIds[0])?.name || 'Sem Categoria'
         const account = accounts.find((a) => a.id === tx.accountId)?.name || 'N/A'
         const status = tx.paid ? 'Pago' : 'Pendente'
 
         const cleanDescription = tx.description.replace(/;/g, ',')
 
-        csvString += `${formattedDate};${type};${cleanDescription};${amount};${category};${account};${status}\n`
+        csvString += `${formattedDate};${type};${cleanDescription};${amount};${account};${status}\n`
       })
 
       const fileName = `Horizonte_Relatorio_${new Date().getTime()}.csv`
@@ -132,7 +143,6 @@ export function MenuScreen({ onNavigateToTags }: MenuScreenProps) {
         data: {
           accounts,
           transactions,
-          tags,
           monthlyBudgets: monthlyBudgets || {}
         }
       };
@@ -301,10 +311,6 @@ export function MenuScreen({ onNavigateToTags }: MenuScreenProps) {
           <Text style={[styles.statValue, { color: colors.foreground }]}>{transactions.length}</Text>
           <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>Lançamentos</Text>
         </View>
-        <View style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text style={[styles.statValue, { color: colors.foreground }]}>{tags.length}</Text>
-          <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>Tags</Text>
-        </View>
       </View>
 
       {/* Accounts section */}
@@ -341,9 +347,21 @@ export function MenuScreen({ onNavigateToTags }: MenuScreenProps) {
       {/* Settings */}
       <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>CONFIGURAÇÕES</Text>
       <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <MenuItem icon="pricetags-outline" label="Gerenciar Tags" onPress={onNavigateToTags} colors={colors} />
+        <MenuItem 
+          icon="moon-outline" 
+          label="Tema escuro" 
+          value={themeModeLabel} 
+          onPress={() => setThemeModalVisible(true)}
+          colors={colors} 
+        />
         <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
-          <MenuItem icon="moon-outline" label="Tema escuro" value="Automático" colors={colors} />
+          <MenuItem 
+            icon="color-palette-outline" 
+            label="Cor principal" 
+            value={currentColorLabel} 
+            onPress={() => setColorModalVisible(true)}
+            colors={colors} 
+          />
         </View>
         <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
           <MenuItem icon="language-outline" label="Idioma" value="Português (BR)" colors={colors} />
@@ -424,6 +442,60 @@ export function MenuScreen({ onNavigateToTags }: MenuScreenProps) {
         Horizonte · Gestão Financeira Pessoal
       </Text>
       <View style={{ height: 20 }} />
+
+      {/* Modais de Tema e Cor */}
+      <Modal visible={themeModalVisible} transparent animationType="fade" onRequestClose={() => setThemeModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[styles.modalTitle, { color: colors.foreground }]}>Tema Escuro</Text>
+            {[
+              { id: 'system', label: 'Automático (Sistema)' },
+              { id: 'light', label: 'Desativado (Claro)' },
+              { id: 'dark', label: 'Ativado (Escuro)' }
+            ].map(option => (
+              <TouchableOpacity
+                key={option.id}
+                style={[styles.modalOption, themeMode === option.id && { backgroundColor: colors.primary + '15' }]}
+                onPress={() => { setThemeMode(option.id as any); setThemeModalVisible(false) }}
+              >
+                <Text style={{ color: themeMode === option.id ? colors.primary : colors.foreground, fontSize: 16, fontWeight: themeMode === option.id ? '600' : '400' }}>
+                  {option.label}
+                </Text>
+                {themeMode === option.id && <Ionicons name="checkmark" size={20} color={colors.primary} />}
+              </TouchableOpacity>
+            ))}
+            <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setThemeModalVisible(false)}>
+              <Text style={{ color: colors.primary, fontWeight: '600', fontSize: 15 }}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={colorModalVisible} transparent animationType="fade" onRequestClose={() => setColorModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[styles.modalTitle, { color: colors.foreground }]}>Cor Principal</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 16, justifyContent: 'center', marginVertical: 16 }}>
+              {PRIMARY_COLORS.map(colorOption => (
+                <TouchableOpacity
+                  key={colorOption.value}
+                  style={[
+                    styles.colorCircle,
+                    { backgroundColor: colorOption.value },
+                    primaryColor === colorOption.value && { borderWidth: 3, borderColor: colors.foreground }
+                  ]}
+                  onPress={() => { setPrimaryColor(colorOption.value); setColorModalVisible(false) }}
+                >
+                  {primaryColor === colorOption.value && <Ionicons name="checkmark" size={20} color="#FFF" />}
+                </TouchableOpacity>
+              ))}
+            </View>
+            <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setColorModalVisible(false)}>
+              <Text style={{ color: colors.primary, fontWeight: '600', fontSize: 15 }}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   )
 }
@@ -446,4 +518,10 @@ const styles = StyleSheet.create({
   menuLabel: { flex: 1, fontSize: 15, fontWeight: '400' },
   menuValue: { fontSize: 14 },
   footer: { textAlign: 'center', fontSize: 12, marginTop: 8 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 24 },
+  modalContent: { width: '100%', borderRadius: 20, borderWidth: 1, padding: 24 },
+  modalTitle: { fontSize: 18, fontWeight: '700', marginBottom: 16, textAlign: 'center' },
+  modalOption: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 14, paddingHorizontal: 16, borderRadius: 12, marginBottom: 8 },
+  modalCloseBtn: { alignItems: 'center', paddingTop: 16, marginTop: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(0,0,0,0.1)' },
+  colorCircle: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' }
 })

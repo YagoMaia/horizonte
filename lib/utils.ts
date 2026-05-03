@@ -27,15 +27,18 @@ export function getDaysInMonth(year: number, month: number): number {
 }
 
 export function generateDailyProjection(
-  transactions: any[],
-  accounts: any[],
+  transactions: Transaction[],
+  accounts: Account[],
   daysAhead = 30,
 ) {
   const today = new Date();
-  const totalBalance = accounts.reduce(
-    (sum: number, a: any) => sum + a.balance,
-    0,
-  );
+  today.setHours(0, 0, 0, 0);
+
+  // Consideramos apenas contas que não são cartão de crédito para o "caixa" disponível
+  let runningBalance = accounts
+    .filter(a => a.type !== 'cartao_credito')
+    .reduce((sum, a) => sum + a.balance, 0);
+
   const days = [];
 
   for (let i = 0; i < daysAhead; i++) {
@@ -43,21 +46,28 @@ export function generateDailyProjection(
     date.setDate(today.getDate() + i);
     const dateStr = date.toISOString().split('T')[0];
 
+    // Filtramos transações do dia que afetam o caixa (não ignoramos transferências aqui)
     const dayTxs = transactions.filter((t) => {
       const txDate = new Date(t.date).toISOString().split('T')[0];
-      return txDate === dateStr;
+      return txDate === dateStr && !t.paid; // Apenas as não pagas (futuras)
     });
 
     const income = dayTxs
-      .filter((t: any) => t.type === 'receita')
-      .reduce((s: number, t: any) => s + t.amount, 0);
+      .filter((t) => t.type === 'receita')
+      .reduce((s, t) => s + t.amount, 0);
+
     const expense = dayTxs
-      .filter((t: any) => t.type === 'despesa')
-      .reduce((s: number, t: any) => s + t.amount, 0);
+      .filter((t) => t.type === 'despesa')
+      .reduce((s, t) => s + t.amount, 0);
+
+    // Ajuste de transferências (se sair de conta corrente para algo fora do radar ou vice-versa)
+    // Simplificação: aqui assumimos que se está no array de transactions futuras, ela deve ser processada
+    
+    runningBalance += (income - expense);
 
     days.push({
       date: dateStr,
-      balance: totalBalance + income - expense,
+      balance: runningBalance,
       income,
       expense,
       transactions: dayTxs,
@@ -69,30 +79,27 @@ export function generateDailyProjection(
 
 // lib/utils.ts
 
-// 👉 NOVA FUNÇÃO: Descobre qual o Mês (0-11) e Ano da fatura atual
-export function getCreditCardTargetMonth(
-  account: any,
-  baseDate: Date = new Date(),
-) {
-  const closingDay = account.closingDay || 31;
-  let targetMonth = baseDate.getMonth(); // 0 a 11
-  let targetYear = baseDate.getFullYear();
+// 👉 NOVA FUNÇÃO: Determina mês/ano da fatura de um lançamento específico baseado nas regras do cartão
+export function getInvoiceForTx(dateStr: string, account: any) {
+  const closingDay = account?.closingDay || 25;
+  const dueDay = account?.dueDay || 5;
+  const d = new Date(dateStr);
 
-  // Se a data já passou do fechamento, a fatura é a do próximo mês
-  if (baseDate.getDate() >= closingDay) {
-    targetMonth += 1;
+  let m = d.getMonth() + 1;
+  let y = d.getFullYear();
+
+  if (d.getDate() >= closingDay) m += 1;
+  if (dueDay < closingDay) m += 1;
+
+  while (m > 12) {
+    m -= 12;
+    y += 1;
   }
-
-  // Ajuste de virada de ano (Se for dezembro (11) + 1 = 12 -> Vira Janeiro (0))
-  if (targetMonth > 11) {
-    targetMonth = 0;
-    targetYear += 1;
-  }
-
-  return { targetMonth, targetYear };
+  // Retorna m-1 para ser compatível com o formato 0-11 do JavaScript
+  return { viewMonth: m - 1, viewYear: y, value: y * 100 + m };
 }
 
-// Usa a nova função para garantir alinhamento absoluto
+// Usa a nova função para garantir alinhamento absoluto com a CartaoScreen
 export function calculateCreditCardInvoice(
   account: any,
   transactions: any[],
@@ -100,11 +107,11 @@ export function calculateCreditCardInvoice(
 ): number {
   if (account.type !== 'cartao_credito') return 0;
 
-  const { targetMonth, targetYear } = getCreditCardTargetMonth(
-    account,
-    baseDate,
-  );
+  // 1. Descobre qual é a fatura que estaria "Aberta" hoje (ou na baseDate)
+  const targetInvoice = getInvoiceForTx(baseDate.toISOString(), account);
+  const tValue = targetInvoice.value;
 
+  // 2. Soma todas as transações que pertencem a esse período de fatura
   return transactions
     .filter((tx) => {
       if (
@@ -115,10 +122,9 @@ export function calculateCreditCardInvoice(
         return false;
       }
 
-      const txDate = new Date(tx.date);
-      return (
-        txDate.getMonth() === targetMonth && txDate.getFullYear() === targetYear
-      );
+      // Calcula a fatura de cada transação individualmente
+      const txInvoice = getInvoiceForTx(tx.date, account);
+      return txInvoice.value === tValue;
     })
     .reduce(
       (sum, tx) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount),

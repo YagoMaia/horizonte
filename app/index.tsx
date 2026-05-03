@@ -1,5 +1,5 @@
 // app/index.tsx
-import React, { useState } from 'react'
+import React, { useState, useCallback } from 'react'
 import {
   View,
   Text,
@@ -11,13 +11,12 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
 import { useTheme } from '@/hooks/useTheme'
 import { useStoreContext } from '@/context/StoreContext'
-import { TabType } from '@/constants/types'
+import { TabType, Account } from '@/constants/types'
 import { BottomNavigation } from '@/components/BottomNavigation'
 import { AddTransactionModal } from '@/components/AddTransactionModal'
 import { SaldosScreen } from '@/components/screens/SaldosScreen'
 import { TotaisScreen } from '@/components/screens/TotaisScreen'
 import { HorizonteScreen } from '@/components/screens/HorizonteScreen'
-import { TagsScreen } from '@/components/screens/TagsScreen'
 import { ContasScreen } from '@/components/screens/ContasScreen'
 import { MenuScreen } from '@/components/screens/MenuScreen'
 import { CartaoScreen } from '@/components/screens/CartaoScreen'
@@ -33,6 +32,19 @@ export default function HomePage() {
     accountId?: string;
     type?: 'despesa' | 'receita' | 'transferencia';
   }>({});
+
+  const handleSelectCard = useCallback((card: Account | null) => {
+    const newAccountId = card?.id;
+    const newType = card ? 'despesa' as const : undefined;
+
+    if (defaultValues.accountId !== newAccountId || defaultValues.type !== newType) {
+      if (card) {
+        setDefaultValues({ accountId: newAccountId, type: newType });
+      } else {
+        setDefaultValues({});
+      }
+    }
+  }, [defaultValues.accountId, defaultValues.type]);
 
   if (store.loading) {
     return (
@@ -51,24 +63,16 @@ export default function HomePage() {
       case 'cartao': 
         return (
           <CartaoScreen 
-            onSelectCard={(card) => {
-              if (card) {
-                setDefaultValues({ accountId: card.id, type: 'despesa' });
-              } else {
-                setDefaultValues({});
-              }
-            }} 
+            onSelectCard={handleSelectCard} 
           />
         )
-      case 'tags': return <TagsScreen />
-      case 'menu': return <MenuScreen onNavigateToTags={() => setActiveTab('tags')} />
+      case 'menu': return <MenuScreen />
       default: return <SaldosScreen />
     }
   }
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
-      {/* ... header code ... */}
       <View style={[styles.header, { borderBottomColor: colors.border, backgroundColor: colors.card }]}>
         <View style={styles.headerLeft}>
           <View style={[styles.logo, { backgroundColor: colors.primary }]}>
@@ -145,7 +149,6 @@ export default function HomePage() {
         onClose={() => setModalVisible(false)}
         onAdd={store.addTransaction}
         accounts={store.accounts}
-        tags={store.tags}
         initialAccountId={defaultValues.accountId}
         initialType={defaultValues.type}
       />

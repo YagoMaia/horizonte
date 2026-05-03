@@ -15,10 +15,9 @@ horizonte-rn/
 │   ├── TransactionDetailModal.tsx # Modal de detalhes do lançamento
 │   └── screens/
 │       ├── SaldosScreen.tsx     # Saldo geral + lançamentos recentes
-│       ├── TotaisScreen.tsx     # Totais por tag (despesas/receitas)
+│       ├── TotaisScreen.tsx     # Totais (despesas/receitas)
 │       ├── HorizonteScreen.tsx  # Projeção de saldo 30 dias
 │       ├── ContasScreen.tsx     # Gerenciar contas bancárias
-│       ├── TagsScreen.tsx       # Gerenciar tags/categorias
 │       └── MenuScreen.tsx       # Configurações e resumo
 ├── context/
 │   └── StoreContext.tsx         # Context global (evita prop drilling)
@@ -35,10 +34,9 @@ horizonte-rn/
 ## Funcionalidades
 
 - **Saldos** — Saldo total de todas as contas, cards de contas e lista de lançamentos com tap para detalhes
-- **Totais** — Breakdown de despesas/receitas por tag com barra de progresso, filtro por semana/mês/ano
+- **Totais** — Resumo de despesas/receitas, filtro por semana/mês/ano
 - **Horizonte** — Projeção diária de saldo nos próximos 30 dias com gráfico de barras
 - **Contas** — CRUD completo de contas (cor, ícone, tipo, saldo inicial)
-- **Tags** — CRUD de tags com paleta de cores
 - **Menu** — Resumo de patrimônio e configurações
 
 ## Instalação
@@ -83,4 +81,4 @@ O app suporta dark mode automático via `useColorScheme()`. As cores são defini
 
 ## Persistência
 
-Todos os dados são salvos localmente com `@react-native-async-storage/async-storage`. Ao primeiro acesso, são carregados dados de exemplo (3 contas, 8 tags, 3 transações).
+Todos os dados são salvos localmente com `@react-native-async-storage/async-storage`. Ao primeiro acesso, são carregados dados de exemplo.
