@@ -35,11 +35,11 @@ const ALL_CARDS_VIRTUAL_ACCOUNT: Account = {
   color: '#334155', // Slate escoro para manter o texto branco legível
   type: 'cartao_credito',
   icon: 'albums',
+  balance: 0,
 };
 
 export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account | null) => void }) {
   const { colors } = useTheme();
-  // ... rest of useStoreContext ...
   const {
     accounts,
     transactions,

@@ -73,7 +73,6 @@ export default function HomePage() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
-      {/* ... header code ... */}
       <View style={[styles.header, { borderBottomColor: colors.border, backgroundColor: colors.card }]}>
         <View style={styles.headerLeft}>
           <View style={[styles.logo, { backgroundColor: colors.primary }]}>
