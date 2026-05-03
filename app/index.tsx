@@ -1,5 +1,5 @@
 // app/index.tsx
-import React, { useState } from 'react'
+import React, { useState, useCallback } from 'react'
 import {
   View,
   Text,
@@ -11,7 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
 import { useTheme } from '@/hooks/useTheme'
 import { useStoreContext } from '@/context/StoreContext'
-import { TabType } from '@/constants/types'
+import { TabType, Account } from '@/constants/types'
 import { BottomNavigation } from '@/components/BottomNavigation'
 import { AddTransactionModal } from '@/components/AddTransactionModal'
 import { SaldosScreen } from '@/components/screens/SaldosScreen'
@@ -33,6 +33,19 @@ export default function HomePage() {
     type?: 'despesa' | 'receita' | 'transferencia';
   }>({});
 
+  const handleSelectCard = useCallback((card: Account | null) => {
+    const newAccountId = card?.id;
+    const newType = card ? 'despesa' as const : undefined;
+
+    if (defaultValues.accountId !== newAccountId || defaultValues.type !== newType) {
+      if (card) {
+        setDefaultValues({ accountId: newAccountId, type: newType });
+      } else {
+        setDefaultValues({});
+      }
+    }
+  }, [defaultValues.accountId, defaultValues.type]);
+
   if (store.loading) {
     return (
       <View style={[styles.loading, { backgroundColor: colors.background }]}>
@@ -50,13 +63,7 @@ export default function HomePage() {
       case 'cartao': 
         return (
           <CartaoScreen 
-            onSelectCard={(card) => {
-              if (card) {
-                setDefaultValues({ accountId: card.id, type: 'despesa' });
-              } else {
-                setDefaultValues({});
-              }
-            }} 
+            onSelectCard={handleSelectCard} 
           />
         )
       case 'menu': return <MenuScreen />

@@ -18,6 +18,7 @@ import { useStoreContext } from '@/context/StoreContext';
 import {
   formatCurrency,
   formatDateShort,
+  getInvoiceForTx,
 } from '@/lib/utils';
 import { Account, Transaction } from '@/constants/types';
 
@@ -27,6 +28,14 @@ const MONTH_NAMES = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
   'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
 ];
+
+const ALL_CARDS_VIRTUAL_ACCOUNT: Account = {
+  id: 'all',
+  name: 'Todos os Cartões',
+  color: '#334155', // Slate escoro para manter o texto branco legível
+  type: 'cartao_credito',
+  icon: 'albums',
+};
 
 export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account | null) => void }) {
   const { colors } = useTheme();
@@ -55,13 +64,7 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
   // 👉 Cria um cartão "Virtual" caso a opção Todos esteja selecionada
   const selectedCard = useMemo(() => {
     if (selectedCardId === 'all') {
-      return {
-        id: 'all',
-        name: 'Todos os Cartões',
-        color: '#334155', // Slate escoro para manter o texto branco legível
-        type: 'cartao_credito',
-        icon: 'albums',
-      } as Account;
+      return ALL_CARDS_VIRTUAL_ACCOUNT;
     }
     return creditCards.find((c: Account) => c.id === selectedCardId) || null;
   }, [creditCards, selectedCardId]);
@@ -90,25 +93,6 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [txToEdit, setTxToEdit] = useState<Transaction | null>(null);
-
-  const getInvoiceForTx = (txDateStr: string, accountId: string) => {
-    const card = accounts.find((c: Account) => c.id === accountId);
-    const closingDay = card?.closingDay || 25;
-    const dueDay = card?.dueDay || 5;
-    const d = new Date(txDateStr);
-
-    let m = d.getMonth() + 1;
-    let y = d.getFullYear();
-
-    if (d.getDate() >= closingDay) m += 1;
-    if (dueDay < closingDay) m += 1;
-
-    while (m > 12) {
-      m -= 12;
-      y += 1;
-    }
-    return { viewMonth: m - 1, viewYear: y, value: y * 100 + m };
-  };
 
   const {
     totalInvoice,
@@ -143,13 +127,13 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
       let allTxs: Transaction[] = [];
 
       creditCards.forEach((card: Account) => {
-        const targetInvoice = getInvoiceForTx(baseDate.toISOString(), card.id);
+        const targetInvoice = getInvoiceForTx(baseDate.toISOString(), card);
         const tValue = targetInvoice.value;
-        const openInvoiceValue = getInvoiceForTx(new Date().toISOString(), card.id).value;
+        const openInvoiceValue = getInvoiceForTx(new Date().toISOString(), card).value;
 
         const cardInvTxs = transactions.filter((tx: Transaction) => {
           if (tx.accountId !== card.id || tx.paymentMethod !== 'credito') return false;
-          return getInvoiceForTx(tx.date, tx.accountId).value === tValue;
+          return getInvoiceForTx(tx.date, card).value === tValue;
         });
 
         allTxs.push(...cardInvTxs);
@@ -159,7 +143,7 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
 
         const cardDebt = transactions.filter((tx: Transaction) => {
           if (tx.accountId !== card.id || tx.paymentMethod !== 'credito' || tx.paid) return false;
-          return getInvoiceForTx(tx.date, tx.accountId).value >= openInvoiceValue;
+          return getInvoiceForTx(tx.date, card).value >= openInvoiceValue;
         }).reduce((sum: number, tx: Transaction) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount), 0);
 
         globalDebt += cardDebt;
@@ -177,7 +161,7 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
       else if (tInvoice <= 0) { status = 'ZERADA'; color = colors.mutedForeground; }
 
       // Pega o nome do mês usando o primeiro cartão como referência de data
-      const refInvoice = creditCards.length > 0 ? getInvoiceForTx(baseDate.toISOString(), creditCards[0].id) : { viewMonth: baseDate.getMonth(), viewYear: baseDate.getFullYear() };
+      const refInvoice = creditCards.length > 0 ? getInvoiceForTx(baseDate.toISOString(), creditCards[0]) : { viewMonth: baseDate.getMonth(), viewYear: baseDate.getFullYear() };
 
       return {
         totalInvoice: tInvoice, pendingInvoice: pInvoice, targetMonth: refInvoice.viewMonth, targetYear: refInvoice.viewYear,
@@ -187,7 +171,7 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
     }
 
     // 👉 LÓGICA PARA UM CARTÃO ESPECÍFICO (Mantida igual)
-    const targetInvoice = getInvoiceForTx(baseDate.toISOString(), selectedCard.id);
+    const targetInvoice = getInvoiceForTx(baseDate.toISOString(), selectedCard);
     const tMonth = targetInvoice.viewMonth;
     const tYear = targetInvoice.viewYear;
     const tValue = targetInvoice.value;
@@ -195,18 +179,18 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
     const invTxs = transactions
       .filter((tx: Transaction) => {
         if (tx.accountId !== selectedCard.id || tx.paymentMethod !== 'credito') return false;
-        return getInvoiceForTx(tx.date, tx.accountId).value === tValue;
+        return getInvoiceForTx(tx.date, selectedCard).value === tValue;
       })
       .sort((a: Transaction, b: Transaction) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
     const tInvoice = invTxs.reduce((sum: number, tx: Transaction) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount), 0);
     const pInvoice = invTxs.filter((t: Transaction) => !t.paid).reduce((sum: number, tx: Transaction) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount), 0);
-    const openInvoiceValue = getInvoiceForTx(new Date().toISOString(), selectedCard.id).value;
+    const openInvoiceValue = getInvoiceForTx(new Date().toISOString(), selectedCard).value;
 
     const globalPendingDebtValue = transactions
       .filter((tx: Transaction) => {
         if (tx.accountId !== selectedCard.id || tx.paymentMethod !== 'credito' || tx.paid) return false;
-        return getInvoiceForTx(tx.date, tx.accountId).value >= openInvoiceValue;
+        return getInvoiceForTx(tx.date, selectedCard).value >= openInvoiceValue;
       })
       .reduce((sum: number, tx: Transaction) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount), 0);
 
@@ -230,7 +214,7 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
       invoiceTransactions: invTxs, limit: cLimit, availableLimit: aLimit, limitUsagePercent: percent,
       invoiceStatus: status, statusColor: color, globalPendingDebt: globalPendingDebtValue, isAll: false
     };
-  }, [selectedCard, transactions, monthOffset, colors, creditCards, accounts]);
+  }, [selectedCard, transactions, monthOffset, colors, creditCards]);
 
   const debitAccounts = useMemo(() => accounts.filter((a: Account) => a.type !== 'cartao_credito'), [accounts]);
 
