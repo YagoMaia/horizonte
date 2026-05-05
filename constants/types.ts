@@ -30,6 +30,7 @@ export interface Transaction {
   recurrence: RecurrenceType
   paid: boolean
   notes?: string
+  tag?: string // 👉 Nova propriedade para categorização
   paymentMethod?: 'debito' | 'credito' // Tracks the method used
   installmentNumber?: number // E.g., 1 (for 1/3)
   totalInstallments?: number // E.g., 3 (for 1/3)
@@ -41,6 +42,23 @@ export interface Transaction {
   groupId?: string
   groupIndex?: number;
 }
+
+export interface Tag {
+  id: string;
+  label: string;
+  icon: string;
+  color: string;
+}
+
+export const DEFAULT_TAGS: Tag[] = [
+  { id: '1', label: 'Lazer', icon: 'sunny', color: '#FF9500' },
+  { id: '2', label: 'Alimentação', icon: 'restaurant', color: '#FF3B30' },
+  { id: '3', label: 'Transporte', icon: 'car', color: '#007AFF' },
+  { id: '4', label: 'Saúde', icon: 'heart', color: '#4CD964' },
+  { id: '5', label: 'Educação', icon: 'book', color: '#5856D6' },
+  { id: '6', label: 'Moradia', icon: 'home', color: '#8E8E93' },
+  { id: '7', label: 'Outros', icon: 'ellipsis-horizontal', color: '#AFB1B6' },
+];
 
 export interface DailyBalance {
   date: string

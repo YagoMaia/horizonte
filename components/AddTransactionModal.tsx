@@ -15,6 +15,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/hooks/useTheme';
+import { useStoreContext } from '@/context/StoreContext';
 import {
   Transaction,
   TransactionType,
@@ -70,6 +71,7 @@ export function AddTransactionModal({
   initialType,
 }: AddTransactionModalProps) {
   const { colors } = useTheme();
+  const { tags } = useStoreContext(); // 👉 Usando tags do contexto
   const insets = useSafeAreaInsets();
   const isEditing = !!transactionToEdit;
 
@@ -84,6 +86,7 @@ export function AddTransactionModal({
   const [type, setType] = useState<TransactionType>(initialType ?? 'despesa');
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
+  const [tag, setTag] = useState<string>('Outros');
   
   const formatCurrencyMask = (value: string) => {
     const cleanValue = value.replace(/\D/g, '');
@@ -148,6 +151,7 @@ export function AddTransactionModal({
     setType(initialType ?? 'despesa');
     setDescription('');
     setAmount('');
+    setTag(tags[0]?.label || 'Outros'); // 👉 Ajuste para usar a primeira tag disponível
     setAccountId(initialAccountId ?? accounts[0]?.id ?? '');
     setRecurrence('unica');
     
@@ -172,6 +176,7 @@ export function AddTransactionModal({
         setAccountId(transactionToEdit.accountId);
         setRecurrence(transactionToEdit.recurrence);
         setPaid(transactionToEdit.paid);
+        setTag(transactionToEdit.tag || (tags[0]?.label || 'Outros'));
         setInstallments(transactionToEdit.totalInstallments || 1);
         const d = new Date(transactionToEdit.date);
         setDate(
@@ -181,7 +186,9 @@ export function AddTransactionModal({
         resetState();
       }
     }
-  }, [visible, transactionToEdit]);
+  }, [visible, transactionToEdit, tags]);
+
+
 
   const renderCalendar = () => {
     if (!calendarTarget) return null;
@@ -438,6 +445,7 @@ export function AddTransactionModal({
         ? parseToISO(date)
         : parseToISO(recurrenceStart),
       accountId,
+      tag, // 👉 Inclui a tag selecionada
       recurrence: finalRecurrence,
       paid,
       recurrenceStartDate: (!isInstallment && finalRecurrence !== 'unica')
@@ -722,6 +730,40 @@ export function AddTransactionModal({
                 placeholderTextColor={colors.mutedForeground}
               />
             </View>
+
+            {/* SEÇÃO DE TAGS */}
+            <View style={styles.field}>
+              <Text style={[styles.label, { color: colors.mutedForeground }]}>
+                Categoria (Tag)
+              </Text>
+              <View style={styles.chipRow}>
+                {tags.map((t) => (
+                  <TouchableOpacity
+                    key={t.id} // 👉 Usando t.id como chave
+                    style={[
+                      styles.tagChip,
+                      {
+                        borderColor: colors.border,
+                        backgroundColor: tag === t.label ? t.color + '20' : 'transparent',
+                      },
+                      tag === t.label && { borderColor: t.color }
+                    ]}
+                    onPress={() => setTag(t.label)}
+                  >
+                    <Ionicons name={t.icon as any} size={14} color={tag === t.label ? t.color : colors.mutedForeground} />
+                    <Text
+                      style={[
+                        styles.tagChipText,
+                        { color: tag === t.label ? t.color : colors.foreground },
+                      ]}
+                    >
+                      {t.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
 
             {isCreditCardSelected && !isEditing && (
               <View style={styles.field}>
@@ -1112,5 +1154,18 @@ const styles = StyleSheet.create({
   fastNavText: {
     fontSize: 14,
     fontWeight: '500',
+  },
+  tagChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  tagChipText: {
+    fontSize: 13,
+    fontWeight: '600',
   },
 });

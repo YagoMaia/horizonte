@@ -1,13 +1,14 @@
 // hooks/useStore.ts
 import { useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Transaction, Account } from '@/constants/types';
+import { Transaction, Account, Tag, DEFAULT_TAGS } from '@/constants/types';
 
 const STORAGE_KEYS = {
   TRANSACTIONS: '@horizonte:transactions',
   ACCOUNTS: '@horizonte:accounts',
   MONTHLY_BUDGETS: '@horizonte:monthly_budgets',
   SHOW_PENDING: '@horizonte:show_pending',
+  TAGS: '@horizonte:tags', // 👉 Nova chave
 };
 
 const DEFAULT_ACCOUNTS: Account[] = [];
@@ -16,11 +17,12 @@ const DEFAULT_TRANSACTIONS: Transaction[] = [];
 export function useStore() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [tags, setTags] = useState<Tag[]>(DEFAULT_TAGS); // 👉 Estado inicial com as tags padrão
   const [monthlyBudgets, setMonthlyBudgets] = useState<Record<string, number>>({});
   const [showPending, setShowPendingState] = useState<boolean>(true);
   const [loading, setLoading] = useState(true);
 
-  // --- MÉTODOS DE SALVAMENTO (Devem vir antes de serem usados em outros callbacks) ---
+  // --- MÉTODOS DE SALVAMENTO ---
   
   const saveTransactions = useCallback(async (data: Transaction[]) => {
     await AsyncStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(data));
@@ -30,6 +32,11 @@ export function useStore() {
   const saveAccounts = useCallback(async (data: Account[]) => {
     await AsyncStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(data));
     setAccounts(data);
+  }, []);
+
+  const saveTags = useCallback(async (data: Tag[]) => {
+    await AsyncStorage.setItem(STORAGE_KEYS.TAGS, JSON.stringify(data));
+    setTags(data);
   }, []);
 
   // --- MÉTODOS DE PROCESSAMENTO ---
@@ -74,19 +81,22 @@ export function useStore() {
 
   const loadData = useCallback(async () => {
     try {
-      const [txRaw, accRaw, budgetsRaw, showPendingRaw] =
+      const [txRaw, accRaw, budgetsRaw, showPendingRaw, tagsRaw] =
         await Promise.all([
           AsyncStorage.getItem(STORAGE_KEYS.TRANSACTIONS),
           AsyncStorage.getItem(STORAGE_KEYS.ACCOUNTS),
           AsyncStorage.getItem(STORAGE_KEYS.MONTHLY_BUDGETS),
           AsyncStorage.getItem(STORAGE_KEYS.SHOW_PENDING),
+          AsyncStorage.getItem(STORAGE_KEYS.TAGS),
         ]);
 
       const loadedTransactions = txRaw ? JSON.parse(txRaw) : DEFAULT_TRANSACTIONS;
       const loadedAccounts = accRaw ? JSON.parse(accRaw) : DEFAULT_ACCOUNTS;
+      const loadedTags = tagsRaw ? JSON.parse(tagsRaw) : DEFAULT_TAGS;
 
       setTransactions(loadedTransactions);
       setAccounts(loadedAccounts);
+      setTags(loadedTags);
       setMonthlyBudgets(budgetsRaw ? JSON.parse(budgetsRaw) : {});
 
       if (showPendingRaw !== null) {
@@ -121,12 +131,30 @@ export function useStore() {
       STORAGE_KEYS.ACCOUNTS,
       STORAGE_KEYS.MONTHLY_BUDGETS,
       STORAGE_KEYS.SHOW_PENDING,
+      STORAGE_KEYS.TAGS,
     ]);
     setTransactions(DEFAULT_TRANSACTIONS);
     setAccounts(DEFAULT_ACCOUNTS);
+    setTags(DEFAULT_TAGS);
     setMonthlyBudgets({});
     setShowPendingState(true);
   }, []);
+
+  const addTag = useCallback(async (tag: Omit<Tag, 'id'>) => {
+    const newTag: Tag = { ...tag, id: Date.now().toString() };
+    const updated = [...tags, newTag];
+    await saveTags(updated);
+  }, [tags, saveTags]);
+
+  const updateTag = useCallback(async (updatedTag: Tag) => {
+    const updated = tags.map(t => t.id === updatedTag.id ? updatedTag : t);
+    await saveTags(updated);
+  }, [tags, saveTags]);
+
+  const deleteTag = useCallback(async (id: string) => {
+    const updated = tags.filter(t => t.id !== id);
+    await saveTags(updated);
+  }, [tags, saveTags]);
 
   const addTransaction = useCallback(
     async (tx: any) => {
@@ -393,6 +421,10 @@ export function useStore() {
 
         const oldDate = new Date(oldTx.date);
         const newDateBase = new Date(updatedTx.date);
+        
+        // Determina a data base real (do index 0) para não deslocar todas as faturas se editar um index > 0
+        const originalBaseTx = familyTxs.find(t => t.groupIndex === 0) || familyTxs[0];
+        const effectiveBaseDate = oldTx.groupIndex === 0 ? newDateBase : new Date(originalBaseTx.date);
 
         const cleanDescription = updatedTx.description.replace(/\s\(\d+\/\d+\)$/, "");
 
@@ -402,11 +434,11 @@ export function useStore() {
 
           if (isCreditCard && mutantOld.groupIndex !== undefined) {
             if (mutantOld.groupIndex === 0) {
-              newMutantDate = new Date(newDateBase);
+              newMutantDate = new Date(effectiveBaseDate);
             } else {
-              let baseM = newDateBase.getMonth() + 1;
-              let baseY = newDateBase.getFullYear();
-              if (newDateBase.getDate() >= closingDay) baseM += 1;
+              let baseM = effectiveBaseDate.getMonth() + 1;
+              let baseY = effectiveBaseDate.getFullYear();
+              if (effectiveBaseDate.getDate() >= closingDay) baseM += 1;
               if (dueDay < closingDay) baseM += 1;
 
               let targetInvM = baseM + mutantOld.groupIndex;
@@ -423,12 +455,13 @@ export function useStore() {
           const oldSuffix = oldSuffixMatch ? oldSuffixMatch[0] : '';
 
           const mutantNew: Transaction = {
-            ...mutantOld,
-            amount: updatedTx.amount,
-            description: `${cleanDescription}${oldSuffix}`,
-            accountId: updatedTx.accountId,
-            type: updatedTx.type,
+            ...updatedTx, // Puxa todos os campos novos (amount, tag, notas, etc)
+            id: mutantOld.id, // Preserva o ID antigo
+            groupId: mutantOld.groupId,
+            groupIndex: mutantOld.groupIndex,
             date: newMutantDate.toISOString(),
+            description: `${cleanDescription}${oldSuffix}`,
+            paid: mutantOld.paid, // Preserva o status de pagamento original (futuros pendentes)
           };
 
           applyBalance(mutantNew);
@@ -683,6 +716,10 @@ export function useStore() {
   return {
     transactions,
     accounts,
+    tags, // 👉 Exportando tags
+    addTag, // 👉 Exportando métodos de tag
+    updateTag,
+    deleteTag,
     monthlyBudgets,
     getEffectiveBudget,
     saveMonthlyBudget,

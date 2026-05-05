@@ -19,6 +19,7 @@ import * as Sharing from 'expo-sharing'
 import * as DocumentPicker from 'expo-document-picker'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { PRIMARY_COLORS } from '@/constants/theme'
+import { TagManagementModal } from '../TagManagementModal'
 
 interface MenuItemProps {
   icon: string
@@ -63,10 +64,18 @@ interface MenuScreenProps {
 export function MenuScreen({ }: MenuScreenProps) {
   const { colors, themeMode, setThemeMode, primaryColor, setPrimaryColor } = useTheme()
   // Puxamos a função 'monthlyBudgets' caso você a tenha exportado no StoreContext
-  const { accounts, transactions, monthlyBudgets, totalBalance, clearAllData } = useStoreContext()
+  const { 
+    accounts, 
+    transactions, 
+    tags, // 👉 Puxando tags para o backup
+    monthlyBudgets, 
+    totalBalance, 
+    clearAllData 
+  } = useStoreContext()
 
   const [themeModalVisible, setThemeModalVisible] = useState(false)
   const [colorModalVisible, setColorModalVisible] = useState(false)
+  const [tagModalVisible, setTagModalVisible] = useState(false) // 👉 Novo estado
 
   const themeModeLabel = {
     light: 'Claro',
@@ -85,7 +94,7 @@ export function MenuScreen({ }: MenuScreenProps) {
       }
 
       const BOM = '\uFEFF';
-      let csvString = BOM + 'Data;Tipo;Descricao;Valor;Conta;Status\n'
+      let csvString = BOM + 'Data;Tipo;Descricao;Valor;Conta;Tag;Status\n'
 
       transactions.forEach((tx) => {
         const dateObj = new Date(tx.date)
@@ -97,11 +106,12 @@ export function MenuScreen({ }: MenuScreenProps) {
         const type = tx.type === 'receita' ? 'Receita' : 'Despesa'
         const amount = tx.amount.toFixed(2).replace('.', ',')
         const account = accounts.find((a) => a.id === tx.accountId)?.name || 'N/A'
+        const tag = tx.tag || 'N/A'
         const status = tx.paid ? 'Pago' : 'Pendente'
 
         const cleanDescription = tx.description.replace(/;/g, ',')
 
-        csvString += `${formattedDate};${type};${cleanDescription};${amount};${account};${status}\n`
+        csvString += `${formattedDate};${type};${cleanDescription};${amount};${account};${tag};${status}\n`
       })
 
       const fileName = `Horizonte_Relatorio_${new Date().getTime()}.csv`
@@ -143,6 +153,7 @@ export function MenuScreen({ }: MenuScreenProps) {
         data: {
           accounts,
           transactions,
+          tags, // 👉 Incluindo tags no backup
           monthlyBudgets: monthlyBudgets || {}
         }
       };
@@ -356,6 +367,14 @@ export function MenuScreen({ }: MenuScreenProps) {
         />
         <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
           <MenuItem 
+            icon="pricetags-outline" 
+            label="Gerenciar Categorias" 
+            onPress={() => setTagModalVisible(true)}
+            colors={colors} 
+          />
+        </View>
+        <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
+          <MenuItem 
             icon="color-palette-outline" 
             label="Cor principal" 
             value={currentColorLabel} 
@@ -496,6 +515,10 @@ export function MenuScreen({ }: MenuScreenProps) {
           </View>
         </View>
       </Modal>
+      <TagManagementModal 
+        visible={tagModalVisible} 
+        onClose={() => setTagModalVisible(false)} 
+      />
     </ScrollView>
   )
 }

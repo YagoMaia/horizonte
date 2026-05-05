@@ -13,7 +13,7 @@ import { formatCurrency } from '@/lib/utils'
 import { useStoreContext } from '@/context/StoreContext'
 
 // 👉 IMPORTANDO O GRÁFICO AQUI
-import { BalanceChart } from '../BalanceChart'
+import { CategoryDonutChart } from '../CategoryDonutChart'
 
 type Period = 'semana' | 'mes' | 'ano'
 
@@ -81,6 +81,14 @@ export function TotaisScreen() {
       }
     })
   }, [transactions, period, showPending, refDate])
+
+  const filteredDebito = useMemo(() => {
+    return filtered.filter(tx => tx.paymentMethod !== 'credito')
+  }, [filtered])
+
+  const filteredCredito = useMemo(() => {
+    return filtered.filter(tx => tx.paymentMethod === 'credito')
+  }, [filtered])
 
   const stats = useMemo(() => {
     const income = filtered.filter(t => t.type === 'receita').reduce((s, t) => s + t.amount, 0)
@@ -229,11 +237,13 @@ export function TotaisScreen() {
       </View>
 
       {/* 👉 INSERINDO O GRÁFICO AQUI */}
-      <BalanceChart
-        transactions={transactions}
-        period={period}
-        refDate={refDate}
-      />
+      {filteredDebito.filter(t => t.type === 'despesa').length > 0 && (
+        <CategoryDonutChart transactions={filteredDebito} title="Despesas (Débito/Dinheiro)" />
+      )}
+      
+      {filteredCredito.filter(t => t.type === 'despesa').length > 0 && (
+        <CategoryDonutChart transactions={filteredCredito} title="Despesas (Cartão de Crédito)" />
+      )}
     </ScrollView>
   )
 }

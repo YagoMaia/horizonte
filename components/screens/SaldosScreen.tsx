@@ -39,6 +39,7 @@ export function SaldosScreen() {
   const {
     accounts,
     transactions,
+    tags, // 👉 Puxando tags dinâmicas
     totalBalance,
     addTransaction,
     updateTransaction,
@@ -319,6 +320,9 @@ export function SaldosScreen() {
     const isLast = index === paginatedTransactions.length - 1;
     const isReceita = tx.type === 'receita';
     const account = accounts.find((a) => a.id === tx.accountId);
+    
+    // Busca a tag correspondente
+    const tagInfo = tags.find(t => t.label === tx.tag) || tags.find(t => t.label === 'Outros');
 
     return (
       <Swipeable
@@ -334,8 +338,12 @@ export function SaldosScreen() {
           onPress={() => setSelectedTx(tx)}
           activeOpacity={1}
         >
-          <View style={[styles.txIcon, { backgroundColor: colors.primary + '15' }]}>
-            <Ionicons name="receipt" size={18} color={colors.primary} />
+          <View style={[styles.txIcon, { backgroundColor: (tagInfo?.color || colors.primary) + '15' }]}>
+            <Ionicons 
+              name={(tagInfo?.icon as any) || (isReceita ? 'arrow-up' : 'receipt')} 
+              size={18} 
+              color={tagInfo?.color || colors.primary} 
+            />
           </View>
           <View style={styles.txInfo}>
             <Text style={[styles.txDesc, { color: colors.foreground }]} numberOfLines={1}>{tx.description}</Text>
