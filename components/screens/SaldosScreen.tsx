@@ -17,6 +17,7 @@ import {
   calculateCreditCardInvoice,
   formatCurrency,
   formatDateShort,
+  getInvoiceForTx,
 } from '@/lib/utils';
 import { useStoreContext } from '@/context/StoreContext';
 import { Transaction, Account, TransactionType } from '@/constants/types';
@@ -75,30 +76,41 @@ export function SaldosScreen() {
     setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + offset, 1));
   };
 
-  // CÁLCULO DE ENTRADAS E SAÍDAS DO MÊS ATUAL (Corrigido para evitar bitributação)
+  // CÁLCULO DE ENTRADAS E SAÍDAS DO MÊS (Apenas movimentações de "caixa")
   const currentMonthStats = useMemo(() => {
     let income = 0;
     let expense = 0;
 
+    const targetMonth = currentDate.getMonth();
+    const targetYear = currentDate.getFullYear();
+
     transactions.forEach((tx) => {
       const txDate = new Date(tx.date);
-      // Filtra pelo mês atual e apenas transações pagas
+      
+      // Filtra pelo mês selecionado
       if (
-        txDate.getMonth() === currentDate.getMonth() &&
-        txDate.getFullYear() === currentDate.getFullYear() &&
-        tx.paid
+        txDate.getMonth() === targetMonth &&
+        txDate.getFullYear() === targetYear
       ) {
+        // Ignora transferências para não inflar os totais
+        if (tx.type === 'transferencia') return;
+
+        const account = accounts.find(a => a.id === tx.accountId);
+        
+        // Ignora transações de cartão de crédito e faturas
+        // Só conta se for de uma conta corrente, poupança, etc.
+        if (!account || account.type === 'cartao_credito') return;
+
         if (tx.type === 'receita') {
           income += tx.amount;
-        } else if (tx.type === 'despesa' && tx.paymentMethod !== 'credito') {
-          // Ignora compras no crédito (a fatura, quando paga, entrará como débito aqui)
+        } else if (tx.type === 'despesa') {
           expense += tx.amount;
         }
       }
     });
 
     return { income, expense };
-  }, [transactions, currentDate]);
+  }, [transactions, currentDate, accounts]);
 
   // MOTOR DE BUSCA ATUALIZADO (Filtro por Mês)
   const displayedTransactions = useMemo(() => {
