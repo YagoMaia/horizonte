@@ -192,6 +192,8 @@ export function useStore() {
         const baseDate = new Date(tx.date);
 
         const maxRecurrences = tx.calculatedRecurrenceCount || 24;
+        const today = new Date();
+        today.setHours(23, 59, 59, 999);
 
         for (let i = 0; i < maxRecurrences; i++) {
           let currentDate = new Date(baseDate);
@@ -221,7 +223,8 @@ export function useStore() {
             currentDate = new Date(targetYear, targetMonth, day, 12, 0, 0);
           }
 
-          const isPaid = i === 0 ? tx.paid : false;
+          const isFuture = currentDate > today;
+          const isPaid = (i === 0 ? tx.paid : false) && !isFuture;
 
           newTransactions.push({
             ...tx,
@@ -245,14 +248,21 @@ export function useStore() {
         }
       }
       else {
+        const today = new Date();
+        today.setHours(23, 59, 59, 999);
+        const txDate = new Date(tx.date);
+        const isFuture = txDate > today;
+        const finalizedPaid = tx.paid && !isFuture;
+
         const newTx: Transaction = {
           ...tx,
           id: Date.now().toString(),
           paymentMethod: finalizedTxMethod,
+          paid: finalizedPaid,
         };
         newTransactions.push(newTx);
 
-        if (tx.paid) {
+        if (finalizedPaid) {
           updatedAccounts = updatedAccounts.map((acc) => {
             if (acc.id === tx.accountId) {
               const delta = tx.type === 'receita' ? tx.amount : -tx.amount;
@@ -363,7 +373,11 @@ export function useStore() {
       };
 
       const applyBalance = (tx: Transaction) => {
-        if (!tx.paid) return;
+        const today = new Date();
+        today.setHours(23, 59, 59, 999);
+        const txDate = new Date(tx.date);
+        if (!tx.paid || txDate > today) return;
+        
         updatedAccounts = updatedAccounts.map((acc) => {
           if (acc.id === tx.accountId) {
             const delta = tx.type === 'receita' ? tx.amount : -tx.amount;

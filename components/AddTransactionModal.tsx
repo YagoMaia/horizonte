@@ -469,6 +469,22 @@ export function AddTransactionModal({
     }
   };
 
+  const isFutureDate = useMemo(() => {
+    const selectedDateStr = recurrence === 'unica' ? date : recurrenceStart;
+    const parts = selectedDateStr.split('/');
+    if (parts.length !== 3) return false;
+    const selectedDate = new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0]));
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return selectedDate > today;
+  }, [date, recurrenceStart, recurrence]);
+
+  React.useEffect(() => {
+    if (isFutureDate && paid) {
+      setPaid(false);
+    }
+  }, [isFutureDate]);
+
   return (
     <Modal
       visible={visible}
@@ -908,13 +924,21 @@ export function AddTransactionModal({
             )}
 
             {!isCreditCardSelected && (
-              <View style={styles.switchRow}>
-                <Text style={{ color: colors.foreground, fontWeight: '500' }}>
-                  Pago / Recebido
-                </Text>
+              <View style={[styles.switchRow, isFutureDate && { opacity: 0.6 }]}>
+                <View>
+                  <Text style={{ color: colors.foreground, fontWeight: '500' }}>
+                    Pago / Recebido
+                  </Text>
+                  {isFutureDate && (
+                    <Text style={{ fontSize: 10, color: colors.mutedForeground }}>
+                      Disponível apenas para datas hoje ou passadas
+                    </Text>
+                  )}
+                </View>
                 <Switch
                   value={paid}
                   onValueChange={setPaid}
+                  disabled={isFutureDate}
                   trackColor={{ false: colors.border, true: colors.primary }}
                 />
               </View>
