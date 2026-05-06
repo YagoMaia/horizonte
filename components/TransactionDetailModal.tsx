@@ -1,5 +1,5 @@
 // components/TransactionDetailModal.tsx
-import React from 'react'
+import React, { useState } from 'react'
 import {
   View,
   Text,
@@ -8,7 +8,7 @@ import {
   TouchableOpacity,
   Alert,
   ScrollView,
-  Platform, // 👉 Importação do Platform adicionada
+  Platform, 
 } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -16,6 +16,7 @@ import { useTheme } from '@/hooks/useTheme'
 import { useStoreContext } from '@/context/StoreContext'
 import { Transaction } from '@/constants/types'
 import { formatCurrency, formatDate } from '@/lib/utils'
+import { RecurrenceActionModal } from './RecurrenceActionModal'
 
 interface TransactionDetailModalProps {
   transaction: Transaction | null
@@ -35,6 +36,7 @@ export function TransactionDetailModal({ transaction, onClose, onEdit }: Transac
   const { colors } = useTheme()
   const { accounts, deleteTransaction } = useStoreContext()
   const insets = useSafeAreaInsets()
+  const [recurrenceModalVisible, setRecurrenceModalVisible] = useState(false)
 
   if (!transaction) return null
 
@@ -43,17 +45,21 @@ export function TransactionDetailModal({ transaction, onClose, onEdit }: Transac
   const isTransf = transaction.type === 'transferencia'
   const amountColor = isReceita ? colors.success : isTransf ? colors.primary : colors.destructive
 
-  // 👉 CORREÇÃO APLICADA AQUI
+  const isFamily = !!(transaction.groupId || transaction.id.includes('-'))
+
   const handleDelete = async () => {
+    if (isFamily) {
+      setRecurrenceModalVisible(true)
+      return
+    }
+
     if (Platform.OS === 'web') {
-      // No navegador, usamos o confirm padrão do Windows/Mac
       const confirmed = window.confirm(`Deseja excluir "${transaction.description}"?`)
       if (confirmed) {
         await deleteTransaction(transaction.id)
         onClose()
       }
     } else {
-      // No celular, usamos o Alert nativo do iOS/Android
       Alert.alert(
         'Excluir lançamento',
         `Deseja excluir "${transaction.description}"?`,
@@ -72,6 +78,12 @@ export function TransactionDetailModal({ transaction, onClose, onEdit }: Transac
     }
   }
 
+  const handleRecurrenceSelect = async (mode: 'single' | 'future' | 'all') => {
+    await deleteTransaction(transaction.id, mode)
+    setRecurrenceModalVisible(false)
+    onClose()
+  }
+
   const handleEdit = () => {
     if (onEdit) {
       onEdit(transaction)
@@ -81,84 +93,93 @@ export function TransactionDetailModal({ transaction, onClose, onEdit }: Transac
   }
 
   return (
-    <Modal
-      visible={!!transaction}
-      animationType="slide"
-      presentationStyle="pageSheet"
-      onRequestClose={onClose}
-    >
-      <View style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top + 16 }]}>
-        {/* Header */}
-        <View style={[styles.header, { borderBottomColor: colors.border }]}>
-          <TouchableOpacity onPress={onClose}>
-            <Ionicons name="close" size={24} color={colors.foreground} />
-          </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: colors.foreground }]}>Lançamento</Text>
-          <View style={styles.headerActions}>
-            <TouchableOpacity onPress={handleEdit} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <Ionicons name="pencil-outline" size={22} color={colors.foreground} />
+    <>
+      <Modal
+        visible={!!transaction}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={onClose}
+      >
+        <View style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top + 16 }]}>
+          {/* Header */}
+          <View style={[styles.header, { borderBottomColor: colors.border }]}>
+            <TouchableOpacity onPress={onClose}>
+              <Ionicons name="close" size={24} color={colors.foreground} />
             </TouchableOpacity>
-            <TouchableOpacity onPress={handleDelete} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <Ionicons name="trash-outline" size={22} color={colors.destructive} />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        <ScrollView contentContainerStyle={styles.content}>
-          {/* Amount hero */}
-          <View style={[
-            styles.amountHero,
-            {
-              backgroundColor: isReceita
-                ? colors.successLight
-                : isTransf
-                  ? colors.primary + '15'
-                  : colors.dangerLight,
-            }
-          ]}>
-            <View style={[styles.typeIcon, { backgroundColor: amountColor }]}>
-              <Ionicons
-                name={isReceita ? 'arrow-up' : isTransf ? 'swap-horizontal' : 'arrow-down'}
-                size={24}
-                color="#FFF"
-              />
+            <Text style={[styles.headerTitle, { color: colors.foreground }]}>Lançamento</Text>
+            <View style={styles.headerActions}>
+              <TouchableOpacity onPress={handleEdit} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Ionicons name="pencil-outline" size={22} color={colors.foreground} />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handleDelete} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Ionicons name="trash-outline" size={22} color={colors.destructive} />
+              </TouchableOpacity>
             </View>
-            <Text style={[styles.amountValue, { color: amountColor }]}>
-              {isReceita ? '+' : isTransf ? '' : '-'}{formatCurrency(transaction.amount)}
-            </Text>
-            <Text style={[styles.amountDesc, { color: colors.foreground }]}>
-              {transaction.description}
-            </Text>
-            <View style={[styles.statusBadge, {
-              backgroundColor: transaction.paid ? colors.success + '20' : colors.warning + '20'
-            }]}>
-              <View style={[styles.statusDot, {
-                backgroundColor: transaction.paid ? colors.success : colors.warning
-              }]} />
-              <Text style={[styles.statusText, {
-                color: transaction.paid ? colors.success : colors.warning
-              }]}>
-                {transaction.paid ? 'Lançado' : 'Previsto'}
+          </View>
+
+          <ScrollView contentContainerStyle={styles.content}>
+            {/* Amount hero */}
+            <View style={[
+              styles.amountHero,
+              {
+                backgroundColor: isReceita
+                  ? colors.successLight
+                  : isTransf
+                    ? colors.primary + '15'
+                    : colors.dangerLight,
+              }
+            ]}>
+              <View style={[styles.typeIcon, { backgroundColor: amountColor }]}>
+                <Ionicons
+                  name={isReceita ? 'arrow-up' : isTransf ? 'swap-horizontal' : 'arrow-down'}
+                  size={24}
+                  color="#FFF"
+                />
+              </View>
+              <Text style={[styles.amountValue, { color: amountColor }]}>
+                {isReceita ? '+' : isTransf ? '' : '-'}{formatCurrency(transaction.amount)}
               </Text>
+              <Text style={[styles.amountDesc, { color: colors.foreground }]}>
+                {transaction.description}
+              </Text>
+              <View style={[styles.statusBadge, {
+                backgroundColor: transaction.paid ? colors.success + '20' : colors.warning + '20'
+              }]}>
+                <View style={[styles.statusDot, {
+                  backgroundColor: transaction.paid ? colors.success : colors.warning
+                }]} />
+                <Text style={[styles.statusText, {
+                  color: transaction.paid ? colors.success : colors.warning
+                }]}>
+                  {transaction.paid ? 'Lançado' : 'Previsto'}
+                </Text>
+              </View>
             </View>
-          </View>
 
-          {/* Details */}
-          <View style={[styles.detailsCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <DetailRow label="Data" value={formatDate(transaction.date)} colors={colors} />
-            <DetailRow label="Tipo" value={
-              transaction.type === 'receita' ? 'Receita' :
-                transaction.type === 'despesa' ? 'Despesa' : 'Transferência'
-            } colors={colors} />
-            <DetailRow label="Conta" value={account?.name ?? '—'} colors={colors} />
-            <DetailRow label="Recorrência" value={RECURRENCE_LABELS[transaction.recurrence] ?? '—'} colors={colors} />
-            {transaction.notes && (
-              <DetailRow label="Notas" value={transaction.notes} colors={colors} />
-            )}
-          </View>
-        </ScrollView>
-      </View>
-    </Modal>
+            {/* Details */}
+            <View style={[styles.detailsCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <DetailRow label="Data" value={formatDate(transaction.date)} colors={colors} />
+              <DetailRow label="Tipo" value={
+                transaction.type === 'receita' ? 'Receita' :
+                  transaction.type === 'despesa' ? 'Despesa' : 'Transferência'
+              } colors={colors} />
+              <DetailRow label="Conta" value={account?.name ?? '—'} colors={colors} />
+              <DetailRow label="Recorrência" value={RECURRENCE_LABELS[transaction.recurrence] ?? '—'} colors={colors} />
+              {transaction.notes && (
+                <DetailRow label="Notas" value={transaction.notes} colors={colors} />
+              )}
+            </View>
+          </ScrollView>
+        </View>
+      </Modal>
+
+      <RecurrenceActionModal
+        visible={recurrenceModalVisible}
+        actionType="delete"
+        onClose={() => setRecurrenceModalVisible(false)}
+        onSelect={handleRecurrenceSelect}
+      />
+    </>
   )
 }
 

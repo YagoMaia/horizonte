@@ -1,5 +1,5 @@
 // components/AdjustmentManagementModal.tsx
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,8 @@ import {
   ScrollView,
   Alert,
   Platform,
+  TextInput,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/hooks/useTheme';
@@ -23,9 +25,49 @@ interface AdjustmentManagementModalProps {
 
 export function AdjustmentManagementModal({ visible, onClose }: AdjustmentManagementModalProps) {
   const { colors } = useTheme();
-  const { transactions, accounts, deleteTransaction } = useStoreContext();
+  const { transactions, accounts, deleteTransaction, updateTransaction } = useStoreContext();
 
   const adjustments = transactions.filter(tx => tx.isAdjustment);
+
+  const [editingTx, setEditingTx] = useState<Transaction | null>(null);
+  const [editDesc, setEditDesc] = useState('');
+  const [editAmount, setEditAmount] = useState('');
+  const [editType, setEditType] = useState<'receita' | 'despesa'>('receita');
+
+  const formatCurrencyMask = (value: string) => {
+    const cleanValue = value.replace(/\D/g, '');
+    const amountNumber = Number(cleanValue) / 100;
+    return amountNumber.toLocaleString('pt-BR', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  };
+
+  const handleEditClick = (tx: Transaction) => {
+    setEditingTx(tx);
+    setEditDesc(tx.description);
+    setEditAmount(formatCurrencyMask(String(Math.round(tx.amount * 100))));
+    setEditType(tx.type as 'receita' | 'despesa');
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingTx) return;
+    const numericAmount = parseFloat(editAmount.replace(/\./g, '').replace(',', '.'));
+    if (isNaN(numericAmount) || numericAmount <= 0) {
+      Alert.alert('Erro', 'Digite um valor válido maior que zero.');
+      return;
+    }
+
+    const updatedTx: Transaction = {
+      ...editingTx,
+      description: editDesc.trim() || 'Ajuste de Saldo',
+      amount: numericAmount,
+      type: editType,
+    };
+
+    await updateTransaction(updatedTx, 'single');
+    setEditingTx(null);
+  };
 
   const handleDelete = (tx: Transaction) => {
     const performDelete = async () => {
@@ -100,15 +142,71 @@ export function AdjustmentManagementModal({ visible, onClose }: AdjustmentManage
                     <Text style={[styles.txAmount, { color: isPositive ? colors.success : colors.destructive }]}>
                       {isPositive ? '+' : '-'}{formatCurrency(tx.amount)}
                     </Text>
-                    <TouchableOpacity onPress={() => handleDelete(tx)} style={styles.deleteBtn}>
-                      <Ionicons name="trash-outline" size={18} color={colors.destructive} />
-                    </TouchableOpacity>
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                      <TouchableOpacity onPress={() => handleEditClick(tx)} style={styles.actionBtn}>
+                        <Ionicons name="pencil-outline" size={18} color={colors.mutedForeground} />
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={() => handleDelete(tx)} style={styles.actionBtn}>
+                        <Ionicons name="trash-outline" size={18} color={colors.destructive} />
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 </View>
               );
             })
           )}
         </ScrollView>
+
+        <Modal visible={!!editingTx} transparent animationType="fade">
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalOverlay}>
+            <View style={[styles.modalContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Text style={[styles.modalTitle, { color: colors.foreground }]}>Editar Ajuste</Text>
+              
+              <View style={styles.field}>
+                <Text style={[styles.label, { color: colors.mutedForeground }]}>Valor</Text>
+                <TextInput
+                  style={[styles.amountInput, { color: colors.foreground, borderBottomColor: colors.border }]}
+                  value={editAmount}
+                  onChangeText={(text) => setEditAmount(formatCurrencyMask(text))}
+                  keyboardType="numeric"
+                />
+              </View>
+
+              <View style={styles.field}>
+                <Text style={[styles.label, { color: colors.mutedForeground }]}>Descrição</Text>
+                <TextInput
+                  style={[styles.input, { color: colors.foreground, borderColor: colors.border }]}
+                  value={editDesc}
+                  onChangeText={setEditDesc}
+                />
+              </View>
+
+              <View style={[styles.typeSelector, { backgroundColor: colors.secondary }]}>
+                <TouchableOpacity 
+                  style={[styles.typeBtn, editType === 'receita' && { backgroundColor: colors.success }]} 
+                  onPress={() => setEditType('receita')}
+                >
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: editType === 'receita' ? '#FFF' : colors.mutedForeground }}>Receita (+)</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[styles.typeBtn, editType === 'despesa' && { backgroundColor: colors.destructive }]} 
+                  onPress={() => setEditType('despesa')}
+                >
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: editType === 'despesa' ? '#FFF' : colors.mutedForeground }}>Despesa (-)</Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.modalActions}>
+                <TouchableOpacity style={styles.cancelBtn} onPress={() => setEditingTx(null)}>
+                  <Text style={[styles.cancelBtnText, { color: colors.mutedForeground }]}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.confirmBtn, { backgroundColor: colors.primary }]} onPress={handleSaveEdit}>
+                  <Text style={styles.confirmBtnText}>Salvar</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </Modal>
       </View>
     </Modal>
   );
@@ -140,6 +238,20 @@ const styles = StyleSheet.create({
   txDesc: { fontSize: 15, fontWeight: '600' },
   txAccount: { fontSize: 12 },
   cardRight: { alignItems: 'flex-end', gap: 8 },
-  txAmount: { fontSize: 15, fontWeight: '700' },
-  deleteBtn: { padding: 4 },
+  txAmount: { fontSize: 15, fontWeight: '700', marginBottom: 4 },
+  actionBtn: { padding: 4 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalContent: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40, borderWidth: 1, gap: 16 },
+  modalTitle: { fontSize: 20, fontWeight: '700', marginBottom: 8 },
+  field: { gap: 6 },
+  label: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase' },
+  amountInput: { fontSize: 32, fontWeight: '700', borderBottomWidth: 1, paddingBottom: 4 },
+  input: { borderWidth: 1, borderRadius: 10, padding: 12, fontSize: 15 },
+  typeSelector: { flexDirection: 'row', borderRadius: 12, padding: 4, gap: 4, marginTop: 8 },
+  typeBtn: { flex: 1, paddingVertical: 10, borderRadius: 8, alignItems: 'center' },
+  modalActions: { flexDirection: 'row', gap: 12, marginTop: 8 },
+  cancelBtn: { flex: 1, paddingVertical: 16, alignItems: 'center', justifyContent: 'center', borderRadius: 12 },
+  cancelBtnText: { fontSize: 15, fontWeight: '600' },
+  confirmBtn: { flex: 1, paddingVertical: 16, alignItems: 'center', justifyContent: 'center', borderRadius: 12 },
+  confirmBtnText: { color: '#FFF', fontSize: 15, fontWeight: '700' },
 });

@@ -786,7 +786,10 @@ export function AddTransactionModal({
                           borderColor: colors.primary,
                         },
                       ]}
-                      onPress={() => setInstallments(n)}
+                      onPress={() => {
+                        setInstallments(n);
+                        if (n > 1) setRecurrence('unica');
+                      }}
                     >
                       <Text
                         style={{
@@ -817,48 +820,49 @@ export function AddTransactionModal({
               </View>
             )}
 
-            {!isCreditCardSelected && (
-              <>
-                <View style={styles.field}>
-                  <Text
-                    style={[styles.label, { color: colors.mutedForeground }]}
-                  >
-                    Recorrência
-                  </Text>
-                  <View style={styles.chipRow}>
-                    {RECURRENCE_OPTIONS.map((opt) => (
-                      <TouchableOpacity
-                        key={opt.value}
+            {(!isCreditCardSelected || installments === 1) && (
+              <View style={styles.field}>
+                <Text
+                  style={[styles.label, { color: colors.mutedForeground }]}
+                >
+                  Recorrência / Repetição
+                </Text>
+                <View style={styles.chipRow}>
+                  {RECURRENCE_OPTIONS.map((opt) => (
+                    <TouchableOpacity
+                      key={opt.value}
+                      style={[
+                        styles.chip,
+                        {
+                          borderColor: colors.primary,
+                          backgroundColor:
+                            recurrence === opt.value
+                              ? colors.primary
+                              : 'transparent',
+                        },
+                      ]}
+                      onPress={() => {
+                        setRecurrence(opt.value);
+                        if (opt.value !== 'unica') setInstallments(1);
+                      }}
+                    >
+                      <Text
                         style={[
-                          styles.chip,
+                          styles.chipText,
                           {
-                            borderColor: colors.primary,
-                            backgroundColor:
+                            color:
                               recurrence === opt.value
-                                ? colors.primary
-                                : 'transparent',
+                                ? '#FFF'
+                                : colors.primary,
                           },
                         ]}
-                        onPress={() => setRecurrence(opt.value)}
                       >
-                        <Text
-                          style={[
-                            styles.chipText,
-                            {
-                              color:
-                                recurrence === opt.value
-                                  ? '#FFF'
-                                  : colors.primary,
-                            },
-                          ]}
-                        >
-                          {opt.label}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
+                        {opt.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
                 </View>
-              </>
+              </View>
             )}
 
             {recurrence === 'unica' ? (

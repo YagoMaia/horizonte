@@ -270,13 +270,9 @@ export function useStore() {
       const closingDay = targetAccount?.closingDay || 25;
       const dueDay = targetAccount?.dueDay || 5;
 
-      if (isCreditCard) {
+      if (isCreditCard && tx.totalInstallments && tx.totalInstallments > 1) {
         const baseDate = new Date(tx.date);
-
-        const installmentsCount =
-          tx.totalInstallments && tx.totalInstallments > 1
-            ? tx.totalInstallments
-            : 1;
+        const installmentsCount = tx.totalInstallments;
         const installmentAmount = tx.amount / installmentsCount;
         const baseId = Date.now().toString();
 
@@ -299,7 +295,7 @@ export function useStore() {
             currentDate = new Date(baseY, monthForDay1 - 1, 1, 12, 0, 0);
           }
 
-          const descSuffix = installmentsCount > 1 ? ` (${i + 1}/${installmentsCount})` : '';
+          const descSuffix = ` (${i + 1}/${installmentsCount})`;
 
           newTransactions.push({
             ...tx,
@@ -321,35 +317,48 @@ export function useStore() {
 
         const maxRecurrences = tx.calculatedRecurrenceCount || 24;
 
+        let baseM = baseDate.getMonth() + 1;
+        let baseY = baseDate.getFullYear();
+        if (isCreditCard) {
+            if (baseDate.getDate() >= closingDay) baseM += 1;
+            if (dueDay < closingDay) baseM += 1;
+        }
+
         for (let i = 0; i < maxRecurrences; i++) {
           let currentDate = new Date(baseDate);
 
-          if (tx.recurrence === 'mensal') {
-            currentDate.setMonth(baseDate.getMonth() + i);
-          } else if (tx.recurrence === 'anual') {
-            currentDate.setFullYear(baseDate.getFullYear() + i);
-          } else if (tx.recurrence === 'semanal') {
-            currentDate.setDate(baseDate.getDate() + (i * 7));
-          } else if (tx.recurrence === 'diaria') {
-            currentDate.setDate(baseDate.getDate() + i);
-          } else if (tx.recurrence === 'quinto_dia_util') {
-            const targetMonth = baseDate.getMonth() + i;
-            const targetYear = baseDate.getFullYear();
-            
-            let businessDaysCount = 0;
-            let day = 1;
-            while (businessDaysCount < 5) {
-              const d = new Date(targetYear, targetMonth, day);
-              const dayOfWeek = d.getDay();
-              if (dayOfWeek !== 0 && dayOfWeek !== 6) { 
-                businessDaysCount++;
+          if (isCreditCard && i > 0) {
+             let targetInvM = baseM + i;
+             let monthForDay1 = targetInvM - (dueDay < closingDay ? 1 : 0);
+             currentDate = new Date(baseY, monthForDay1 - 1, 1, 12, 0, 0);
+          } else {
+              if (tx.recurrence === 'mensal') {
+                currentDate.setMonth(baseDate.getMonth() + i);
+              } else if (tx.recurrence === 'anual') {
+                currentDate.setFullYear(baseDate.getFullYear() + i);
+              } else if (tx.recurrence === 'semanal') {
+                currentDate.setDate(baseDate.getDate() + (i * 7));
+              } else if (tx.recurrence === 'diaria') {
+                currentDate.setDate(baseDate.getDate() + i);
+              } else if (tx.recurrence === 'quinto_dia_util') {
+                const targetMonth = baseDate.getMonth() + i;
+                const targetYear = baseDate.getFullYear();
+                
+                let businessDaysCount = 0;
+                let day = 1;
+                while (businessDaysCount < 5) {
+                  const d = new Date(targetYear, targetMonth, day);
+                  const dayOfWeek = d.getDay();
+                  if (dayOfWeek !== 0 && dayOfWeek !== 6) { 
+                    businessDaysCount++;
+                  }
+                  if (businessDaysCount < 5) day++;
+                }
+                currentDate = new Date(targetYear, targetMonth, day, 12, 0, 0);
               }
-              if (businessDaysCount < 5) day++;
-            }
-            currentDate = new Date(targetYear, targetMonth, day, 12, 0, 0);
           }
 
-          const isPaid = i === 0 ? tx.paid : false;
+          const isPaid = isCreditCard ? false : (i === 0 ? tx.paid : false);
 
           newTransactions.push({
             ...tx,
@@ -361,7 +370,7 @@ export function useStore() {
             paymentMethod: finalizedTxMethod,
           });
 
-          if (isPaid) {
+          if (isPaid && !isCreditCard) {
             updatedAccounts = updatedAccounts.map((acc) => {
               if (acc.id === tx.accountId) {
                 const delta = tx.type === 'receita' ? tx.amount : -tx.amount;
