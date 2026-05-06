@@ -155,6 +155,8 @@ export function HorizonteScreen() {
     } else setMonth((m) => m + 1);
   };
 
+  const activeAccountsCount = accounts.filter(a => activeAccountIds.includes(a.id)).length;
+
   const activeBalance = accounts
     .filter(
       (a) => activeAccountIds.includes(a.id) && a.type !== "cartao_credito",
@@ -169,6 +171,21 @@ export function HorizonteScreen() {
     const startYear = isPast ? year : today.getFullYear();
     const startMonth = isPast ? month : today.getMonth();
 
+    // Normalizar a data de "hoje" para ignorar horas na comparação
+    const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+
+    const getEffectiveDate = (tx: any) => {
+      const d = new Date(tx.date);
+      const txDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+      
+      // 👉 Correção Crítica 1: Se foi pago antecipadamente (data futura), o impacto no caixa é HOJE
+      if (tx.paid && txDay > startOfToday) return startOfToday;
+      // 👉 Correção Crítica 2: Se não foi pago e está atrasado (data passada), aplicamos a cobrança HOJE (Rollover)
+      if (!tx.paid && txDay < startOfToday) return startOfToday;
+      
+      return txDay;
+    };
+
     // 1. Descobre o saldo exato no início do mês de partida (desfazendo o futuro)
     // Consideramos apenas as contas ativas no planejamento
     let openingBalance = activeBalance;
@@ -176,8 +193,8 @@ export function HorizonteScreen() {
     // Transações já pagas que aconteceram do início do mês de partida até hoje
     // Precisamos retroceder o saldo até o dia 01 do mês de partida
     const txsToUndo = transactions.filter((tx) => {
-      if (!tx.paid || tx.paymentMethod === 'credito') return false; // 👉 BUG FIX: Ignora compras no crédito (não afetam saldo de caixa imediatamente)
-      const d = new Date(tx.date);
+      if (!tx.paid || tx.paymentMethod === 'credito') return false; 
+      const d = getEffectiveDate(tx);
       const isFromStartMonthOnwards = d.getFullYear() > startYear || (d.getFullYear() === startYear && d.getMonth() >= startMonth);
       return isFromStartMonthOnwards;
     });
@@ -189,8 +206,8 @@ export function HorizonteScreen() {
       if (tx.type === 'receita' && isFromActiveAccount) openingBalance -= tx.amount;
       else if (tx.type === 'despesa' && isFromActiveAccount) openingBalance += tx.amount;
       else if (tx.type === 'transferencia') {
-        if (isFromActiveAccount) openingBalance += tx.amount; // Saiu da conta ativa, devolvemos
-        if (isToActiveAccount) openingBalance -= tx.amount;   // Entrou na conta ativa, removemos
+        if (isFromActiveAccount) openingBalance += tx.amount; 
+        if (isToActiveAccount) openingBalance -= tx.amount;   
       }
     });
 
@@ -237,18 +254,22 @@ export function HorizonteScreen() {
       
       Object.entries(invoiceTotals).forEach(([dateKey, amount]) => {
         if (amount > 0) {
-          if (!virtualInvoiceTxs[dateKey]) virtualInvoiceTxs[dateKey] = [];
           const [y, m, d] = dateKey.split('-').map(Number);
-          virtualInvoiceTxs[dateKey].push({
+          const rawDate = new Date(y, m, d);
+          const effectiveDate = rawDate < startOfToday ? startOfToday : rawDate;
+          const effKey = `${effectiveDate.getFullYear()}-${effectiveDate.getMonth()}-${effectiveDate.getDate()}`;
+
+          if (!virtualInvoiceTxs[effKey]) virtualInvoiceTxs[effKey] = [];
+          virtualInvoiceTxs[effKey].push({
             id: `virtual-invoice-${card.id}-${dateKey}`,
             description: `Fatura ${card.name}`,
             amount: amount,
             type: 'despesa',
-            date: new Date(y, m, d).toISOString(),
+            date: effectiveDate.toISOString(),
             accountId: card.id,
-            paymentMethod: 'debito', // Para não ser filtrado no effectiveDayTxs
+            paymentMethod: 'debito', 
             paid: false,
-            isVirtual: true, // Tag para identificar que impacta o caixa independente da conta
+            isVirtual: true, 
           });
         }
       });
@@ -262,13 +283,13 @@ export function HorizonteScreen() {
       resultsMap[monthKey] = [];
 
       const monthTxs = transactions.filter((tx) => {
-        const d = new Date(tx.date);
+        const d = getEffectiveDate(tx);
         return d.getFullYear() === simYear && d.getMonth() === simMonth;
       });
 
       const txsByDay: Record<number, any[]> = {};
       monthTxs.forEach((tx) => {
-        const day = new Date(tx.date).getDate();
+        const day = getEffectiveDate(tx).getDate();
         if (!txsByDay[day]) txsByDay[day] = [];
         txsByDay[day].push(tx);
       });
@@ -575,8 +596,8 @@ export function HorizonteScreen() {
                   ]}
                 >
                   Saldo Disponível{" "}
-                  {activeAccountIds.length > 0 &&
-                    `(${activeAccountIds.length})`}
+                  {activeAccountsCount > 0 &&
+                    `(${activeAccountsCount})`}
                 </Text>
                 <Text
                   style={[styles.budgetValue, { color: colors.foreground }]}

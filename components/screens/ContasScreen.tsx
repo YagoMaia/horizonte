@@ -148,7 +148,35 @@ export function ContasScreen() {
         closingDay: finalClosingDay,
         dueDay: finalDueDay,
       };
-      await updateAccount(updatedAcc);
+
+      const hasBalanceChanged = type !== 'cartao_credito' && parsedBalance !== editAccount.balance;
+
+      if (hasBalanceChanged) {
+        if (Platform.OS === 'web') {
+          const choice = window.confirm(
+            `O saldo mudou de ${editAccount.balance} para ${parsedBalance}.\n\nClique em OK para "Lançar Ajuste" (mantém histórico).\nClique em CANCELAR para "Apenas Sincronizar" (corrige dessync de cache).`
+          );
+          await updateAccount(updatedAcc, !choice);
+        } else {
+          Alert.alert(
+            'Alteração de Saldo',
+            'Como você deseja processar essa mudança?',
+            [
+              {
+                text: 'Lançar Ajuste',
+                onPress: async () => await updateAccount(updatedAcc, false),
+              },
+              {
+                text: 'Apenas Sincronizar',
+                onPress: async () => await updateAccount(updatedAcc, true),
+              },
+              { text: 'Cancelar', style: 'cancel' },
+            ]
+          );
+        }
+      } else {
+        await updateAccount(updatedAcc);
+      }
     } else {
       const newAccount: Account = {
         id: Date.now().toString(),

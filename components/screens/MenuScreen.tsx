@@ -71,7 +71,9 @@ export function MenuScreen({ }: MenuScreenProps) {
     tags, // 👉 Puxando tags para o backup
     monthlyBudgets, 
     totalBalance, 
-    clearAllData 
+    clearAllData,
+    syncBalances,
+    purgeAdjustments
   } = useStoreContext()
 
   const [themeModalVisible, setThemeModalVisible] = useState(false)
@@ -86,6 +88,55 @@ export function MenuScreen({ }: MenuScreenProps) {
   }[themeMode]
 
   const currentColorLabel = PRIMARY_COLORS.find(c => c.value === primaryColor)?.label || 'Customizada'
+
+  const handleSyncBalances = async () => {
+    if (Platform.OS === 'web') {
+      if (window.confirm('Isso irá recalcular o saldo de todas as suas contas com base no histórico de transações. Deseja continuar?')) {
+        await syncBalances();
+        alert('Saldos sincronizados com sucesso!');
+      }
+    } else {
+      Alert.alert(
+        'Sincronizar Saldos',
+        'Isso irá recalcular o saldo de todas as suas contas com base no histórico de transações. Útil para corrigir erros de integridade. Deseja continuar?',
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          { 
+            text: 'Sincronizar', 
+            onPress: async () => {
+              await syncBalances();
+              Alert.alert('Sucesso', 'Saldos sincronizados com sucesso!');
+            } 
+          }
+        ]
+      )
+    }
+  }
+
+  const handlePurgeAdjustments = async () => {
+    if (Platform.OS === 'web') {
+      if (window.confirm('Isso irá EXCLUIR TODOS os lançamentos de Ajuste de Saldo do seu histórico. Use com cuidado. Deseja continuar?')) {
+        await purgeAdjustments();
+        alert('Ajustes removidos com sucesso!');
+      }
+    } else {
+      Alert.alert(
+        'Limpar Ajustes de Saldo',
+        'Isso irá EXCLUIR TODOS os lançamentos de Ajuste de Saldo do seu histórico. Use com cuidado. Deseja continuar?',
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          { 
+            text: 'Limpar Ajustes', 
+            style: 'destructive',
+            onPress: async () => {
+              await purgeAdjustments();
+              Alert.alert('Sucesso', 'Ajustes removidos com sucesso!');
+            } 
+          }
+        ]
+      )
+    }
+  }
 
   // --- EXPORTAR PARA EXCEL (CSV) ---
   const handleExportCSV = async () => {
@@ -444,27 +495,43 @@ export function MenuScreen({ }: MenuScreenProps) {
       {/* Danger zone */}
       <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border, marginTop: 8 }]}>
         <MenuItem
-          icon="trash-outline"
-          label="Limpar todos os dados"
-          onPress={() => {
-            if (Platform.OS === 'web') {
-              if (window.confirm('Atenção: Isso irá apagar todos os dados permanentemente. Tem certeza?')) {
-                clearAllData()
-              }
-            } else {
-              Alert.alert(
-                'Atenção Crítica',
-                'Isso irá apagar todos os seus dados permanentemente e não pode ser desfeito. Faça um backup antes. Tem certeza?',
-                [
-                  { text: 'Cancelar', style: 'cancel' },
-                  { text: 'Apagar Tudo', style: 'destructive', onPress: clearAllData }
-                ]
-              )
-            }
-          }}
-          danger
+          icon="sync-outline"
+          label="Sincronizar Saldos (Correção)"
+          onPress={handleSyncBalances}
           colors={colors}
         />
+        <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
+          <MenuItem
+            icon="beaker-outline"
+            label="Limpar Ajustes de Saldo"
+            onPress={handlePurgeAdjustments}
+            colors={colors}
+          />
+        </View>
+        <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
+          <MenuItem
+            icon="trash-outline"
+            label="Limpar todos os dados"
+            onPress={() => {
+              if (Platform.OS === 'web') {
+                if (window.confirm('Atenção: Isso irá apagar todos os dados permanentemente. Tem certeza?')) {
+                  clearAllData()
+                }
+              } else {
+                Alert.alert(
+                  'Atenção Crítica',
+                  'Isso irá apagar todos os seus dados permanentemente e não pode ser desfeito. Faça um backup antes. Tem certeza?',
+                  [
+                    { text: 'Cancelar', style: 'cancel' },
+                    { text: 'Apagar Tudo', style: 'destructive', onPress: clearAllData }
+                  ]
+                )
+              }
+            }}
+            danger
+            colors={colors}
+          />
+        </View>
       </View>
 
       <Text style={[styles.footer, { color: colors.mutedForeground }]}>

@@ -63,11 +63,12 @@ export function useStore() {
   );
 
   const updateAccount = useCallback(
-    async (updatedAcc: Account) => {
+    async (updatedAcc: Account, skipAdjustment = false) => {
       const oldAcc = accounts.find((a) => a.id === updatedAcc.id);
       if (!oldAcc) return;
 
       if (
+        !skipAdjustment &&
         updatedAcc.type !== "cartao_credito" &&
         updatedAcc.balance !== oldAcc.balance
       ) {
@@ -822,6 +823,44 @@ export function useStore() {
     [transactions, accounts, saveTransactions, saveAccounts],
   );
 
+  const syncBalances = useCallback(async () => {
+    const updatedAccounts = accounts.map((acc) => {
+      if (acc.type === 'cartao_credito') {
+        return { ...acc, balance: 0 };
+      }
+
+      let calculatedBalance = 0;
+
+      transactions.forEach((tx) => {
+        if (!tx.paid) return;
+
+        if (tx.accountId === acc.id) {
+          if (tx.type === 'receita') {
+            calculatedBalance += tx.amount;
+          } else if (tx.type === 'despesa') {
+            calculatedBalance -= tx.amount;
+          } else if (tx.type === 'transferencia') {
+            calculatedBalance -= tx.amount;
+          }
+        }
+
+        if (tx.type === 'transferencia' && tx.targetAccountId === acc.id) {
+          calculatedBalance += tx.amount;
+        }
+      });
+
+      return { ...acc, balance: calculatedBalance };
+    });
+
+    await saveAccounts(updatedAccounts);
+    return updatedAccounts;
+  }, [accounts, transactions, saveAccounts]);
+
+  const purgeAdjustments = useCallback(async () => {
+    const updatedTxs = transactions.filter((tx) => !tx.isAdjustment);
+    await saveTransactions(updatedTxs);
+  }, [transactions, saveTransactions]);
+
   return {
     transactions,
     accounts,
@@ -846,6 +885,8 @@ export function useStore() {
     deleteAccount,
     setPrimaryAccount,
     saveAccounts,
+    syncBalances,
+    purgeAdjustments,
     clearAllData,
     payCreditCardInvoice,
     anticipateCreditCardPayment,
