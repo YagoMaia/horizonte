@@ -34,6 +34,106 @@ export function useStore() {
     setAccounts(data);
   }, []);
 
+  const addAccount = useCallback(
+    async (acc: Account) => {
+      const updatedAccounts = [...accounts, acc];
+      await saveAccounts(updatedAccounts);
+
+      if (acc.type !== "cartao_credito" && acc.balance !== 0) {
+        // Para Saldo Inicial, definimos a data como o início do mês atual
+        // Isso evita que a projeção do Horizonte "achate" o saldo dos dias anteriores
+        const now = new Date();
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+        const adjustmentTx: Transaction = {
+          id: `adj-${Date.now()}`,
+          description: "Saldo Inicial",
+          amount: Math.abs(acc.balance),
+          type: acc.balance > 0 ? "receita" : "despesa",
+          date: startOfMonth.toISOString(),
+          accountId: acc.id,
+          paid: true,
+          recurrence: "unica",
+          isAdjustment: true,
+        };
+        await saveTransactions([adjustmentTx, ...transactions]);
+      }
+    },
+    [accounts, transactions, saveAccounts, saveTransactions],
+  );
+
+  const updateAccount = useCallback(
+    async (updatedAcc: Account) => {
+      const oldAcc = accounts.find((a) => a.id === updatedAcc.id);
+      if (!oldAcc) return;
+
+      if (
+        updatedAcc.type !== "cartao_credito" &&
+        updatedAcc.balance !== oldAcc.balance
+      ) {
+        const diff = updatedAcc.balance - oldAcc.balance;
+        const adjustmentTx: Transaction = {
+          id: `adj-${Date.now()}`,
+          description: "Ajuste de Saldo",
+          amount: Math.abs(diff),
+          type: diff > 0 ? "receita" : "despesa",
+          date: new Date().toISOString(),
+          accountId: updatedAcc.id,
+          paid: true,
+          recurrence: "unica",
+          isAdjustment: true,
+        };
+        await saveTransactions([adjustmentTx, ...transactions]);
+      }
+
+      const updatedAccounts = accounts.map((a) =>
+        a.id === updatedAcc.id ? updatedAcc : a,
+      );
+      await saveAccounts(updatedAccounts);
+    },
+    [accounts, transactions, saveAccounts, saveTransactions],
+  );
+
+  const deleteAccount = useCallback(
+    async (id: string) => {
+      // 1. Atualiza as contas
+      setAccounts((currentAccounts) => {
+        const updated = currentAccounts.filter((a) => a.id !== id);
+        AsyncStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(updated));
+        return updated;
+      });
+
+      // 2. Cascade Delete: Remove todas as transações vinculadas a esta conta
+      // Isso inclui transações onde ela é a conta principal (accountId)
+      // OU onde ela é a conta de destino em transferências (targetAccountId)
+      setTransactions((currentTransactions) => {
+        const updatedTxs = currentTransactions.filter(
+          (tx) => tx.accountId !== id && tx.targetAccountId !== id,
+        );
+        AsyncStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(updatedTxs));
+        return updatedTxs;
+      });
+    },
+    [],
+  );
+
+  const setPrimaryAccount = useCallback(
+    async (id: string) => {
+      setAccounts((currentAccounts) => {
+        const accIndex = currentAccounts.findIndex((a) => a.id === id);
+        if (accIndex <= 0) return currentAccounts;
+
+        const updated = [...currentAccounts];
+        const [acc] = updated.splice(accIndex, 1);
+        updated.unshift(acc);
+        
+        AsyncStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(updated));
+        return updated;
+      });
+    },
+    [],
+  );
+
   const saveTags = useCallback(async (data: Tag[]) => {
     await AsyncStorage.setItem(STORAGE_KEYS.TAGS, JSON.stringify(data));
     setTags(data);
@@ -732,6 +832,10 @@ export function useStore() {
     addTransaction,
     deleteTransaction,
     updateTransaction,
+    addAccount,
+    updateAccount,
+    deleteAccount,
+    setPrimaryAccount,
     saveAccounts,
     clearAllData,
     payCreditCardInvoice,

@@ -69,6 +69,7 @@ export function TotaisScreen() {
     }
 
     return transactions.filter(tx => {
+      if (tx.isAdjustment) return false // 👉 Ignorar ajustes de saldo nos totais
       if (!showPending && !tx.paid) return false
       const txDate = new Date(tx.date)
 

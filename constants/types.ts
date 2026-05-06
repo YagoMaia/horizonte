@@ -41,6 +41,7 @@ export interface Transaction {
   targetAccountId?: string
   groupId?: string
   groupIndex?: number;
+  isAdjustment?: boolean;
 }
 
 export interface Tag {

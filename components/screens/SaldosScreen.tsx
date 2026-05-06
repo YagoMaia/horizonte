@@ -102,6 +102,9 @@ export function SaldosScreen() {
         // Só conta se for de uma conta corrente, poupança, etc.
         if (!account || account.type === 'cartao_credito') return;
 
+        // Ignora ajustes de saldo
+        if (tx.isAdjustment) return;
+
         if (tx.type === 'receita') {
           income += tx.amount;
         } else if (tx.type === 'despesa') {
@@ -117,6 +120,8 @@ export function SaldosScreen() {
   const displayedTransactions = useMemo(() => {
     return transactions
       .filter((tx) => {
+        if (tx.isAdjustment) return false; // 👉 Ocultar ajustes da lista de transações
+
         const txDate = new Date(tx.date);
 
         // Regra 1: Filtro de Mês e Ano

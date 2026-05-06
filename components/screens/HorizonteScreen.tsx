@@ -176,7 +176,7 @@ export function HorizonteScreen() {
     // Transações já pagas que aconteceram do início do mês de partida até hoje
     // Precisamos retroceder o saldo até o dia 01 do mês de partida
     const txsToUndo = transactions.filter((tx) => {
-      if (!tx.paid) return false;
+      if (!tx.paid || tx.paymentMethod === 'credito') return false; // 👉 BUG FIX: Ignora compras no crédito (não afetam saldo de caixa imediatamente)
       const d = new Date(tx.date);
       const isFromStartMonthOnwards = d.getFullYear() > startYear || (d.getFullYear() === startYear && d.getMonth() >= startMonth);
       return isFromStartMonthOnwards;
@@ -210,7 +210,7 @@ export function HorizonteScreen() {
 
     // 👉 PRÉ-CÁLCULO DE FATURAS DE CARTÃO DE CRÉDITO (NÃO PAGAS)
     const virtualInvoiceTxs: Record<string, any[]> = {};
-    accounts.filter(a => a.type === 'cartao_credito').forEach(card => {
+    accounts.filter(a => a.type === 'cartao_credito' && activeAccountIds.includes(a.id)).forEach(card => {
       const closingDay = card.closingDay || 25;
       const dueDay = card.dueDay || 5;
       
@@ -273,75 +273,108 @@ export function HorizonteScreen() {
         txsByDay[day].push(tx);
       });
 
-      let accumulatedMonthlyExpense = 0;
-      let frozenFutureDailyPlan = 0;
+      // NOVO ALGORITMO: Calcula despesas fixas do mês para obter um "Daily Plan" base estático.
+      let monthFixedExpenses = 0;
+      const monthVirtualInvoices = Object.keys(virtualInvoiceTxs)
+        .filter(k => k.startsWith(`${simYear}-${simMonth}-`))
+        .flatMap(k => virtualInvoiceTxs[k]);
+        
+      const allMonthActiveTxs = [...monthTxs, ...monthVirtualInvoices].filter(tx => {
+        const isFromActive = activeAccountIds.includes(tx.accountId);
+        const isToActive = tx.type === 'transferencia' && tx.targetAccountId && activeAccountIds.includes(tx.targetAccountId);
+        return isFromActive || isToActive;
+      });
+
+      allMonthActiveTxs.forEach(tx => {
+        if (tx.paymentMethod === 'credito') return;
+        if (tx.isAdjustment) return; // 👉 Ignore adjustments for budget math
+
+        const isFromActive = activeAccountIds.includes(tx.accountId);
+        const isToActive = tx.type === 'transferencia' && tx.targetAccountId && activeAccountIds.includes(tx.targetAccountId);
+
+        if (tx.type === 'despesa' && isFromActive) {
+          const isFixed = (tx.recurrence && tx.recurrence !== 'unica') || tx.isVirtual || tx.type === 'transferencia';
+          if (isFixed) monthFixedExpenses += tx.amount;
+        } else if (tx.type === 'transferencia' && isFromActive && !isToActive) {
+          monthFixedExpenses += tx.amount;
+        }
+      });
+
+      let accumulatedVariableExpenses = 0;
 
       for (let d = 1; d <= simDaysCount; d++) {
+        const remainingDays = simDaysCount - d + 1;
+        const dailyPlan = simBudget > 0 
+          ? Math.max(0, simBudget - monthFixedExpenses - accumulatedVariableExpenses) / remainingDays 
+          : 0;
         const dbTxs = txsByDay[d] || [];
         const vTxs = virtualInvoiceTxs[`${simYear}-${simMonth}-${d}`] || [];
-        const dayTxs = [...dbTxs, ...vTxs];
+        const rawDayTxs = [...dbTxs, ...vTxs];
         
-        // Filtramos transações que afetam o CAIXA (contas ativas)
-        // ⚠️ IMPORTANTE: Compras no CRÉDITO não afetam o caixa no dia da compra!
-        const effectiveDayTxs = dayTxs.filter(tx => tx.paymentMethod !== 'credito');
+        // Filtramos transações para exibição no Modal apenas de contas ativas e omitimos os ajustes
+        const dayTxs = rawDayTxs.filter(tx => {
+           if (tx.isAdjustment) return false;
+           const isFromActive = activeAccountIds.includes(tx.accountId);
+           const isToActive = tx.type === 'transferencia' && tx.targetAccountId && activeAccountIds.includes(tx.targetAccountId);
+           return isFromActive || isToActive;
+        });
 
-        const income = effectiveDayTxs
-          .filter((t) => {
-            if (t.isVirtual) return t.type === 'receita';
-            if (t.type === 'receita' && activeAccountIds.includes(t.accountId)) return true;
-            if (t.type === 'transferencia' && t.targetAccountId && activeAccountIds.includes(t.targetAccountId) && !activeAccountIds.includes(t.accountId)) return true;
-            return false;
-          })
-          .reduce((s, t) => s + t.amount, 0);
+        // Para os cálculos financeiros do dia precisamos manter os ajustes (mas eles não irão para o display dayTxs)
+        const mathDayTxs = rawDayTxs.filter(tx => {
+           const isFromActive = activeAccountIds.includes(tx.accountId);
+           const isToActive = tx.type === 'transferencia' && tx.targetAccountId && activeAccountIds.includes(tx.targetAccountId);
+           return isFromActive || isToActive;
+        });
 
-        const expense = effectiveDayTxs
-          .filter((t) => {
-            if (t.isVirtual) return t.type === 'despesa';
-            if (t.type === 'despesa' && activeAccountIds.includes(t.accountId)) return true;
-            if (t.type === 'transferencia' && activeAccountIds.includes(t.accountId) && (!t.targetAccountId || !activeAccountIds.includes(t.targetAccountId))) return true;
-            return false;
-          })
-          .reduce((s, t) => s + t.amount, 0);
+        const effectiveMathDayTxs = mathDayTxs.filter(tx => tx.paymentMethod !== 'credito');
+
+        let dayFixedExpenses = 0;
+        let dayVariableExpenses = 0;
+        let income = 0;
+        let dayAdjustmentNet = 0;
+
+        effectiveMathDayTxs.forEach(tx => {
+           const isFromActive = activeAccountIds.includes(tx.accountId);
+           const isToActive = tx.type === 'transferencia' && tx.targetAccountId && activeAccountIds.includes(tx.targetAccountId);
+
+           if (tx.isAdjustment) {
+              if (tx.type === 'receita' && isFromActive) dayAdjustmentNet += tx.amount;
+              else if (tx.type === 'despesa' && isFromActive) dayAdjustmentNet -= tx.amount;
+              return; // Não contabiliza em income ou expense para a UI
+           }
+
+           if (tx.type === 'receita') {
+              if (isFromActive) income += tx.amount;
+              if (isToActive && !isFromActive) income += tx.amount;
+           } else if (tx.type === 'despesa') {
+              if (isFromActive) {
+                 const isFixed = (tx.recurrence && tx.recurrence !== 'unica') || tx.isVirtual || tx.type === 'transferencia';
+                 if (isFixed) dayFixedExpenses += tx.amount;
+                 else dayVariableExpenses += tx.amount;
+              }
+           } else if (tx.type === 'transferencia') {
+              if (isFromActive && !isToActive) dayFixedExpenses += tx.amount;
+              else if (isToActive && !isFromActive) income += tx.amount;
+           }
+        });
 
         const dayDate = new Date(simYear, simMonth, d);
-        const isDayPast =
-          dayDate <
-          new Date(today.getFullYear(), today.getMonth(), today.getDate());
-        const isDayToday =
-          d === today.getDate() &&
-          simMonth === today.getMonth() &&
-          simYear === today.getFullYear();
+        const isDayPast = dayDate < new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        const isDayToday = d === today.getDate() && simMonth === today.getMonth() && simYear === today.getFullYear();
 
-        if (isDayPast) accumulatedMonthlyExpense += expense;
+        const expense = dayFixedExpenses + dayVariableExpenses;
+        const dayNet = income - expense + dayAdjustmentNet;
 
-        let dailyPlan = 0;
-        if (simBudget > 0) {
-          if (isDayPast || isDayToday) {
-            const remainingBudget = simBudget - accumulatedMonthlyExpense;
-            const remainingDays = simDaysCount - d + 1;
-            dailyPlan =
-              remainingBudget > 0 ? remainingBudget / remainingDays : 0;
-            if (isDayToday) frozenFutureDailyPlan = dailyPlan;
-          } else {
-            const isFutureMonthSim =
-              simMonth > today.getMonth() || simYear > today.getFullYear();
-            dailyPlan = isFutureMonthSim
-              ? simBudget / simDaysCount
-              : frozenFutureDailyPlan;
-          }
-        }
+        let appliedDailyPlan = 0;
 
-        // Atualiza o saldo corrido:
-        // No passado, usamos o que já aconteceu (income/expense de transações pagas)
-        // No futuro, usamos o que está previsto (transações não pagas + dailyPlan)
-        
-        const dayNet = income - expense;
         if (isDayPast) {
-          // Se for passado, as transações efetivas já estão no activeBalance (openingBalance ajustado)
           runningBalance += dayNet;
+          accumulatedVariableExpenses += dayVariableExpenses;
         } else {
-          // Se for hoje ou futuro, subtraímos a meta diária planejada
-          runningBalance += dayNet - dailyPlan;
+          appliedDailyPlan = Math.max(0, dailyPlan - dayVariableExpenses);
+          runningBalance += dayNet - appliedDailyPlan;
+          // Para projeção futura, assumimos que o gasto será ao menos a meta planejada (dailyPlan)
+          accumulatedVariableExpenses += Math.max(dailyPlan, dayVariableExpenses);
         }
 
         resultsMap[monthKey].push({
@@ -349,6 +382,7 @@ export function HorizonteScreen() {
           weekDay: getWeekDay(simYear, simMonth, d),
           income,
           expense,
+          variableExpense: dayVariableExpenses,
           dailyPlan,
           balance: runningBalance,
           isPast: isDayPast,
@@ -653,11 +687,11 @@ export function HorizonteScreen() {
                 ? colors.card
                 : colors.background;
             const economizou =
-              currentBudget > 0 && d.dailyPlan > 0 && d.expense < d.dailyPlan;
+              currentBudget > 0 && d.isPast && d.dailyPlan > 0 && d.expense < d.dailyPlan;
             const excedeu =
               currentBudget > 0 && d.isPast && d.expense > d.dailyPlan;
             const valorDiferenca = Math.abs(d.dailyPlan - d.expense);
-            const mostrarBadge = currentBudget > 0 && (d.isPast || d.isToday);
+            const mostrarBadge = currentBudget > 0 && d.isPast;
 
             const saldoBg =
               d.balance >= 0 ? colors.successLight : colors.dangerLight;

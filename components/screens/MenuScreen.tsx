@@ -20,6 +20,7 @@ import * as DocumentPicker from 'expo-document-picker'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { PRIMARY_COLORS } from '@/constants/theme'
 import { TagManagementModal } from '../TagManagementModal'
+import { AdjustmentManagementModal } from '../AdjustmentManagementModal'
 
 interface MenuItemProps {
   icon: string
@@ -76,6 +77,7 @@ export function MenuScreen({ }: MenuScreenProps) {
   const [themeModalVisible, setThemeModalVisible] = useState(false)
   const [colorModalVisible, setColorModalVisible] = useState(false)
   const [tagModalVisible, setTagModalVisible] = useState(false) // 👉 Novo estado
+  const [adjustmentModalVisible, setAdjustmentModalVisible] = useState(false) // 👉 Novo estado
 
   const themeModeLabel = {
     light: 'Claro',
@@ -375,6 +377,14 @@ export function MenuScreen({ }: MenuScreenProps) {
         </View>
         <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
           <MenuItem 
+            icon="construct-outline" 
+            label="Ajustes de Saldo" 
+            onPress={() => setAdjustmentModalVisible(true)}
+            colors={colors} 
+          />
+        </View>
+        <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
+          <MenuItem 
             icon="color-palette-outline" 
             label="Cor principal" 
             value={currentColorLabel} 
@@ -464,60 +474,19 @@ export function MenuScreen({ }: MenuScreenProps) {
 
       {/* Modais de Tema e Cor */}
       <Modal visible={themeModalVisible} transparent animationType="fade" onRequestClose={() => setThemeModalVisible(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Text style={[styles.modalTitle, { color: colors.foreground }]}>Tema Escuro</Text>
-            {[
-              { id: 'system', label: 'Automático (Sistema)' },
-              { id: 'light', label: 'Desativado (Claro)' },
-              { id: 'dark', label: 'Ativado (Escuro)' }
-            ].map(option => (
-              <TouchableOpacity
-                key={option.id}
-                style={[styles.modalOption, themeMode === option.id && { backgroundColor: colors.primary + '15' }]}
-                onPress={() => { setThemeMode(option.id as any); setThemeModalVisible(false) }}
-              >
-                <Text style={{ color: themeMode === option.id ? colors.primary : colors.foreground, fontSize: 16, fontWeight: themeMode === option.id ? '600' : '400' }}>
-                  {option.label}
-                </Text>
-                {themeMode === option.id && <Ionicons name="checkmark" size={20} color={colors.primary} />}
-              </TouchableOpacity>
-            ))}
-            <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setThemeModalVisible(false)}>
-              <Text style={{ color: colors.primary, fontWeight: '600', fontSize: 15 }}>Cancelar</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+        {/* ... existing code ... */}
       </Modal>
 
       <Modal visible={colorModalVisible} transparent animationType="fade" onRequestClose={() => setColorModalVisible(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Text style={[styles.modalTitle, { color: colors.foreground }]}>Cor Principal</Text>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 16, justifyContent: 'center', marginVertical: 16 }}>
-              {PRIMARY_COLORS.map(colorOption => (
-                <TouchableOpacity
-                  key={colorOption.value}
-                  style={[
-                    styles.colorCircle,
-                    { backgroundColor: colorOption.value },
-                    primaryColor === colorOption.value && { borderWidth: 3, borderColor: colors.foreground }
-                  ]}
-                  onPress={() => { setPrimaryColor(colorOption.value); setColorModalVisible(false) }}
-                >
-                  {primaryColor === colorOption.value && <Ionicons name="checkmark" size={20} color="#FFF" />}
-                </TouchableOpacity>
-              ))}
-            </View>
-            <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setColorModalVisible(false)}>
-              <Text style={{ color: colors.primary, fontWeight: '600', fontSize: 15 }}>Cancelar</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+        {/* ... existing code ... */}
       </Modal>
       <TagManagementModal 
         visible={tagModalVisible} 
         onClose={() => setTagModalVisible(false)} 
+      />
+      <AdjustmentManagementModal
+        visible={adjustmentModalVisible}
+        onClose={() => setAdjustmentModalVisible(false)}
       />
     </ScrollView>
   )

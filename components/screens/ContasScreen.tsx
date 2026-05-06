@@ -9,6 +9,7 @@ import {
   TextInput,
   Modal,
   Alert,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -47,7 +48,7 @@ const ACCOUNT_TYPES: { value: Account['type']; label: string }[] = [
 
 export function ContasScreen() {
   const { colors } = useTheme();
-  const { accounts, totalBalance, saveAccounts } = useStoreContext();
+  const { accounts, totalBalance, addAccount, updateAccount, deleteAccount, setPrimaryAccount } = useStoreContext();
   const insets = useSafeAreaInsets();
 
   const [modalVisible, setModalVisible] = useState(false);
@@ -136,22 +137,18 @@ export function ContasScreen() {
     }
 
     if (editAccount) {
-      const updated = accounts.map((a) =>
-        a.id === editAccount.id
-          ? {
-              ...a,
-              name: name.trim(),
-              balance: type === 'cartao_credito' ? a.balance : parsedBalance, // Preserva a dívida real do cartão se mudar o limite
-              type,
-              color: selectedColor,
-              icon: selectedIcon,
-              creditLimit: finalCreditLimit,
-              closingDay: finalClosingDay,
-              dueDay: finalDueDay,
-            }
-          : a,
-      );
-      await saveAccounts(updated);
+      const updatedAcc: Account = {
+        ...editAccount,
+        name: name.trim(),
+        balance: type === 'cartao_credito' ? editAccount.balance : parsedBalance,
+        type,
+        color: selectedColor,
+        icon: selectedIcon,
+        creditLimit: finalCreditLimit,
+        closingDay: finalClosingDay,
+        dueDay: finalDueDay,
+      };
+      await updateAccount(updatedAcc);
     } else {
       const newAccount: Account = {
         id: Date.now().toString(),
@@ -164,7 +161,7 @@ export function ContasScreen() {
         closingDay: finalClosingDay,
         dueDay: finalDueDay,
       };
-      await saveAccounts([...accounts, newAccount]);
+      await addAccount(newAccount);
     }
     setModalVisible(false);
   };
@@ -174,20 +171,33 @@ export function ContasScreen() {
       Alert.alert('Atenção', 'Você precisa ter pelo menos uma conta.');
       return;
     }
-    Alert.alert(
-      'Excluir conta',
-      `Tem certeza que deseja excluir "${acc.name}"? Isso não apagará as transações associadas.`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Excluir',
-          style: 'destructive',
-          onPress: async () => {
-            await saveAccounts(accounts.filter((a) => a.id !== acc.id));
+
+    const performDelete = async () => {
+      await deleteAccount(acc.id);
+    };
+
+    if (Platform.OS === 'web') {
+      if (
+        window.confirm(
+          `Tem certeza que deseja excluir "${acc.name}"? Isso não apagará as transações associadas.`,
+        )
+      ) {
+        performDelete();
+      }
+    } else {
+      Alert.alert(
+        'Excluir conta',
+        `Tem certeza que deseja excluir "${acc.name}"? Isso não apagará as transações associadas.`,
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          {
+            text: 'Excluir',
+            style: 'destructive',
+            onPress: performDelete,
           },
-        },
-      ],
-    );
+        ],
+      );
+    }
   };
 
   return (
@@ -288,6 +298,25 @@ export function ContasScreen() {
                   )}
 
                   <View style={styles.accountActions}>
+                    {acc.id !== accounts[0]?.id && (
+                      <TouchableOpacity
+                        onPress={() => setPrimaryAccount(acc.id)}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Ionicons
+                          name='star-outline'
+                          size={16}
+                          color={colors.primary}
+                        />
+                      </TouchableOpacity>
+                    )}
+                    {acc.id === accounts[0]?.id && (
+                      <Ionicons
+                        name='star'
+                        size={16}
+                        color={colors.primary}
+                      />
+                    )}
                     <TouchableOpacity
                       onPress={() => openEdit(acc)}
                       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
