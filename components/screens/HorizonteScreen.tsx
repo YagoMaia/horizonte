@@ -520,126 +520,122 @@ export function HorizonteScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* STRIP DE RESUMO (Oculto no modo Grelha para dar mais espaço) */}
-      {viewMode === "list" && (
-        <>
-          <View
-            style={[
-              styles.budgetCard,
-              {
-                backgroundColor: colors.card,
-                borderBottomColor: colors.border,
-              },
-            ]}
-          >
-            <View style={styles.budgetRow}>
-              <View style={styles.budgetInfo}>
+      {/* STRIP DE RESUMO */}
+      <View
+        style={[
+          styles.budgetCard,
+          {
+            backgroundColor: colors.card,
+            borderBottomColor: colors.border,
+          },
+        ]}
+      >
+        <View style={styles.budgetRow}>
+          <View style={styles.budgetInfo}>
+            <Text
+              style={[
+                styles.budgetLabel,
+                { color: colors.mutedForeground },
+              ]}
+            >
+              Saldo Disponível{" "}
+              {activeAccountIds.length > 0 &&
+                `(${activeAccountIds.length})`}
+            </Text>
+            <Text
+              style={[styles.budgetValue, { color: colors.foreground }]}
+            >
+              {formatCurrency(activeBalance)}
+            </Text>
+          </View>
+          <View style={styles.budgetRight}>
+            <Text
+              style={[styles.dailyLabel, { color: colors.mutedForeground }]}
+            >
+              Meta Diária Hoje
+            </Text>
+            {currentBudget > 0 ? (
+              <Text style={[styles.dailyValue, { color: colors.primary }]}>
+                {formatShort(currentDailyPlan)}
+              </Text>
+            ) : (
+              <TouchableOpacity onPress={() => setConfigModalVisible(true)}>
                 <Text
                   style={[
-                    styles.budgetLabel,
-                    { color: colors.mutedForeground },
+                    styles.dailyValue,
+                    { color: colors.mutedForeground, fontSize: 12 },
                   ]}
                 >
-                  Saldo Disponível{" "}
-                  {activeAccountIds.length > 0 &&
-                    `(${activeAccountIds.length})`}
+                  Definir Meta
                 </Text>
-                <Text
-                  style={[styles.budgetValue, { color: colors.foreground }]}
-                >
-                  {formatCurrency(activeBalance)}
-                </Text>
-              </View>
-              <View style={styles.budgetRight}>
-                <Text
-                  style={[styles.dailyLabel, { color: colors.mutedForeground }]}
-                >
-                  Meta Diária Hoje
-                </Text>
-                {currentBudget > 0 ? (
-                  <Text style={[styles.dailyValue, { color: colors.primary }]}>
-                    {formatShort(currentDailyPlan)}
-                  </Text>
-                ) : (
-                  <TouchableOpacity onPress={() => setConfigModalVisible(true)}>
-                    <Text
-                      style={[
-                        styles.dailyValue,
-                        { color: colors.mutedForeground, fontSize: 12 },
-                      ]}
-                    >
-                      Definir Meta
-                    </Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            </View>
+              </TouchableOpacity>
+            )}
           </View>
+        </View>
+      </View>
 
-          <View
+      <View
+        style={[
+          styles.summaryStrip,
+          {
+            backgroundColor: colors.secondary,
+            borderBottomColor: colors.border,
+          },
+        ]}
+      >
+        <View style={styles.summaryItem}>
+          <Text
+            style={[styles.summaryLabel, { color: colors.mutedForeground }]}
+          >
+            Entradas
+          </Text>
+          <Text style={[styles.summaryValue, { color: colors.success }]}>
+            +{formatShort(totalIncome)}
+          </Text>
+        </View>
+        <View
+          style={[
+            styles.summaryDivider,
+            { backgroundColor: colors.border },
+          ]}
+        />
+        <View style={styles.summaryItem}>
+          <Text
+            style={[styles.summaryLabel, { color: colors.mutedForeground }]}
+          >
+            Saídas
+          </Text>
+          <Text
+            style={[styles.summaryValue, { color: colors.destructive }]}
+          >
+            -{formatShort(totalExpense)}
+          </Text>
+        </View>
+        <View
+          style={[
+            styles.summaryDivider,
+            { backgroundColor: colors.border },
+          ]}
+        />
+        <View style={styles.summaryItem}>
+          <Text
+            style={[styles.summaryLabel, { color: colors.mutedForeground }]}
+          >
+            Projeção Fim
+          </Text>
+          <Text
             style={[
-              styles.summaryStrip,
+              styles.summaryValue,
               {
-                backgroundColor: colors.secondary,
-                borderBottomColor: colors.border,
+                color:
+                  endBalance >= 0 ? colors.success : colors.destructive,
               },
             ]}
           >
-            <View style={styles.summaryItem}>
-              <Text
-                style={[styles.summaryLabel, { color: colors.mutedForeground }]}
-              >
-                Entradas
-              </Text>
-              <Text style={[styles.summaryValue, { color: colors.success }]}>
-                +{formatShort(totalIncome)}
-              </Text>
-            </View>
-            <View
-              style={[
-                styles.summaryDivider,
-                { backgroundColor: colors.border },
-              ]}
-            />
-            <View style={styles.summaryItem}>
-              <Text
-                style={[styles.summaryLabel, { color: colors.mutedForeground }]}
-              >
-                Saídas
-              </Text>
-              <Text
-                style={[styles.summaryValue, { color: colors.destructive }]}
-              >
-                -{formatShort(totalExpense)}
-              </Text>
-            </View>
-            <View
-              style={[
-                styles.summaryDivider,
-                { backgroundColor: colors.border },
-              ]}
-            />
-            <View style={styles.summaryItem}>
-              <Text
-                style={[styles.summaryLabel, { color: colors.mutedForeground }]}
-              >
-                Projeção Fim
-              </Text>
-              <Text
-                style={[
-                  styles.summaryValue,
-                  {
-                    color:
-                      endBalance >= 0 ? colors.success : colors.destructive,
-                  },
-                ]}
-              >
-                {formatShort(endBalance)}
-              </Text>
-            </View>
-          </View>
-        </>
-      )}
+            {formatShort(endBalance)}
+          </Text>
+        </View>
+      </View>
 
       {/* ÁREA DE RENDERIZAÇÃO (GRID OU LISTA) */}
       {viewMode === "grid" ? (

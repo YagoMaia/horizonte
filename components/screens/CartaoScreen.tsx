@@ -23,6 +23,7 @@ import {
 import { Account, Transaction } from '@/constants/types';
 
 import { AddTransactionModal } from '../AddTransactionModal';
+import { ConfirmDeleteModal } from '../ConfirmDeleteModal';
 
 const MONTH_NAMES = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -56,12 +57,10 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
     [accounts],
   );
 
-  // 👉 selectedCardId agora pode ser 'all' (Todos)
   const [selectedCardId, setSelectedCardId] = useState<string | null>(
     creditCards.length > 0 ? 'all' : null,
   );
 
-  // 👉 Cria um cartão "Virtual" caso a opção Todos esteja selecionada
   const selectedCard = useMemo(() => {
     if (selectedCardId === 'all') {
       return ALL_CARDS_VIRTUAL_ACCOUNT;
@@ -69,7 +68,6 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
     return creditCards.find((c: Account) => c.id === selectedCardId) || null;
   }, [creditCards, selectedCardId]);
 
-  // Informa ao pai qual cartão está selecionado para pré-configurar o modal de transação
   useEffect(() => {
     if (onSelectCard) {
       onSelectCard(selectedCardId === 'all' ? null : selectedCard);
@@ -94,6 +92,9 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
   const [isEditing, setIsEditing] = useState(false);
   const [txToEdit, setTxToEdit] = useState<Transaction | null>(null);
 
+  const [showDeleteInvoiceConfirm, setShowDeleteInvoiceConfirm] = useState(false);
+  const [showDeleteTransactionConfirm, setShowDeleteTransactionConfirm] = useState(false);
+
   const {
     totalInvoice,
     pendingInvoice,
@@ -117,7 +118,6 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
     const baseDate = new Date();
     baseDate.setMonth(baseDate.getMonth() + monthOffset);
 
-    // 👉 LÓGICA PARA "TODOS OS CARTÕES"
     if (selectedCard.id === 'all') {
       let tInvoice = 0;
       let pInvoice = 0;
@@ -156,21 +156,18 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
       const percent = tLimit > 0 ? Math.min((globalDebt / tLimit) * 100, 100) : 0;
 
       let status = 'CONSOLIDADA';
-      let color = colors.primary;
-      if (pInvoice <= 0 && tInvoice > 0) { status = 'PAGA'; color = colors.success; }
-      else if (tInvoice <= 0) { status = 'ZERADA'; color = colors.mutedForeground; }
+      if (pInvoice <= 0 && tInvoice > 0) { status = 'PAGA'; }
+      else if (tInvoice <= 0) { status = 'ZERADA'; }
 
-      // Pega o nome do mês usando o primeiro cartão como referência de data
       const refInvoice = creditCards.length > 0 ? getInvoiceForTx(baseDate.toISOString(), creditCards[0]) : { viewMonth: baseDate.getMonth(), viewYear: baseDate.getFullYear() };
 
       return {
         totalInvoice: tInvoice, pendingInvoice: pInvoice, targetMonth: refInvoice.viewMonth, targetYear: refInvoice.viewYear,
         invoiceTransactions: allTxs, limit: tLimit, availableLimit: tAvailable, limitUsagePercent: percent,
-        invoiceStatus: status, statusColor: color, globalPendingDebt: globalDebt, isAll: true
+        invoiceStatus: status, globalPendingDebt: globalDebt, isAll: true
       };
     }
 
-    // 👉 LÓGICA PARA UM CARTÃO ESPECÍFICO (Mantida igual)
     const targetInvoice = getInvoiceForTx(baseDate.toISOString(), selectedCard);
     const tMonth = targetInvoice.viewMonth;
     const tYear = targetInvoice.viewYear;
@@ -199,20 +196,19 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
     const percent = cLimit > 0 ? Math.min((globalPendingDebtValue / cLimit) * 100, 100) : 0;
 
     let status = 'ABERTA';
-    let color = colors.primary;
 
     if (tValue < openInvoiceValue && pInvoice <= 0 && tInvoice > 0) {
-      status = 'PAGA'; color = colors.success;
+      status = 'PAGA';
     } else if (tValue > openInvoiceValue) {
-      status = 'FUTURA'; color = colors.warning;
+      status = 'FUTURA';
     } else if (tInvoice <= 0) {
-      status = 'ZERADA'; color = colors.mutedForeground;
+      status = 'ZERADA';
     }
 
     return {
       totalInvoice: tInvoice, pendingInvoice: pInvoice, targetMonth: tMonth, targetYear: tYear,
       invoiceTransactions: invTxs, limit: cLimit, availableLimit: aLimit, limitUsagePercent: percent,
-      invoiceStatus: status, statusColor: color, globalPendingDebt: globalPendingDebtValue, isAll: false
+      invoiceStatus: status, globalPendingDebt: globalPendingDebtValue, isAll: false
     };
   }, [selectedCard, transactions, monthOffset, colors, creditCards]);
 
@@ -277,26 +273,13 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
 
   const handleDeleteAllFromInvoice = () => {
     if (invoiceTransactions.length === 0 || isAll) return;
+    setShowDeleteInvoiceConfirm(true);
+  };
 
+  const confirmDeleteAllFromInvoice = () => {
     const idsToDelete = invoiceTransactions.map((tx: Transaction) => tx.id);
-    const alertMessage = 'Atenção: Se houver compras parceladas nesta fatura, TODAS as parcelas (passadas e futuras) dessas compras também serão excluídas. Deseja continuar?';
-
-    if (Platform.OS === 'web') {
-      if (window.confirm(`${alertMessage}\n\nTem certeza que deseja excluir todos os lançamentos desta fatura?`)) {
-        // 👉 Envia o Array inteiro
-        deleteMultipleTransactions(idsToDelete);
-      }
-    } else {
-      Alert.alert('Excluir Fatura', alertMessage, [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Excluir Todos',
-          style: 'destructive',
-          // 👉 Envia o Array inteiro
-          onPress: () => deleteMultipleTransactions(idsToDelete)
-        }
-      ]);
-    }
+    deleteMultipleTransactions(idsToDelete);
+    setShowDeleteInvoiceConfirm(false);
   };
 
   const handleEdit = () => {
@@ -317,7 +300,6 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
   const renderTransaction = ({ item: tx }: { item: Transaction }) => {
     const isReceita = tx.type === 'receita';
     const amountColor = isReceita ? colors.success : colors.foreground;
-    // Puxar o nome do cartão se estivermos na visualização "Todos"
     const txCard = isAll ? accounts.find((a: Account) => a.id === tx.accountId) : null;
 
     return (
@@ -344,7 +326,6 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <View style={[styles.carouselContainer, { borderBottomColor: colors.border, backgroundColor: colors.card }]}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.carouselContent}>
-          {/* 👉 BOTÃO "TODOS" */}
           <TouchableOpacity
             onPress={() => setSelectedCardId('all')}
             style={[styles.cardSelectorItem, { backgroundColor: selectedCardId === 'all' ? colors.primary : 'transparent', borderColor: selectedCardId === 'all' ? colors.primary : colors.border }]}
@@ -353,7 +334,6 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
             <Text style={{ fontSize: 13, fontWeight: '600', color: selectedCardId === 'all' ? '#FFF' : colors.foreground }}>Todos</Text>
           </TouchableOpacity>
 
-          {/* LISTA DE CARTÕES */}
           {creditCards.map((card: Account) => {
             const isSelected = card.id === selectedCardId;
             return (
@@ -421,7 +401,6 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
             </View>
           </View>
 
-          {/* 👉 OCULTA OS BOTÕES DE AÇÃO SE ESTIVER VISUALIZANDO "TODOS" */}
           {!isAll && (
             <View style={styles.actionButtonsRow}>
               <TouchableOpacity
@@ -454,7 +433,6 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
               <Text style={[styles.itemCount, { color: colors.mutedForeground }]}>{invoiceTransactions.length} itens</Text>
             </View>
 
-            {/* 👉 SÓ PERMITE EXCLUIR TODOS SE FOR UM CARTÃO ESPECÍFICO */}
             {invoiceTransactions.length > 0 && !isAll && (
               <TouchableOpacity style={styles.deleteAllBtn} onPress={handleDeleteAllFromInvoice}>
                 <Ionicons name="trash-outline" size={16} color={colors.destructive} />
@@ -473,7 +451,6 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
         </ScrollView>
       )}
 
-      {/* MODALS DE PAGAMENTO, ANTECIPAÇÃO E OPÇÕES (Mantidos inalterados) */}
       <Modal visible={isPaymentModalOpen} transparent animationType='slide'>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -573,12 +550,28 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
               <Ionicons name="pencil-outline" size={20} color={colors.primary} /><Text style={[styles.optionText, { color: colors.foreground }]}>Editar Lançamento</Text>
             </TouchableOpacity>
             <View style={[styles.divider, { backgroundColor: colors.border }]} />
-            <TouchableOpacity style={styles.optionBtn} onPress={() => { if (selectedTx) deleteTransaction(selectedTx.id, 'all'); setOptionsModalVisible(false); }}>
+            <TouchableOpacity style={styles.optionBtn} onPress={() => { setOptionsModalVisible(false); setShowDeleteTransactionConfirm(true); }}>
               <Ionicons name="trash-outline" size={20} color={colors.destructive} /><Text style={[styles.optionText, { color: colors.destructive }]}>Excluir Compra Inteira</Text>
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
       </Modal>
+
+      <ConfirmDeleteModal
+        visible={showDeleteInvoiceConfirm}
+        title="Excluir faturas?"
+        description="Atenção: Se houver compras parceladas nesta fatura, TODAS as parcelas (passadas e futuras) dessas compras também serão excluídas. Deseja continuar?"
+        onClose={() => setShowDeleteInvoiceConfirm(false)}
+        onConfirm={confirmDeleteAllFromInvoice}
+      />
+
+      <ConfirmDeleteModal
+        visible={showDeleteTransactionConfirm}
+        title="Excluir compra?"
+        description={`Deseja excluir "${selectedTx?.description}"? Se for uma compra parcelada, todas as parcelas serão removidas.`}
+        onClose={() => setShowDeleteTransactionConfirm(false)}
+        onConfirm={() => { if (selectedTx) { deleteTransaction(selectedTx.id, 'all'); setShowDeleteTransactionConfirm(false); } }}
+      />
 
       {isEditing && txToEdit && (
         <AddTransactionModal
@@ -647,7 +640,7 @@ const styles = StyleSheet.create({
   cancelBtnText: { fontSize: 15, fontWeight: '600' },
   confirmBtn: { flex: 1, paddingVertical: 16, alignItems: 'center', justifyContent: 'center', borderRadius: 12 },
   confirmBtnText: { color: '#FFF', fontSize: 15, fontWeight: '700' },
-  optionsMenu: { width: '80%', maxWidth: 350, borderRadius: 16, padding: 20, borderWidth: 1 },
+  optionsMenu: { width: '80%', maxWidth: 350, borderRadius: 16, padding: 20, borderWidth: 1, alignSelf: 'center', marginTop: 'auto', marginBottom: 'auto' },
   optionsTitle: { fontSize: 16, fontWeight: '700', marginBottom: 16, textAlign: 'center' },
   optionBtn: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, gap: 12 },
   optionText: { fontSize: 16, fontWeight: '500' },

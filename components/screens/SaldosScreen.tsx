@@ -27,6 +27,7 @@ import {
   Swipeable,
 } from 'react-native-gesture-handler';
 import { RecurrenceActionModal } from '../RecurrenceActionModal';
+import { ConfirmDeleteModal } from '../ConfirmDeleteModal';
 
 const MONTHS = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -49,6 +50,7 @@ export function SaldosScreen() {
   const [isEditing, setIsEditing] = useState(false);
   const [displayLimit, setDisplayLimit] = useState(20);
   const [recurrenceDeleteData, setRecurrenceDeleteData] = useState<string | null>(null);
+  const [simpleDeleteData, setSimpleDeleteData] = useState<Transaction | null>(null);
 
   // ESTADOS PARA FILTROS
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
@@ -154,10 +156,8 @@ export function SaldosScreen() {
       closeCurrentlyOpenRow();
       setRecurrenceDeleteData(txId);
     } else {
-      Alert.alert('Apagar Lançamento', 'Tem certeza que deseja excluir esta transação?', [
-        { text: 'Cancelar', style: 'cancel', onPress: closeCurrentlyOpenRow },
-        { text: 'Apagar', style: 'destructive', onPress: () => { closeCurrentlyOpenRow(); deleteTransaction(txId, 'single'); } },
-      ]);
+      closeCurrentlyOpenRow();
+      setSimpleDeleteData(tx);
     }
   };
 
@@ -474,6 +474,19 @@ export function SaldosScreen() {
       </Modal>
 
       <RecurrenceActionModal visible={!!recurrenceDeleteData} actionType='delete' onClose={() => setRecurrenceDeleteData(null)} onSelect={(mode) => { if (recurrenceDeleteData) deleteTransaction(recurrenceDeleteData, mode); setRecurrenceDeleteData(null); }} />
+      
+      <ConfirmDeleteModal
+        visible={!!simpleDeleteData}
+        title="Excluir lançamento?"
+        description={`Tem certeza que deseja excluir "${simpleDeleteData?.description}"? Esta ação não pode ser desfeita.`}
+        onClose={() => setSimpleDeleteData(null)}
+        onConfirm={() => {
+          if (simpleDeleteData) {
+            deleteTransaction(simpleDeleteData.id, 'single');
+            setSimpleDeleteData(null);
+          }
+        }}
+      />
     </GestureHandlerRootView>
   );
 }

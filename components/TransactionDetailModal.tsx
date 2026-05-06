@@ -8,7 +8,6 @@ import {
   TouchableOpacity,
   Alert,
   ScrollView,
-  Platform, // 👉 Importação do Platform adicionada
 } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -16,6 +15,7 @@ import { useTheme } from '@/hooks/useTheme'
 import { useStoreContext } from '@/context/StoreContext'
 import { Transaction } from '@/constants/types'
 import { formatCurrency, formatDate } from '@/lib/utils'
+import { ConfirmDeleteModal } from './ConfirmDeleteModal'
 
 interface TransactionDetailModalProps {
   transaction: Transaction | null
@@ -35,6 +35,7 @@ export function TransactionDetailModal({ transaction, onClose, onEdit }: Transac
   const { colors } = useTheme()
   const { accounts, deleteTransaction } = useStoreContext()
   const insets = useSafeAreaInsets()
+  const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false)
 
   if (!transaction) return null
 
@@ -43,33 +44,9 @@ export function TransactionDetailModal({ transaction, onClose, onEdit }: Transac
   const isTransf = transaction.type === 'transferencia'
   const amountColor = isReceita ? colors.success : isTransf ? colors.primary : colors.destructive
 
-  // 👉 CORREÇÃO APLICADA AQUI
   const handleDelete = async () => {
-    if (Platform.OS === 'web') {
-      // No navegador, usamos o confirm padrão do Windows/Mac
-      const confirmed = window.confirm(`Deseja excluir "${transaction.description}"?`)
-      if (confirmed) {
-        await deleteTransaction(transaction.id)
-        onClose()
-      }
-    } else {
-      // No celular, usamos o Alert nativo do iOS/Android
-      Alert.alert(
-        'Excluir lançamento',
-        `Deseja excluir "${transaction.description}"?`,
-        [
-          { text: 'Cancelar', style: 'cancel' },
-          {
-            text: 'Excluir',
-            style: 'destructive',
-            onPress: async () => {
-              await deleteTransaction(transaction.id)
-              onClose()
-            },
-          },
-        ]
-      )
-    }
+    await deleteTransaction(transaction.id)
+    onClose()
   }
 
   const handleEdit = () => {
@@ -98,7 +75,7 @@ export function TransactionDetailModal({ transaction, onClose, onEdit }: Transac
             <TouchableOpacity onPress={handleEdit} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
               <Ionicons name="pencil-outline" size={22} color={colors.foreground} />
             </TouchableOpacity>
-            <TouchableOpacity onPress={handleDelete} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <TouchableOpacity onPress={() => setShowDeleteConfirm(true)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
               <Ionicons name="trash-outline" size={22} color={colors.destructive} />
             </TouchableOpacity>
           </View>
@@ -157,6 +134,14 @@ export function TransactionDetailModal({ transaction, onClose, onEdit }: Transac
             )}
           </View>
         </ScrollView>
+
+        <ConfirmDeleteModal
+          visible={showDeleteConfirm}
+          title="Excluir lançamento?"
+          description={`Tem certeza que deseja excluir "${transaction.description}"? Esta ação não pode ser desfeita.`}
+          onClose={() => setShowDeleteConfirm(false)}
+          onConfirm={handleDelete}
+        />
       </View>
     </Modal>
   )

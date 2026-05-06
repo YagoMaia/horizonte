@@ -16,6 +16,7 @@ import { useTheme } from '@/hooks/useTheme';
 import { useStoreContext } from '@/context/StoreContext';
 import { formatCurrency } from '@/lib/utils';
 import { Account } from '@/constants/types';
+import { ConfirmDeleteModal } from '../ConfirmDeleteModal';
 
 const ACCOUNT_COLORS = [
   '#42A5F5',
@@ -57,6 +58,7 @@ export function ContasScreen() {
   const [type, setType] = useState<Account['type']>('corrente');
   const [selectedColor, setSelectedColor] = useState(ACCOUNT_COLORS[0]);
   const [selectedIcon, setSelectedIcon] = useState('card');
+  const [accountToDelete, setAccountToDelete] = useState<Account | null>(null);
 
   // 👉 ESTADOS DO CARTÃO DE CRÉDITO
   const [closingDay, setClosingDay] = useState('');
@@ -77,7 +79,6 @@ export function ContasScreen() {
   const openEdit = (acc: Account) => {
     setEditAccount(acc);
     setName(acc.name);
-    // Se for cartão, joga o creditLimit para o input de balance
     setBalance(
       acc.type === 'cartao_credito'
         ? acc.creditLimit?.toString() || ''
@@ -94,7 +95,6 @@ export function ContasScreen() {
   const handleSave = async () => {
     if (!name.trim()) return;
 
-    // 👉 LÓGICA DE SALVAMENTO SEPARADA
     let parsedBalance = 0;
     let finalCreditLimit: number | undefined = undefined;
     let finalClosingDay: number | undefined = undefined;
@@ -105,7 +105,6 @@ export function ContasScreen() {
       const parsedClosing = parseInt(closingDay, 10);
       const parsedDue = parseInt(dueDay, 10);
 
-      // Validação Brutal: Se os dados vitais do cartão não existirem, bloqueia.
       if (isNaN(parsedLimit) || isNaN(parsedClosing) || isNaN(parsedDue)) {
         Alert.alert(
           'Erro',
@@ -127,7 +126,7 @@ export function ContasScreen() {
         return;
       }
 
-      parsedBalance = 0; // O saldo (liquidez) de um cartão recém criado é sempre 0
+      parsedBalance = 0;
       finalCreditLimit = parsedLimit;
       finalClosingDay = parsedClosing;
       finalDueDay = parsedDue;
@@ -141,7 +140,7 @@ export function ContasScreen() {
           ? {
               ...a,
               name: name.trim(),
-              balance: type === 'cartao_credito' ? a.balance : parsedBalance, // Preserva a dívida real do cartão se mudar o limite
+              balance: type === 'cartao_credito' ? a.balance : parsedBalance,
               type,
               color: selectedColor,
               icon: selectedIcon,
@@ -174,20 +173,13 @@ export function ContasScreen() {
       Alert.alert('Atenção', 'Você precisa ter pelo menos uma conta.');
       return;
     }
-    Alert.alert(
-      'Excluir conta',
-      `Tem certeza que deseja excluir "${acc.name}"? Isso não apagará as transações associadas.`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Excluir',
-          style: 'destructive',
-          onPress: async () => {
-            await saveAccounts(accounts.filter((a) => a.id !== acc.id));
-          },
-        },
-      ],
-    );
+    setAccountToDelete(acc);
+  };
+
+  const confirmDeleteAccount = async () => {
+    if (!accountToDelete) return;
+    await saveAccounts(accounts.filter((a) => a.id !== accountToDelete.id));
+    setAccountToDelete(null);
   };
 
   return (
@@ -196,7 +188,6 @@ export function ContasScreen() {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        {/* Total */}
         <View style={[styles.totalCard, { backgroundColor: colors.primary }]}>
           <Text style={styles.totalLabel}>Patrimônio Total</Text>
           <Text style={styles.totalValue}>{formatCurrency(totalBalance)}</Text>
@@ -205,7 +196,6 @@ export function ContasScreen() {
           </Text>
         </View>
 
-        {/* Header row */}
         <View style={styles.headerRow}>
           <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
             Minhas Contas
@@ -219,7 +209,6 @@ export function ContasScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Accounts list */}
         <View style={styles.accountsList}>
           {accounts.map((acc) => {
             const typeLabel =
@@ -316,7 +305,6 @@ export function ContasScreen() {
         </View>
       </ScrollView>
 
-      {/* Add/Edit Modal */}
       <Modal
         visible={modalVisible}
         animationType='slide'
@@ -427,7 +415,6 @@ export function ContasScreen() {
               keyboardType='decimal-pad'
             />
 
-            {/* 👉 CAMPOS EXCLUSIVOS DO CARTÃO DE CRÉDITO */}
             {type === 'cartao_credito' && (
               <View style={{ flexDirection: 'row', gap: 12 }}>
                 <View style={{ flex: 1 }}>
@@ -563,6 +550,14 @@ export function ContasScreen() {
           </ScrollView>
         </View>
       </Modal>
+
+      <ConfirmDeleteModal
+        visible={!!accountToDelete}
+        title="Excluir conta?"
+        description={`Tem certeza que deseja excluir "${accountToDelete?.name}"? Isso não apagará as transações associadas.`}
+        onClose={() => setAccountToDelete(null)}
+        onConfirm={confirmDeleteAccount}
+      />
     </View>
   );
 }
