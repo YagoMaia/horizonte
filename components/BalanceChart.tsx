@@ -11,7 +11,7 @@ interface BalanceChartProps {
     refDate: Date;
 }
 
-export function BalanceChart({ transactions, period, refDate }: BalanceChartProps) {
+export const BalanceChart = React.memo(({ transactions, period, refDate }: BalanceChartProps) => {
     const { colors } = useTheme();
     const screenWidth = Dimensions.get('window').width;
 
@@ -132,7 +132,7 @@ export function BalanceChart({ transactions, period, refDate }: BalanceChartProp
             </View>
         </View>
     );
-}
+});
 
 const styles = StyleSheet.create({
     container: { marginVertical: 16 },

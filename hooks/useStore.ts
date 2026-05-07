@@ -1,5 +1,5 @@
 // hooks/useStore.ts
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Transaction, Account } from '@/constants/types';
 
@@ -496,20 +496,20 @@ export function useStore() {
     [monthlyBudgets],
   );
 
-  const totalBalance = accounts.reduce((sum, a) => {
+  const totalBalance = useMemo(() => accounts.reduce((sum, a) => {
     if (a.type === 'cartao_credito') {
       return sum;
     }
     return sum + a.balance;
-  }, 0);
+  }, 0), [accounts]);
 
-  const monthlyIncome = transactions
+  const monthlyIncome = useMemo(() => transactions
     .filter((t) => t.type === 'receita' && t.paid)
-    .reduce((sum, t) => sum + t.amount, 0);
+    .reduce((sum, t) => sum + t.amount, 0), [transactions]);
 
-  const monthlyExpense = transactions
+  const monthlyExpense = useMemo(() => transactions
     .filter((t) => t.type === 'despesa' && t.paid)
-    .reduce((sum, t) => sum + t.amount, 0);
+    .reduce((sum, t) => sum + t.amount, 0), [transactions]);
 
   const payCreditCardInvoice = useCallback(
     async (
