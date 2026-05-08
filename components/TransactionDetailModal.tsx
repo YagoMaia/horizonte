@@ -14,7 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useTheme } from '@/hooks/useTheme'
 import { useStoreContext } from '@/context/StoreContext'
 import { Transaction } from '@/constants/types'
-import { formatCurrency, formatDate } from '@/lib/utils'
+import { formatCurrency, formatDate, getTransactionVisuals } from '@/lib/utils'
 import { ConfirmDeleteModal } from './ConfirmDeleteModal'
 
 interface TransactionDetailModalProps {
@@ -40,9 +40,7 @@ export function TransactionDetailModal({ transaction, onClose, onEdit }: Transac
   if (!transaction) return null
 
   const account = accounts.find(a => a.id === transaction.accountId)
-  const isReceita = transaction.type === 'receita'
-  const isTransf = transaction.type === 'transferencia'
-  const amountColor = isReceita ? colors.success : isTransf ? colors.primary : colors.destructive
+  const visuals = getTransactionVisuals(transaction.type, colors)
 
   const handleDelete = async () => {
     await deleteTransaction(transaction.id)
@@ -86,22 +84,18 @@ export function TransactionDetailModal({ transaction, onClose, onEdit }: Transac
           <View style={[
             styles.amountHero,
             {
-              backgroundColor: isReceita
-                ? colors.successLight
-                : isTransf
-                  ? colors.primary + '15'
-                  : colors.dangerLight,
+              backgroundColor: visuals.bgColor,
             }
           ]}>
-            <View style={[styles.typeIcon, { backgroundColor: amountColor }]}>
+            <View style={[styles.typeIcon, { backgroundColor: visuals.color }]}>
               <Ionicons
-                name={isReceita ? 'arrow-up' : isTransf ? 'swap-horizontal' : 'arrow-down'}
-                size={24}
+                name={visuals.icon as any}
+                size={28}
                 color="#FFF"
               />
             </View>
-            <Text style={[styles.amountValue, { color: amountColor }]}>
-              {isReceita ? '+' : isTransf ? '' : '-'}{formatCurrency(transaction.amount)}
+            <Text style={[styles.amountValue, { color: visuals.color }]}>
+              {visuals.prefix}{formatCurrency(transaction.amount)}
             </Text>
             <Text style={[styles.amountDesc, { color: colors.foreground }]}>
               {transaction.description}

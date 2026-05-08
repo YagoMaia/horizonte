@@ -14,7 +14,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "@/hooks/useTheme";
 import { useStoreContext } from "@/context/StoreContext";
-import { formatCurrency, formatDateShort } from "@/lib/utils";
+import { formatCurrency, formatDateShort, getTransactionVisuals } from "@/lib/utils";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const MONTH_NAMES = [
@@ -1052,18 +1052,8 @@ export function HorizonteScreen() {
                 </View>
               ) : (
                 selectedDay.transactions.map((tx: any, idx: number) => {
-                  const isReceita = tx.type === "receita";
+                  const visuals = getTransactionVisuals(tx.type, colors);
                   const isCredito = tx.paymentMethod === "credito";
-                  const amountColor = isReceita
-                    ? colors.success
-                    : tx.type === "transferencia"
-                      ? colors.primary
-                      : colors.destructive;
-                  const bgColor = isReceita
-                    ? colors.successLight
-                    : tx.type === "transferencia"
-                      ? colors.primary + "15"
-                      : colors.dangerLight;
 
                   return (
                     <View
@@ -1079,19 +1069,13 @@ export function HorizonteScreen() {
                       <View
                         style={[
                           styles.modalTxIcon,
-                          { backgroundColor: bgColor },
+                          { backgroundColor: visuals.bgColor },
                         ]}
                       >
                         <Ionicons
-                          name={
-                            isReceita
-                              ? "arrow-up"
-                              : tx.type === "transferencia"
-                                ? "swap-horizontal"
-                                : "arrow-down"
-                          }
-                          size={16}
-                          color={amountColor}
+                          name={visuals.icon as any}
+                          size={18}
+                          color={visuals.color}
                         />
                       </View>
                       <View style={styles.modalTxInfo}>
@@ -1123,13 +1107,9 @@ export function HorizonteScreen() {
                         )}
                       </View>
                       <Text
-                        style={[styles.modalTxAmount, { color: amountColor }]}
+                        style={[styles.modalTxAmount, { color: visuals.color }]}
                       >
-                        {isReceita
-                          ? "+"
-                          : tx.type === "transferencia"
-                            ? ""
-                            : "-"}
+                        {visuals.prefix}
                         {formatCurrency(tx.amount)}
                       </Text>
                     </View>

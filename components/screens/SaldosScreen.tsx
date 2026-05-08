@@ -17,6 +17,7 @@ import {
   calculateCreditCardInvoice,
   formatCurrency,
   formatDateShort,
+  getTransactionVisuals,
 } from '@/lib/utils';
 import { useStoreContext } from '@/context/StoreContext';
 import { Transaction, Account, TransactionType } from '@/constants/types';
@@ -305,8 +306,8 @@ export function SaldosScreen() {
   const renderItem = ({ item: tx, index }: { item: Transaction; index: number }) => {
     const isFirst = index === 0;
     const isLast = index === paginatedTransactions.length - 1;
-    const isReceita = tx.type === 'receita';
     const account = accounts.find((a) => a.id === tx.accountId);
+    const visuals = getTransactionVisuals(tx.type, colors);
 
     return (
       <Swipeable
@@ -322,15 +323,15 @@ export function SaldosScreen() {
           onPress={() => setSelectedTx(tx)}
           activeOpacity={1}
         >
-          <View style={[styles.txIcon, { backgroundColor: colors.primary + '15' }]}>
-            <Ionicons name="receipt" size={18} color={colors.primary} />
+          <View style={[styles.txIcon, { backgroundColor: visuals.bgColor }]}>
+            <Ionicons name={visuals.icon as any} size={20} color={visuals.color} />
           </View>
           <View style={styles.txInfo}>
             <Text style={[styles.txDesc, { color: colors.foreground }]} numberOfLines={1}>{tx.description}</Text>
             <Text style={[styles.txMetaText, { color: colors.mutedForeground }]}>{formatDateShort(tx.date)} • {account?.name}</Text>
           </View>
-          <Text style={[styles.txAmount, { color: isReceita ? colors.success : colors.destructive }]}>
-            {isReceita ? '+' : '-'}{formatCurrency(tx.amount)}
+          <Text style={[styles.txAmount, { color: visuals.color }]}>
+            {visuals.prefix}{formatCurrency(tx.amount)}
           </Text>
         </TouchableOpacity>
       </Swipeable>

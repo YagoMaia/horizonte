@@ -19,6 +19,7 @@ import {
   formatCurrency,
   formatDateShort,
   getInvoiceForTx,
+  getTransactionVisuals,
 } from '@/lib/utils';
 import { Account, Transaction } from '@/constants/types';
 
@@ -298,8 +299,7 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
   }
 
   const renderTransaction = ({ item: tx }: { item: Transaction }) => {
-    const isReceita = tx.type === 'receita';
-    const amountColor = isReceita ? colors.success : colors.foreground;
+    const visuals = getTransactionVisuals(tx.type, colors);
     const txCard = isAll ? accounts.find((a: Account) => a.id === tx.accountId) : null;
 
     return (
@@ -308,6 +308,9 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
         onPress={() => { setSelectedTx(tx); setOptionsModalVisible(true); }}
         activeOpacity={0.7}
       >
+        <View style={[styles.txIcon, { backgroundColor: visuals.bgColor }]}>
+          <Ionicons name={visuals.icon as any} size={18} color={visuals.color} />
+        </View>
         <View style={styles.txInfo}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <Text style={[styles.txDesc, { color: colors.foreground }]} numberOfLines={1}>{tx.description}</Text>
@@ -317,7 +320,7 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
             {formatDateShort(tx.date)} {isAll && txCard ? `• ${txCard.name}` : ''}
           </Text>
         </View>
-        <Text style={[styles.txAmount, { color: amountColor }]}>{isReceita ? '+' : '-'}{formatCurrency(tx.amount)}</Text>
+        <Text style={[styles.txAmount, { color: visuals.color }]}>{visuals.prefix}{formatCurrency(tx.amount)}</Text>
       </TouchableOpacity>
     );
   };
@@ -628,6 +631,7 @@ const styles = StyleSheet.create({
   txDesc: { fontSize: 15, fontWeight: '500' },
   txDate: { fontSize: 12 },
   txAmount: { fontSize: 15, fontWeight: '700' },
+  txIcon: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   modalContent: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40, borderWidth: 1 },
   modalTitle: { fontSize: 20, fontWeight: '700', marginBottom: 8 },

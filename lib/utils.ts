@@ -77,8 +77,6 @@ export function generateDailyProjection(
   return days;
 }
 
-// lib/utils.ts
-
 // 👉 NOVA FUNÇÃO: Determina mês/ano da fatura de um lançamento específico baseado nas regras do cartão
 export function getInvoiceForTx(dateStr: string, account: any) {
   const closingDay = account?.closingDay || 25;
@@ -130,4 +128,31 @@ export function calculateCreditCardInvoice(
       (sum, tx) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount),
       0,
     );
+}
+
+export function getTransactionVisuals(type: string, colors: any) {
+  switch (type) {
+    case 'receita':
+      return {
+        icon: 'arrow-up',
+        color: colors.success,
+        bgColor: colors.successLight || (colors.success + '15'),
+        prefix: '+',
+      };
+    case 'transferencia':
+      return {
+        icon: 'swap-horizontal',
+        color: colors.primary,
+        bgColor: colors.primary + '15',
+        prefix: '',
+      };
+    case 'despesa':
+    default:
+      return {
+        icon: 'arrow-down',
+        color: colors.destructive,
+        bgColor: colors.dangerLight || (colors.destructive + '15'),
+        prefix: '-',
+      };
+  }
 }
