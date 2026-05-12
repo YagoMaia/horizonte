@@ -2,6 +2,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Transaction, Account, Tag, DEFAULT_TAGS } from '@/constants/types';
+import * as NotificationService from '../services/notificationService';
+import { addMonths, addYears, addWeeks, addDays, setDate } from 'date-fns';
 
 const STORAGE_KEYS = {
   TRANSACTIONS: '@horizonte:transactions',
@@ -312,54 +314,68 @@ export function useStore() {
           });
         }
       }
-      else if (tx.recurrence === 'mensal' || tx.recurrence === 'anual' || tx.recurrence === 'semanal' || tx.recurrence === 'diaria' || tx.recurrence === 'quinto_dia_util') {
+      else if (tx.recurrence !== 'unica') {
         const baseId = Date.now().toString();
-        const baseDate = new Date(tx.date);
+        let baseDate = new Date(tx.date);
+
+        // 👉 Ajuste para 'Próximo Mês' se a flag existir
+        if (tx.startNextMonth) {
+          baseDate = addMonths(baseDate, 1);
+        }
 
         const maxRecurrences = tx.calculatedRecurrenceCount || 24;
 
-        let baseM = baseDate.getMonth() + 1;
-        let baseY = baseDate.getFullYear();
-        if (isCreditCard) {
-            if (baseDate.getDate() >= closingDay) baseM += 1;
-            if (dueDay < closingDay) baseM += 1;
-        }
-
         for (let i = 0; i < maxRecurrences; i++) {
-          let currentDate = new Date(baseDate);
+          let currentDate: Date;
 
-          if (isCreditCard && i > 0) {
-             let targetInvM = baseM + i;
-             let monthForDay1 = targetInvM - (dueDay < closingDay ? 1 : 0);
-             currentDate = new Date(baseY, monthForDay1 - 1, 1, 12, 0, 0);
-          } else {
-              if (tx.recurrence === 'mensal') {
-                currentDate.setMonth(baseDate.getMonth() + i);
-              } else if (tx.recurrence === 'anual') {
-                currentDate.setFullYear(baseDate.getFullYear() + i);
-              } else if (tx.recurrence === 'semanal') {
-                currentDate.setDate(baseDate.getDate() + (i * 7));
-              } else if (tx.recurrence === 'diaria') {
-                currentDate.setDate(baseDate.getDate() + i);
-              } else if (tx.recurrence === 'quinto_dia_util') {
-                const targetMonth = baseDate.getMonth() + i;
-                const targetYear = baseDate.getFullYear();
-                
-                let businessDaysCount = 0;
-                let day = 1;
-                while (businessDaysCount < 5) {
-                  const d = new Date(targetYear, targetMonth, day);
-                  const dayOfWeek = d.getDay();
-                  if (dayOfWeek !== 0 && dayOfWeek !== 6) { 
-                    businessDaysCount++;
-                  }
-                  if (businessDaysCount < 5) day++;
+          // 👉 Lógica de cálculo de data usando date-fns para segurança
+          switch (tx.recurrence) {
+            case 'mensal':
+              currentDate = addMonths(baseDate, i);
+              break;
+            case 'anual':
+              currentDate = addYears(baseDate, i);
+              break;
+            case 'semanal':
+              currentDate = addWeeks(baseDate, i);
+              break;
+            case 'diaria':
+              currentDate = addDays(baseDate, i);
+              break;
+            case 'quinto_dia_util': {
+              const targetMonthDate = addMonths(baseDate, i);
+              const targetMonth = targetMonthDate.getMonth();
+              const targetYear = targetMonthDate.getFullYear();
+              
+              let businessDaysCount = 0;
+              let day = 1;
+              while (businessDaysCount < 5) {
+                const d = new Date(targetYear, targetMonth, day);
+                const dayOfWeek = d.getDay();
+                if (dayOfWeek !== 0 && dayOfWeek !== 6) { 
+                  businessDaysCount++;
                 }
-                currentDate = new Date(targetYear, targetMonth, day, 12, 0, 0);
+                if (businessDaysCount < 5) day++;
               }
+              currentDate = new Date(targetYear, targetMonth, day, 12, 0, 0);
+              break;
+            }
+            default:
+              currentDate = new Date(baseDate);
           }
 
           const isPaid = isCreditCard ? false : (i === 0 ? tx.paid : false);
+
+          let notificationId: string | undefined;
+          // Lembrete de Pagamento Mensal (apenas para a primeira parcela da série ou se preferir em todas)
+          // Aqui agendamos apenas para a primeira ocorrência da série recorrente
+          if (i === 0 && tx.type === 'despesa' && tx.recurrence === 'mensal') {
+            notificationId = await NotificationService.scheduleMonthlyPaymentReminder(
+              tx.description,
+              tx.amount,
+              currentDate.getDate()
+            );
+          }
 
           newTransactions.push({
             ...tx,
@@ -369,6 +385,7 @@ export function useStore() {
             date: currentDate.toISOString(),
             paid: isPaid,
             paymentMethod: finalizedTxMethod,
+            notificationId,
           });
 
           if (isPaid && !isCreditCard) {
@@ -383,10 +400,23 @@ export function useStore() {
         }
       }
       else {
+        let notificationId: string | undefined;
+
+        // Lembrete de Pagamento Mensal
+        if (tx.type === 'despesa' && tx.recurrence === 'mensal') {
+          const date = new Date(tx.date);
+          notificationId = await NotificationService.scheduleMonthlyPaymentReminder(
+            tx.description,
+            tx.amount,
+            date.getDate()
+          );
+        }
+
         const newTx: Transaction = {
           ...tx,
           id: Date.now().toString(),
           paymentMethod: finalizedTxMethod,
+          notificationId,
         };
         newTransactions.push(newTx);
 
@@ -445,6 +475,11 @@ export function useStore() {
       );
 
       txsToDelete.forEach((deletedTx) => {
+        // 👉 Cancela o lembrete se existir um notificationId
+        if (deletedTx.notificationId) {
+          NotificationService.cancelReminder(deletedTx.notificationId);
+        }
+
         if (deletedTx.paid) {
           updatedAccounts = updatedAccounts.map((acc) => {
             if (acc.id === deletedTx.accountId) {
