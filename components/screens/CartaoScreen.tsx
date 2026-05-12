@@ -83,6 +83,7 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
   }, [selectedCardId]);
 
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [isPaymentTypeModalOpen, setIsPaymentTypeModalOpen] = useState(false);
   const [sourceAccountId, setSourceAccountId] = useState<string>('');
 
   const [isAnticipateModalOpen, setIsAnticipateModalOpen] = useState(false);
@@ -228,12 +229,75 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
   const debitAccounts = useMemo(() => accounts.filter((a: Account) => a.type !== 'cartao_credito'), [accounts]);
 
   const handlePayInvoice = () => {
-    if (debitAccounts.length === 0) {
-      Alert.alert('Aviso', 'Não tem nenhuma conta corrente cadastrada para pagar esta fatura.');
-      return;
+    if (Platform.OS === 'web') {
+      setIsPaymentTypeModalOpen(true);
+    } else {
+      Alert.alert(
+        'Pagar Fatura',
+        'Como deseja registrar este pagamento?',
+        [
+          {
+            text: 'Pagar e abater do saldo',
+            onPress: () => {
+              if (debitAccounts.length === 0) {
+                Alert.alert('Aviso', 'Não tem nenhuma conta corrente cadastrada para pagar esta fatura.');
+                return;
+              }
+              setSourceAccountId(debitAccounts[0].id);
+              setIsPaymentModalOpen(true);
+            },
+          },
+          {
+            text: 'Apenas marcar como paga',
+            onPress: async () => {
+              if (!selectedCard || selectedCard.id === 'all') return;
+              try {
+                await payCreditCardInvoice(selectedCard.id, null, targetMonth, targetYear, false);
+                Alert.alert('Sucesso', 'Fatura marcada como paga!');
+              } catch (e) {
+                Alert.alert('Erro', 'Não foi possível processar o pagamento.');
+              }
+            },
+          },
+          {
+            text: 'Cancelar',
+            style: 'cancel',
+          },
+        ]
+      );
     }
-    setSourceAccountId(debitAccounts[0].id);
-    setIsPaymentModalOpen(true);
+  };
+
+  const handleSelectPaymentType = (type: 'full' | 'markOnly') => {
+    setIsPaymentTypeModalOpen(false);
+    if (type === 'full') {
+      if (debitAccounts.length === 0) {
+        Alert.alert('Aviso', 'Não tem nenhuma conta corrente cadastrada para pagar esta fatura.');
+        return;
+      }
+      setSourceAccountId(debitAccounts[0].id);
+      setIsPaymentModalOpen(true);
+    } else {
+      confirmMarkAsPaidOnly();
+    }
+  };
+
+  const confirmMarkAsPaidOnly = async () => {
+    if (!selectedCard || selectedCard.id === 'all') return;
+    try {
+      await payCreditCardInvoice(selectedCard.id, null, targetMonth, targetYear, false);
+      if (Platform.OS === 'web') {
+        alert('Fatura marcada como paga!');
+      } else {
+        Alert.alert('Sucesso', 'Fatura marcada como paga!');
+      }
+    } catch (e) {
+      if (Platform.OS === 'web') {
+        alert('Não foi possível processar o pagamento.');
+      } else {
+        Alert.alert('Erro', 'Não foi possível processar o pagamento.');
+      }
+    }
   };
 
   const confirmPayment = async () => {
@@ -483,6 +547,50 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
         </ScrollView>
       )}
 
+      {/* MODAL DE SELEÇÃO DE TIPO DE PAGAMENTO (Para Web e suporte Mobile) */}
+      <Modal visible={isPaymentTypeModalOpen} transparent animationType='slide'>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[styles.modalTitle, { color: colors.foreground }]}>Pagar Fatura</Text>
+            <Text style={[styles.modalSubtitle, { color: colors.mutedForeground }]}>
+              Como deseja registrar este pagamento?
+            </Text>
+
+            <View style={{ gap: 12, marginBottom: 24 }}>
+              <TouchableOpacity
+                style={[styles.paymentTypeOption, { borderColor: colors.border }]}
+                onPress={() => handleSelectPaymentType('full')}
+              >
+                <View style={[styles.typeIconContainer, { backgroundColor: colors.primary + '20' }]}>
+                  <Ionicons name="wallet-outline" size={24} color={colors.primary} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.typeOptionTitle, { color: colors.foreground }]}>Pagar e abater do saldo</Text>
+                  <Text style={[styles.typeOptionDesc, { color: colors.mutedForeground }]}>Altera o status para paga e cria um lançamento de despesa.</Text>
+                </View>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.paymentTypeOption, { borderColor: colors.border }]}
+                onPress={() => handleSelectPaymentType('markOnly')}
+              >
+                <View style={[styles.typeIconContainer, { backgroundColor: colors.success + '20' }]}>
+                  <Ionicons name="checkmark-done-outline" size={24} color={colors.success} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.typeOptionTitle, { color: colors.foreground }]}>Apenas marcar como paga</Text>
+                  <Text style={[styles.typeOptionDesc, { color: colors.mutedForeground }]}>Altera o status estritamente para fins visuais.</Text>
+                </View>
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity style={[styles.cancelBtn, { width: '100%' }]} onPress={() => setIsPaymentTypeModalOpen(false)}>
+              <Text style={[styles.cancelBtnText, { color: colors.mutedForeground }]}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       {/* MODALS DE PAGAMENTO, ANTECIPAÇÃO E OPÇÕES (Mantidos inalterados) */}
       <Modal visible={isPaymentModalOpen} transparent animationType='slide'>
         <View style={styles.modalOverlay}>
@@ -662,4 +770,8 @@ const styles = StyleSheet.create({
   optionBtn: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, gap: 12 },
   optionText: { fontSize: 16, fontWeight: '500' },
   divider: { height: StyleSheet.hairlineWidth, marginVertical: 4 },
+  paymentTypeOption: { flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 16, borderWidth: 1, gap: 16 },
+  typeIconContainer: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
+  typeOptionTitle: { fontSize: 16, fontWeight: '700', marginBottom: 2 },
+  typeOptionDesc: { fontSize: 12, lineHeight: 16 },
 });

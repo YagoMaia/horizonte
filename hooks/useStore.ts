@@ -713,9 +713,10 @@ export function useStore() {
   const payCreditCardInvoice = useCallback(
     async (
       creditCardId: string,
-      sourceAccountId: string,
+      sourceAccountId: string | null,
       targetMonth: number,
       targetYear: number,
+      gerarLancamento = true,
     ) => {
       const cardAccount = accounts.find((a) => a.id === creditCardId);
       if (!cardAccount || cardAccount.type !== 'cartao_credito') return;
@@ -761,26 +762,31 @@ export function useStore() {
         return tx;
       });
 
-      const paymentTx: Transaction = {
-        id: Date.now().toString(),
-        description: `Pagamento Fatura - ${cardAccount.name}`,
-        amount: invoiceTotal,
-        type: 'despesa',
-        date: new Date().toISOString(),
-        accountId: sourceAccountId,
-        paymentMethod: 'debito',
-        paid: true,
-        recurrence: 'unica',
-      };
+      let finalTransactions = updatedTransactions;
+      let updatedAccounts = [...accounts];
 
-      const finalTransactions = [paymentTx, ...updatedTransactions];
+      if (gerarLancamento && sourceAccountId) {
+        const paymentTx: Transaction = {
+          id: Date.now().toString(),
+          description: `Pagamento Fatura - ${cardAccount.name}`,
+          amount: invoiceTotal,
+          type: 'despesa',
+          date: new Date().toISOString(),
+          accountId: sourceAccountId,
+          paymentMethod: 'debito',
+          paid: true,
+          recurrence: 'unica',
+        };
 
-      const updatedAccounts = accounts.map((acc) => {
-        if (acc.id === sourceAccountId) {
-          return { ...acc, balance: acc.balance - invoiceTotal };
-        }
-        return acc;
-      });
+        finalTransactions = [paymentTx, ...updatedTransactions];
+
+        updatedAccounts = accounts.map((acc) => {
+          if (acc.id === sourceAccountId) {
+            return { ...acc, balance: acc.balance - invoiceTotal };
+          }
+          return acc;
+        });
+      }
 
       await saveTransactions(finalTransactions);
       await saveAccounts(updatedAccounts);
