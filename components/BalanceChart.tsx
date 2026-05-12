@@ -4,6 +4,7 @@ import { View, Text, StyleSheet, Dimensions } from 'react-native';
 import { LineChart } from 'react-native-chart-kit';
 import { useTheme } from '@/hooks/useTheme';
 import { Transaction } from '@/constants/types';
+import { startOfWeek, addDays } from 'date-fns';
 
 interface BalanceChartProps {
     transactions: Transaction[];
@@ -20,10 +21,10 @@ export function BalanceChart({ transactions, period, refDate }: BalanceChartProp
         const data: number[] = [];
 
         if (period === 'semana') {
-            // 👉 LÓGICA SEMANAL: Últimos 7 dias
-            for (let i = 6; i >= 0; i--) {
-                const d = new Date(refDate);
-                d.setDate(refDate.getDate() - i);
+            // 👉 LÓGICA SEMANAL: Semana fixa (Dom a Sáb)
+            const weekStart = startOfWeek(refDate);
+            for (let i = 0; i < 7; i++) {
+                const d = addDays(weekStart, i);
 
                 labels.push(`${d.getDate()}/${d.getMonth() + 1}`);
 

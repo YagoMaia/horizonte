@@ -541,12 +541,58 @@ export function MenuScreen({ }: MenuScreenProps) {
 
       {/* Modais de Tema e Cor */}
       <Modal visible={themeModalVisible} transparent animationType="fade" onRequestClose={() => setThemeModalVisible(false)}>
-        {/* ... existing code ... */}
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[styles.modalTitle, { color: colors.foreground }]}>Tema Escuro</Text>
+            {[
+              { id: 'system', label: 'Automático (Sistema)' },
+              { id: 'light', label: 'Desativado (Claro)' },
+              { id: 'dark', label: 'Ativado (Escuro)' }
+            ].map(option => (
+              <TouchableOpacity
+                key={option.id}
+                style={[styles.modalOption, themeMode === option.id && { backgroundColor: colors.primary + '15' }]}
+                onPress={() => {
+                  setThemeMode(option.id as any);
+                  setThemeModalVisible(false);
+                }}
+              >
+                <Text style={{ color: themeMode === option.id ? colors.primary : colors.foreground, fontSize: 16, fontWeight: themeMode === option.id ? '700' : '500' }}>
+                  {option.label}
+                </Text>
+                {themeMode === option.id && <Ionicons name="checkmark-circle" size={20} color={colors.primary} />}
+              </TouchableOpacity>
+            ))}
+            <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setThemeModalVisible(false)}>
+              <Text style={{ color: colors.primary, fontSize: 16, fontWeight: '600' }}>Fechar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       </Modal>
 
       <Modal visible={colorModalVisible} transparent animationType="fade" onRequestClose={() => setColorModalVisible(false)}>
-        {/* ... existing code ... */}
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[styles.modalTitle, { color: colors.foreground }]}>Cor Principal</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 16, marginBottom: 24 }}>
+              {PRIMARY_COLORS.map(color => (
+                <TouchableOpacity
+                  key={color.value}
+                  style={[styles.colorCircle, { backgroundColor: color.value }, primaryColor === color.value && { borderWidth: 3, borderColor: colors.foreground }]}
+                  onPress={() => {
+                    setPrimaryColor(color.value);
+                    setColorModalVisible(false);
+                  }}
+                />
+              ))}
+            </View>
+            <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setColorModalVisible(false)}>
+              <Text style={{ color: colors.primary, fontSize: 16, fontWeight: '600' }}>Fechar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       </Modal>
+
       <TagManagementModal 
         visible={tagModalVisible} 
         onClose={() => setTagModalVisible(false)} 

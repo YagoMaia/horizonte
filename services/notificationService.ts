@@ -59,10 +59,10 @@ export async function scheduleDailyReminder() {
       sound: true,
     },
     trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.DAILY,
       hour: 20,
       minute: 0,
-      repeats: true,
-    } as Notifications.DailyTriggerInput,
+    },
   });
 }
 
@@ -83,11 +83,12 @@ export async function scheduleMonthlyPaymentReminder(
       sound: true,
     },
     trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.CALENDAR,
       day: diaDoMes,
       hour: 9,
       minute: 0,
       repeats: true,
-    } as Notifications.CalendarTriggerInput,
+    },
   });
 
   return notificationId;

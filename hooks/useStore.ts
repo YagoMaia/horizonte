@@ -573,7 +573,7 @@ export function useStore() {
 
         const cleanDescription = updatedTx.description.replace(/\s\(\d+\/\d+\)$/, "");
 
-        txsToMutate.forEach((mutantOld) => {
+        for (const mutantOld of txsToMutate) {
           revertBalance(mutantOld);
           let newMutantDate = new Date(mutantOld.date);
 
@@ -599,6 +599,23 @@ export function useStore() {
           const oldSuffixMatch = mutantOld.description.match(/\s\(\d+\/\d+\)$/);
           const oldSuffix = oldSuffixMatch ? oldSuffixMatch[0] : '';
 
+          let notificationId = mutantOld.notificationId;
+
+          // 👉 Atualiza o lembrete se for a transação base da série
+          if ((mutantOld.groupIndex === 0 || mutantOld.groupIndex === undefined) && updatedTx.type === 'despesa' && updatedTx.recurrence === 'mensal') {
+            if (notificationId) {
+              await NotificationService.cancelReminder(notificationId);
+            }
+            notificationId = await NotificationService.scheduleMonthlyPaymentReminder(
+              updatedTx.description,
+              updatedTx.amount,
+              newMutantDate.getDate()
+            );
+          } else if (notificationId && updatedTx.type !== 'despesa') {
+            await NotificationService.cancelReminder(notificationId);
+            notificationId = undefined;
+          }
+
           const mutantNew: Transaction = {
             ...updatedTx, // Puxa todos os campos novos (amount, tag, notas, etc)
             id: mutantOld.id, // Preserva o ID antigo
@@ -607,6 +624,7 @@ export function useStore() {
             date: newMutantDate.toISOString(),
             description: `${cleanDescription}${oldSuffix}`,
             paid: mutantOld.paid, // Preserva o status de pagamento original (futuros pendentes)
+            notificationId,
           };
 
           applyBalance(mutantNew);
@@ -614,12 +632,29 @@ export function useStore() {
           finalTransactions = finalTransactions.map((t) =>
             t.id === mutantNew.id ? mutantNew : t,
           );
-        });
+        }
       } else {
         revertBalance(oldTx);
         applyBalance(updatedTx);
 
-        const detachedTx = { ...updatedTx, groupId: undefined };
+        let notificationId = oldTx.notificationId;
+
+        if (updatedTx.type === 'despesa' && updatedTx.recurrence === 'mensal') {
+          if (notificationId) {
+            await NotificationService.cancelReminder(notificationId);
+          }
+          const date = new Date(updatedTx.date);
+          notificationId = await NotificationService.scheduleMonthlyPaymentReminder(
+            updatedTx.description,
+            updatedTx.amount,
+            date.getDate()
+          );
+        } else if (notificationId && updatedTx.type !== 'despesa') {
+          await NotificationService.cancelReminder(notificationId);
+          notificationId = undefined;
+        }
+
+        const detachedTx = { ...updatedTx, groupId: undefined, notificationId };
         finalTransactions = finalTransactions.map((t) =>
           t.id === updatedTx.id ? detachedTx : t,
         );
@@ -838,6 +873,10 @@ export function useStore() {
       const txsToDelete = transactions.filter((t) => finalIdsToRemove.includes(t.id));
 
       txsToDelete.forEach((deletedTx) => {
+        if (deletedTx.notificationId) {
+          NotificationService.cancelReminder(deletedTx.notificationId);
+        }
+
         if (deletedTx.paid) {
           updatedAccounts = updatedAccounts.map((acc) => {
             if (acc.id === deletedTx.accountId) {

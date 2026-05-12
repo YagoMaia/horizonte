@@ -11,6 +11,7 @@ import { Ionicons } from '@expo/vector-icons'
 import { useTheme } from '@/hooks/useTheme'
 import { formatCurrency } from '@/lib/utils'
 import { useStoreContext } from '@/context/StoreContext'
+import { startOfWeek, endOfWeek, addWeeks, subWeeks } from 'date-fns'
 
 // 👉 IMPORTANDO O GRÁFICO AQUI
 import { CategoryDonutChart } from '../CategoryDonutChart'
@@ -31,16 +32,16 @@ export function TotaisScreen() {
   const [refDate, setRefDate] = useState(new Date())
 
   const handlePrev = () => {
-    const newDate = new Date(refDate)
-    if (period === 'semana') newDate.setDate(newDate.getDate() - 7)
+    let newDate = new Date(refDate)
+    if (period === 'semana') newDate = subWeeks(newDate, 1)
     else if (period === 'mes') newDate.setMonth(newDate.getMonth() - 1)
     else if (period === 'ano') newDate.setFullYear(newDate.getFullYear() - 1)
     setRefDate(newDate)
   }
 
   const handleNext = () => {
-    const newDate = new Date(refDate)
-    if (period === 'semana') newDate.setDate(newDate.getDate() + 7)
+    let newDate = new Date(refDate)
+    if (period === 'semana') newDate = addWeeks(newDate, 1)
     else if (period === 'mes') newDate.setMonth(newDate.getMonth() + 1)
     else if (period === 'ano') newDate.setFullYear(newDate.getFullYear() + 1)
     setRefDate(newDate)
@@ -50,9 +51,8 @@ export function TotaisScreen() {
     if (period === 'ano') return refDate.getFullYear().toString()
     if (period === 'mes') return `${MONTH_NAMES[refDate.getMonth()]} ${refDate.getFullYear()}`
 
-    const end = new Date(refDate)
-    const start = new Date(refDate)
-    start.setDate(start.getDate() - 6)
+    const start = startOfWeek(refDate)
+    const end = endOfWeek(refDate)
 
     const startStr = `${start.getDate()} ${MONTH_NAMES[start.getMonth()].substring(0, 3)}`
     const endStr = `${end.getDate()} ${MONTH_NAMES[end.getMonth()].substring(0, 3)}`
@@ -60,12 +60,15 @@ export function TotaisScreen() {
   }, [refDate, period])
 
   const filtered = useMemo(() => {
-    const end = new Date(refDate.getFullYear(), refDate.getMonth(), refDate.getDate(), 23, 59, 59, 999)
-    const start = new Date(end)
+    let start: Date;
+    let end: Date;
 
     if (period === 'semana') {
-      start.setDate(start.getDate() - 6)
-      start.setHours(0, 0, 0, 0)
+      start = startOfWeek(refDate);
+      end = endOfWeek(refDate);
+    } else {
+      end = new Date(refDate.getFullYear(), refDate.getMonth(), refDate.getDate(), 23, 59, 59, 999)
+      start = new Date(end)
     }
 
     return transactions.filter(tx => {
