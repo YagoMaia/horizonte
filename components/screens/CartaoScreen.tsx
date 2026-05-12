@@ -201,12 +201,21 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
     let status = 'ABERTA';
     let color = colors.primary;
 
-    if (tValue < openInvoiceValue && pInvoice <= 0 && tInvoice > 0) {
+    // Neutraliza completamente as horas para evitar falhas de timezone (ex: meia tarde)
+    const today = new Date();
+    const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    
+    const dueDay = selectedCard.dueDay || 5;
+    const dueDate = new Date(tYear, tMonth, dueDay);
+
+    if (tInvoice > 0 && pInvoice <= 0.01 && tValue <= openInvoiceValue) {
       status = 'PAGA'; color = colors.success;
     } else if (tValue > openInvoiceValue) {
       status = 'FUTURA'; color = colors.warning;
     } else if (tInvoice <= 0) {
       status = 'ZERADA'; color = colors.mutedForeground;
+    } else if (pInvoice > 0.01 && dueDate.getTime() < todayStart.getTime()) {
+      status = 'VENCIDA'; color = colors.destructive;
     }
 
     return {
@@ -415,7 +424,8 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
 
             <View style={styles.cardFooter}>
               <View style={styles.chip} />
-              <View style={styles.cardStatus}>
+              <View style={[styles.cardStatus, invoiceStatus === 'VENCIDA' && { backgroundColor: colors.destructive }]}>
+                {invoiceStatus === 'VENCIDA' && <Ionicons name="alert-circle" size={12} color="#FFF" style={{ marginRight: 4 }} />}
                 <Text style={styles.cardStatusText}>{invoiceStatus === 'ABERTA' ? 'FATURA EM ABERTO' : `FATURA ${invoiceStatus}`}</Text>
               </View>
             </View>
