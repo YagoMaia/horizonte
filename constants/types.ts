@@ -42,6 +42,7 @@ export interface Transaction {
   groupId?: string
   groupIndex?: number;
   isAdjustment?: boolean;
+  notificationId?: string;
 }
 
 export interface Tag {

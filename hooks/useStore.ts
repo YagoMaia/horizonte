@@ -2,13 +2,14 @@
 import { useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Transaction, Account, Tag, DEFAULT_TAGS } from '@/constants/types';
+import * as NotificationService from '@/services/notificationService';
 
 const STORAGE_KEYS = {
   TRANSACTIONS: '@horizonte:transactions',
   ACCOUNTS: '@horizonte:accounts',
   MONTHLY_BUDGETS: '@horizonte:monthly_budgets',
   SHOW_PENDING: '@horizonte:show_pending',
-  TAGS: '@horizonte:tags', // 👉 Nova chave
+  TAGS: '@horizonte:tags',
 };
 
 const DEFAULT_ACCOUNTS: Account[] = [];
@@ -23,7 +24,7 @@ export function useStore() {
   const [loading, setLoading] = useState(true);
 
   // --- MÉTODOS DE SALVAMENTO ---
-  
+
   const saveTransactions = useCallback(async (data: Transaction[]) => {
     await AsyncStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(data));
     setTransactions(data);
@@ -127,7 +128,7 @@ export function useStore() {
         const updated = [...currentAccounts];
         const [acc] = updated.splice(accIndex, 1);
         updated.unshift(acc);
-        
+
         AsyncStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(updated));
         return updated;
       });
@@ -144,20 +145,20 @@ export function useStore() {
 
   const autoProcessOverdueTransactions = useCallback(async (currentTransactions: Transaction[], currentAccounts: Account[]) => {
     const today = new Date();
-    today.setHours(23, 59, 59, 999); 
+    today.setHours(23, 59, 59, 999);
 
     let hasChanges = false;
     let updatedAccounts = [...currentAccounts];
     const updatedTransactions = currentTransactions.map(tx => {
       const txDate = new Date(tx.date);
       const isOverdue = txDate <= today;
-      
+
       const targetAccount = updatedAccounts.find(a => a.id === tx.accountId);
       const isCreditCard = targetAccount?.type === 'cartao_credito';
 
       if (!tx.paid && !isCreditCard && isOverdue) {
         hasChanges = true;
-        
+
         updatedAccounts = updatedAccounts.map(acc => {
           if (acc.id === tx.accountId) {
             const delta = tx.type === 'receita' ? tx.amount : -tx.amount;
@@ -321,42 +322,42 @@ export function useStore() {
         let baseM = baseDate.getMonth() + 1;
         let baseY = baseDate.getFullYear();
         if (isCreditCard) {
-            if (baseDate.getDate() >= closingDay) baseM += 1;
-            if (dueDay < closingDay) baseM += 1;
+          if (baseDate.getDate() >= closingDay) baseM += 1;
+          if (dueDay < closingDay) baseM += 1;
         }
 
         for (let i = 0; i < maxRecurrences; i++) {
           let currentDate = new Date(baseDate);
 
           if (isCreditCard && i > 0) {
-             let targetInvM = baseM + i;
-             let monthForDay1 = targetInvM - (dueDay < closingDay ? 1 : 0);
-             currentDate = new Date(baseY, monthForDay1 - 1, 1, 12, 0, 0);
+            let targetInvM = baseM + i;
+            let monthForDay1 = targetInvM - (dueDay < closingDay ? 1 : 0);
+            currentDate = new Date(baseY, monthForDay1 - 1, 1, 12, 0, 0);
           } else {
-              if (tx.recurrence === 'mensal') {
-                currentDate.setMonth(baseDate.getMonth() + i);
-              } else if (tx.recurrence === 'anual') {
-                currentDate.setFullYear(baseDate.getFullYear() + i);
-              } else if (tx.recurrence === 'semanal') {
-                currentDate.setDate(baseDate.getDate() + (i * 7));
-              } else if (tx.recurrence === 'diaria') {
-                currentDate.setDate(baseDate.getDate() + i);
-              } else if (tx.recurrence === 'quinto_dia_util') {
-                const targetMonth = baseDate.getMonth() + i;
-                const targetYear = baseDate.getFullYear();
-                
-                let businessDaysCount = 0;
-                let day = 1;
-                while (businessDaysCount < 5) {
-                  const d = new Date(targetYear, targetMonth, day);
-                  const dayOfWeek = d.getDay();
-                  if (dayOfWeek !== 0 && dayOfWeek !== 6) { 
-                    businessDaysCount++;
-                  }
-                  if (businessDaysCount < 5) day++;
+            if (tx.recurrence === 'mensal') {
+              currentDate.setMonth(baseDate.getMonth() + i);
+            } else if (tx.recurrence === 'anual') {
+              currentDate.setFullYear(baseDate.getFullYear() + i);
+            } else if (tx.recurrence === 'semanal') {
+              currentDate.setDate(baseDate.getDate() + (i * 7));
+            } else if (tx.recurrence === 'diaria') {
+              currentDate.setDate(baseDate.getDate() + i);
+            } else if (tx.recurrence === 'quinto_dia_util') {
+              const targetMonth = baseDate.getMonth() + i;
+              const targetYear = baseDate.getFullYear();
+
+              let businessDaysCount = 0;
+              let day = 1;
+              while (businessDaysCount < 5) {
+                const d = new Date(targetYear, targetMonth, day);
+                const dayOfWeek = d.getDay();
+                if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+                  businessDaysCount++;
                 }
-                currentDate = new Date(targetYear, targetMonth, day, 12, 0, 0);
+                if (businessDaysCount < 5) day++;
               }
+              currentDate = new Date(targetYear, targetMonth, day, 12, 0, 0);
+            }
           }
 
           const isPaid = isCreditCard ? false : (i === 0 ? tx.paid : false);
@@ -383,10 +384,23 @@ export function useStore() {
         }
       }
       else {
+        let notificationId: string | undefined;
+
+        // Lembrete de Pagamento Mensal
+        if (tx.type === 'despesa' && tx.recurrence === 'mensal') {
+          const date = new Date(tx.date);
+          notificationId = await NotificationService.scheduleMonthlyPaymentReminder(
+            tx.description,
+            tx.amount,
+            date.getDate()
+          );
+        }
+
         const newTx: Transaction = {
           ...tx,
           id: Date.now().toString(),
           paymentMethod: finalizedTxMethod,
+          notificationId, // 👉 Salvando o ID da notificação
         };
         newTransactions.push(newTx);
 
@@ -445,6 +459,11 @@ export function useStore() {
       );
 
       txsToDelete.forEach((deletedTx) => {
+        // 👉 Cancela o lembrete se existir um notificationId
+        if (deletedTx.notificationId) {
+          NotificationService.cancelReminder(deletedTx.notificationId);
+        }
+
         if (deletedTx.paid) {
           updatedAccounts = updatedAccounts.map((acc) => {
             if (acc.id === deletedTx.accountId) {
@@ -470,6 +489,7 @@ export function useStore() {
     },
     [transactions, accounts, saveTransactions, saveAccounts],
   );
+
 
   const updateTransaction = useCallback(
     async (
@@ -531,7 +551,7 @@ export function useStore() {
 
         const oldDate = new Date(oldTx.date);
         const newDateBase = new Date(updatedTx.date);
-        
+
         // Determina a data base real (do index 0) para não deslocar todas as faturas se editar um index > 0
         const originalBaseTx = familyTxs.find(t => t.groupIndex === 0) || familyTxs[0];
         const effectiveBaseDate = oldTx.groupIndex === 0 ? newDateBase : new Date(originalBaseTx.date);
@@ -739,13 +759,13 @@ export function useStore() {
         date: new Date().toISOString(),
         accountId: sourceAccountId,
         paymentMethod: 'debito',
-        paid: true, 
+        paid: true,
         recurrence: 'unica',
       };
 
       const closingDay = cardAccount.closingDay || 25;
       const dueDay = cardAccount.dueDay || 5;
-      
+
       const monthOffset = (dueDay < closingDay ? 1 : 0);
       const creditTxDate = new Date(targetYear, targetMonth - monthOffset, 1, 12, 0, 0);
 
@@ -754,10 +774,10 @@ export function useStore() {
         description: `Pagamento Antecipado`,
         amount: amount,
         type: 'receita',
-        date: creditTxDate.toISOString(), 
+        date: creditTxDate.toISOString(),
         accountId: creditCardId,
         paymentMethod: 'credito',
-        paid: false, 
+        paid: false,
         recurrence: 'unica',
       };
 
