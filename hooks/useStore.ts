@@ -10,7 +10,8 @@ const STORAGE_KEYS = {
   ACCOUNTS: '@horizonte:accounts',
   MONTHLY_BUDGETS: '@horizonte:monthly_budgets',
   SHOW_PENDING: '@horizonte:show_pending',
-  TAGS: '@horizonte:tags', // 👉 Nova chave
+  TAGS: '@horizonte:tags',
+  ONBOARDING: '@horizonte:onboarding',
 };
 
 const DEFAULT_ACCOUNTS: Account[] = [];
@@ -19,12 +20,18 @@ const DEFAULT_TRANSACTIONS: Transaction[] = [];
 export function useStore() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
-  const [tags, setTags] = useState<Tag[]>(DEFAULT_TAGS); // 👉 Estado inicial com as tags padrão
+  const [tags, setTags] = useState<Tag[]>(DEFAULT_TAGS); 
   const [monthlyBudgets, setMonthlyBudgets] = useState<Record<string, number>>({});
   const [showPending, setShowPendingState] = useState<boolean>(true);
+  const [hasSeenOnboarding, setHasSeenOnboarding] = useState<boolean>(false);
   const [loading, setLoading] = useState(true);
 
   // --- MÉTODOS DE SALVAMENTO ---
+
+  const completeOnboarding = useCallback(async () => {
+    await AsyncStorage.setItem(STORAGE_KEYS.ONBOARDING, JSON.stringify(true));
+    setHasSeenOnboarding(true);
+  }, []);
   
   const saveTransactions = useCallback(async (data: Transaction[]) => {
     await AsyncStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(data));
@@ -38,7 +45,18 @@ export function useStore() {
 
   const addAccount = useCallback(
     async (acc: Account) => {
-      const updatedAccounts = [...accounts, acc];
+      let notificationId: string | undefined;
+
+      // Agenda lembrete se for cartão de crédito
+      if (acc.type === "cartao_credito" && acc.dueDay) {
+        notificationId = await NotificationService.scheduleCreditCardReminder(
+          acc.name,
+          acc.dueDay
+        );
+      }
+
+      const accountWithNotification = { ...acc, notificationId };
+      const updatedAccounts = [...accounts, accountWithNotification];
       await saveAccounts(updatedAccounts);
 
       if (acc.type !== "cartao_credito" && acc.balance !== 0) {
@@ -69,19 +87,39 @@ export function useStore() {
       const oldAcc = accounts.find((a) => a.id === updatedAcc.id);
       if (!oldAcc) return;
 
+      let notificationId = oldAcc.notificationId;
+
+      // Reagenda lembrete se dia de vencimento ou nome mudou
+      if (
+        updatedAcc.type === "cartao_credito" && 
+        (updatedAcc.dueDay !== oldAcc.dueDay || updatedAcc.name !== oldAcc.name)
+      ) {
+        if (notificationId) {
+          await NotificationService.cancelReminder(notificationId);
+        }
+        if (updatedAcc.dueDay) {
+          notificationId = await NotificationService.scheduleCreditCardReminder(
+            updatedAcc.name,
+            updatedAcc.dueDay
+          );
+        }
+      }
+
+      const finalAcc = { ...updatedAcc, notificationId };
+
       if (
         !skipAdjustment &&
-        updatedAcc.type !== "cartao_credito" &&
-        updatedAcc.balance !== oldAcc.balance
+        finalAcc.type !== "cartao_credito" &&
+        finalAcc.balance !== oldAcc.balance
       ) {
-        const diff = updatedAcc.balance - oldAcc.balance;
+        const diff = finalAcc.balance - oldAcc.balance;
         const adjustmentTx: Transaction = {
           id: `adj-${Date.now()}`,
           description: "Ajuste de Saldo",
           amount: Math.abs(diff),
           type: diff > 0 ? "receita" : "despesa",
           date: new Date().toISOString(),
-          accountId: updatedAcc.id,
+          accountId: finalAcc.id,
           paid: true,
           recurrence: "unica",
           isAdjustment: true,
@@ -90,7 +128,7 @@ export function useStore() {
       }
 
       const updatedAccounts = accounts.map((a) =>
-        a.id === updatedAcc.id ? updatedAcc : a,
+        a.id === finalAcc.id ? finalAcc : a,
       );
       await saveAccounts(updatedAccounts);
     },
@@ -99,6 +137,13 @@ export function useStore() {
 
   const deleteAccount = useCallback(
     async (id: string) => {
+      const targetAcc = accounts.find(a => a.id === id);
+      
+      // Cancela lembrete se existir
+      if (targetAcc?.notificationId) {
+        NotificationService.cancelReminder(targetAcc.notificationId);
+      }
+
       // 1. Atualiza as contas
       setAccounts((currentAccounts) => {
         const updated = currentAccounts.filter((a) => a.id !== id);
@@ -117,7 +162,7 @@ export function useStore() {
         return updatedTxs;
       });
     },
-    [],
+    [accounts],
   );
 
   const setPrimaryAccount = useCallback(
@@ -184,13 +229,14 @@ export function useStore() {
 
   const loadData = useCallback(async () => {
     try {
-      const [txRaw, accRaw, budgetsRaw, showPendingRaw, tagsRaw] =
+      const [txRaw, accRaw, budgetsRaw, showPendingRaw, tagsRaw, onboardingRaw] =
         await Promise.all([
           AsyncStorage.getItem(STORAGE_KEYS.TRANSACTIONS),
           AsyncStorage.getItem(STORAGE_KEYS.ACCOUNTS),
           AsyncStorage.getItem(STORAGE_KEYS.MONTHLY_BUDGETS),
           AsyncStorage.getItem(STORAGE_KEYS.SHOW_PENDING),
           AsyncStorage.getItem(STORAGE_KEYS.TAGS),
+          AsyncStorage.getItem(STORAGE_KEYS.ONBOARDING),
         ]);
 
       const loadedTransactions = txRaw ? JSON.parse(txRaw) : DEFAULT_TRANSACTIONS;
@@ -201,6 +247,7 @@ export function useStore() {
       setAccounts(loadedAccounts);
       setTags(loadedTags);
       setMonthlyBudgets(budgetsRaw ? JSON.parse(budgetsRaw) : {});
+      setHasSeenOnboarding(onboardingRaw ? JSON.parse(onboardingRaw) : false);
 
       if (showPendingRaw !== null) {
         setShowPendingState(JSON.parse(showPendingRaw));
@@ -235,12 +282,14 @@ export function useStore() {
       STORAGE_KEYS.MONTHLY_BUDGETS,
       STORAGE_KEYS.SHOW_PENDING,
       STORAGE_KEYS.TAGS,
+      STORAGE_KEYS.ONBOARDING,
     ]);
     setTransactions(DEFAULT_TRANSACTIONS);
     setAccounts(DEFAULT_ACCOUNTS);
     setTags(DEFAULT_TAGS);
     setMonthlyBudgets({});
     setShowPendingState(true);
+    setHasSeenOnboarding(false);
   }, []);
 
   const addTag = useCallback(async (tag: Omit<Tag, 'id'>) => {
@@ -953,6 +1002,8 @@ export function useStore() {
     saveMonthlyBudget,
     showPending,
     setShowPending,
+    hasSeenOnboarding,
+    completeOnboarding,
     loading,
     totalBalance,
     monthlyIncome,

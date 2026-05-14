@@ -20,13 +20,14 @@ import { HorizonteScreen } from '@/components/screens/HorizonteScreen'
 import { ContasScreen } from '@/components/screens/ContasScreen'
 import { MenuScreen } from '@/components/screens/MenuScreen'
 import { CartaoScreen } from '@/components/screens/CartaoScreen'
+import { Redirect } from 'expo-router'
 
 export default function HomePage() {
   const { colors } = useTheme()
   const store = useStoreContext()
   const [activeTab, setActiveTab] = useState<TabType>('saldos')
   const [modalVisible, setModalVisible] = useState(false)
-  
+
   // 👉 Estado para armazenar valores padrão dinâmicos para o modal
   const [defaultValues, setDefaultValues] = useState<{
     accountId?: string;
@@ -45,6 +46,11 @@ export default function HomePage() {
       }
     }
   }, [defaultValues.accountId, defaultValues.type]);
+
+  // 👉 Redireciona para onboarding se não foi visto
+  if (!store.loading && !store.hasSeenOnboarding) {
+    return <Redirect href="/onboarding" />
+  }
 
   if (store.loading) {
     return (

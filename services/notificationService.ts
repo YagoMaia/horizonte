@@ -95,6 +95,33 @@ export async function scheduleMonthlyPaymentReminder(
 }
 
 /**
+ * Agenda um lembrete de pagamento de fatura de cartão
+ */
+export async function scheduleCreditCardReminder(
+  cardName: string,
+  dueDay: number
+) {
+  if (Platform.OS === 'web') return undefined;
+
+  const notificationId = await Notifications.scheduleNotificationAsync({
+    content: {
+      title: `Fatura do Cartão: ${cardName}`,
+      body: `Sua fatura vence hoje. Não esqueça de conferir os lançamentos e realizar o pagamento!`,
+      sound: true,
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.CALENDAR,
+      day: dueDay,
+      hour: 8,
+      minute: 0,
+      repeats: true,
+    },
+  });
+
+  return notificationId;
+}
+
+/**
  * Cancela um lembrete agendado
  */
 export async function cancelReminder(notificationId: string) {

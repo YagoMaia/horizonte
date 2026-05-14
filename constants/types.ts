@@ -16,6 +16,7 @@ export interface Account {
   // Optional specific properties for credit cards
   closingDay?: number;
   dueDay?: number;
+  notificationId?: string;
 }
 
 export interface Transaction {
