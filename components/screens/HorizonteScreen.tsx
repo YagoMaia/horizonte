@@ -162,7 +162,7 @@ export function HorizonteScreen() {
     .reduce((s, a) => s + a.balance, 0);
 
   // 👉 O MOTOR CONTÍNUO MULTI-MÊS
-  const projectionsByMonth = useMemo(() => {
+  const { resultsMap, firstNegativeDate } = useMemo(() => {
     const isPast =
       year < today.getFullYear() ||
       (year === today.getFullYear() && month < today.getMonth());
@@ -196,17 +196,24 @@ export function HorizonteScreen() {
 
     let runningBalance = openingBalance;
     const resultsMap: Record<string, any[]> = {};
+    let firstNegDate: string | null = null;
 
     let simYear = startYear;
     let simMonth = startMonth;
 
-    // Alvo final: O mês que o utilizador escolheu + 2 meses para a frente (para encher a grelha)
-    let endYear = year;
-    let endMonth = month + 2;
-    if (endMonth > 11) {
-      endMonth -= 12;
-      endYear++;
+    // Alvo final: 1 ano para frente para detecção global de saldo crítico
+    const horizonEnd = new Date(today.getFullYear() + 1, today.getMonth(), today.getDate());
+    
+    // Alvo visual: O mês que o utilizador escolheu + 2 meses para a frente (para encher a grelha)
+    let visualEndYear = year;
+    let visualEndMonth = month + 2;
+    if (visualEndMonth > 11) {
+      visualEndMonth -= 12;
+      visualEndYear++;
     }
+
+    const visualEndDate = new Date(visualEndYear, visualEndMonth, 31);
+    const calculationEndDate = visualEndDate > horizonEnd ? visualEndDate : horizonEnd;
 
     // 👉 PRÉ-CÁLCULO DE FATURAS DE CARTÃO DE CRÉDITO (NÃO PAGAS)
     const virtualInvoiceTxs: Record<string, any[]> = {};
@@ -255,11 +262,11 @@ export function HorizonteScreen() {
     });
 
     // 2. Roda a fita do tempo
-    while (simYear < endYear || (simYear === endYear && simMonth <= endMonth)) {
+    while (new Date(simYear, simMonth, 1) <= calculationEndDate) {
       const simDaysCount = getDaysInMonth(simYear, simMonth);
       const simBudget = getEffectiveBudget(simYear, simMonth);
       const monthKey = `${simYear}-${simMonth}`;
-      resultsMap[monthKey] = [];
+      const monthDays = [];
 
       const monthTxs = transactions.filter((tx) => {
         const d = new Date(tx.date);
@@ -281,8 +288,6 @@ export function HorizonteScreen() {
         const vTxs = virtualInvoiceTxs[`${simYear}-${simMonth}-${d}`] || [];
         const dayTxs = [...dbTxs, ...vTxs];
         
-        // Filtramos transações que afetam o CAIXA (contas ativas)
-        // ⚠️ IMPORTANTE: Compras no CRÉDITO não afetam o caixa no dia da compra!
         const effectiveDayTxs = dayTxs.filter(tx => tx.paymentMethod !== 'credito');
 
         const income = effectiveDayTxs
@@ -331,20 +336,18 @@ export function HorizonteScreen() {
           }
         }
 
-        // Atualiza o saldo corrido:
-        // No passado, usamos o que já aconteceu (income/expense de transações pagas)
-        // No futuro, usamos o que está previsto (transações não pagas + dailyPlan)
-        
         const dayNet = income - expense;
         if (isDayPast) {
-          // Se for passado, as transações efetivas já estão no activeBalance (openingBalance ajustado)
           runningBalance += dayNet;
         } else {
-          // Se for hoje ou futuro, subtraímos a meta diária planejada
           runningBalance += dayNet - dailyPlan;
         }
 
-        resultsMap[monthKey].push({
+        if (runningBalance < 0 && !firstNegDate && !isDayPast) {
+          firstNegDate = dayDate.toISOString();
+        }
+
+        monthDays.push({
           day: d,
           weekDay: getWeekDay(simYear, simMonth, d),
           income,
@@ -354,10 +357,11 @@ export function HorizonteScreen() {
           isPast: isDayPast,
           isToday: isDayToday,
           fullDate: dayDate.toISOString(),
-          transactions: dayTxs, // Mantemos todas para exibição no modal
+          transactions: dayTxs,
         });
       }
 
+      resultsMap[monthKey] = monthDays;
       simMonth++;
       if (simMonth > 11) {
         simMonth = 0;
@@ -365,12 +369,12 @@ export function HorizonteScreen() {
       }
     }
 
-    return resultsMap;
+    return { resultsMap, firstNegativeDate: firstNegDate };
   }, [transactions, activeBalance, activeAccountIds, year, month, getEffectiveBudget, today]);
 
   // Extrai o mês focado para o Modo Lista e Resumo
   const focusedMonthKey = `${year}-${month}`;
-  const days = projectionsByMonth[focusedMonthKey] || [];
+  const days = resultsMap[focusedMonthKey] || [];
 
   const totalIncome = days.reduce((s, d) => s + d.income, 0);
   const totalExpense = days.reduce((s, d) => s + d.expense, 0);
@@ -476,6 +480,16 @@ export function HorizonteScreen() {
       style={{ flex: 1, backgroundColor: colors.background }}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
+      {/* BANNER DE ALERTA CRÍTICO */}
+      {firstNegativeDate && (
+        <View style={[styles.alertBanner, { backgroundColor: colors.destructive }]}>
+          <Ionicons name="warning" size={20} color="#FFF" />
+          <Text style={styles.alertText}>
+            Saldo crítico detectado em {formatDateShort(firstNegativeDate)}
+          </Text>
+        </View>
+      )}
+
       {/* HEADER E NAVEGAÇÃO DE MESES */}
       <View
         style={[
@@ -1136,6 +1150,20 @@ const styles = StyleSheet.create({
   monthTitle: { fontSize: 18, fontWeight: "700" },
   navBtn: { padding: 8 },
   configBtn: { padding: 8, borderRadius: 12 },
+
+  alertBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    gap: 8,
+  },
+  alertText: {
+    color: "#FFF",
+    fontSize: 13,
+    fontWeight: "700",
+  },
 
   budgetCard: {
     paddingHorizontal: 16,

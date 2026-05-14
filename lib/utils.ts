@@ -26,6 +26,15 @@ export function getDaysInMonth(year: number, month: number): number {
   return new Date(year, month + 1, 0).getDate();
 }
 
+export interface DailyBalance {
+  date: string;
+  balance: number;
+  income: number;
+  expense: number;
+  transactions: Transaction[];
+  isNegative?: boolean;
+}
+
 export function generateDailyProjection(
   transactions: Transaction[],
   accounts: Account[],
@@ -39,7 +48,8 @@ export function generateDailyProjection(
     .filter(a => a.type !== 'cartao_credito')
     .reduce((sum, a) => sum + a.balance, 0);
 
-  const days = [];
+  const days: DailyBalance[] = [];
+  let firstNegativeDate: string | null = null;
 
   for (let i = 0; i < daysAhead; i++) {
     const date = new Date(today);
@@ -60,10 +70,11 @@ export function generateDailyProjection(
       .filter((t) => t.type === 'despesa')
       .reduce((s, t) => s + t.amount, 0);
 
-    // Ajuste de transferências (se sair de conta corrente para algo fora do radar ou vice-versa)
-    // Simplificação: aqui assumimos que se está no array de transactions futuras, ela deve ser processada
-    
     runningBalance += (income - expense);
+
+    if (runningBalance < 0 && !firstNegativeDate) {
+      firstNegativeDate = dateStr;
+    }
 
     days.push({
       date: dateStr,
@@ -71,10 +82,11 @@ export function generateDailyProjection(
       income,
       expense,
       transactions: dayTxs,
+      isNegative: runningBalance < 0,
     });
   }
 
-  return days;
+  return { days, firstNegativeDate };
 }
 
 // 👉 NOVA FUNÇÃO: Determina mês/ano da fatura de um lançamento específico baseado nas regras do cartão
