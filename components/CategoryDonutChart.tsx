@@ -9,9 +9,10 @@ import { useStoreContext } from '@/context/StoreContext';
 interface CategoryDonutChartProps {
   transactions: Transaction[];
   title?: string;
+  headerComponent?: React.ReactNode;
 }
 
-export function CategoryDonutChart({ transactions, title = 'Divisão por Categoria' }: CategoryDonutChartProps) {
+export function CategoryDonutChart({ transactions, title = 'Divisão por Categoria', headerComponent }: CategoryDonutChartProps) {
   const { colors } = useTheme();
   const { tags } = useStoreContext();
 
@@ -41,8 +42,6 @@ export function CategoryDonutChart({ transactions, title = 'Divisão por Categor
     return { total, tags: sorted };
   }, [transactions, tags]);
 
-  if (data.total === 0) return null;
-
   const size = 200;
   const strokeWidth = 18;
   const radius = (size - strokeWidth) / 2;
@@ -56,73 +55,83 @@ export function CategoryDonutChart({ transactions, title = 'Divisão por Categor
   return (
     <View style={[styles.container, { backgroundColor: colors.card, borderColor: colors.border }]}>
       <Text style={[styles.title, { color: colors.foreground }]}>{title}</Text>
+      
+      {headerComponent}
 
-      <View style={styles.chartContainer}>
-        <View style={{ width: size, height: size }}>
-          <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-            <G origin={`${cx}, ${cy}`} rotation="-90">
-              {/* Fundo da rosca opcional para dar um efeito de pista */}
-              <Circle
-                cx={cx}
-                cy={cy}
-                r={radius}
-                stroke={colors.border}
-                strokeWidth={strokeWidth}
-                fill="transparent"
-                opacity={0.3}
-              />
-              
-              {data.tags.map((tag) => {
-                const arc = (tag.percent / 100) * circumference;
-                const drawnStroke = Math.max(0, arc - gap);
-
-                const circle = (
+      {data.total === 0 ? (
+        <View style={styles.emptyContainer}>
+          <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>Nenhum gasto registrado</Text>
+        </View>
+      ) : (
+        <>
+          <View style={styles.chartContainer}>
+            <View style={{ width: size, height: size }}>
+              <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+                <G origin={`${cx}, ${cy}`} rotation="-90">
+                  {/* Fundo da rosca opcional para dar um efeito de pista */}
                   <Circle
-                    key={tag.name}
                     cx={cx}
                     cy={cy}
                     r={radius}
-                    stroke={tag.color}
+                    stroke={colors.border}
                     strokeWidth={strokeWidth}
-                    strokeDasharray={`${drawnStroke} ${circumference - drawnStroke}`}
-                    strokeDashoffset={-accumulator}
-                    strokeLinecap="butt"
                     fill="transparent"
+                    opacity={0.3}
                   />
-                );
-                
-                accumulator += arc;
-                return circle;
-              })}
-            </G>
-          </Svg>
-          
-          <View style={styles.centerTextContainer}>
-            <Text style={[styles.centerLabel, { color: colors.mutedForeground }]}>Total</Text>
-            <Text style={[styles.centerValue, { color: colors.foreground }]}>
-              {formatCurrency(data.total)}
-            </Text>
-          </View>
-        </View>
-      </View>
+                  
+                  {data.tags.map((tag) => {
+                    const arc = (tag.percent / 100) * circumference;
+                    const drawnStroke = Math.max(0, arc - gap);
 
-      {/* Legenda */}
-      <View style={styles.legend}>
-        {data.tags.map((tag) => (
-          <View key={tag.name} style={styles.legendItem}>
-            <View style={styles.legendRow}>
-              <View style={[styles.dot, { backgroundColor: tag.color }]} />
-              <Text style={[styles.tagName, { color: colors.foreground }]}>{tag.name}</Text>
-              <Text style={[styles.tagPercent, { color: colors.mutedForeground }]}>
-                {tag.percent.toFixed(0)}%
-              </Text>
+                    const circle = (
+                      <Circle
+                        key={tag.name}
+                        cx={cx}
+                        cy={cy}
+                        r={radius}
+                        stroke={tag.color}
+                        strokeWidth={strokeWidth}
+                        strokeDasharray={`${drawnStroke} ${circumference - drawnStroke}`}
+                        strokeDashoffset={-accumulator}
+                        strokeLinecap="butt"
+                        fill="transparent"
+                      />
+                    );
+                    
+                    accumulator += arc;
+                    return circle;
+                  })}
+                </G>
+              </Svg>
+              
+              <View style={styles.centerTextContainer}>
+                <Text style={[styles.centerLabel, { color: colors.mutedForeground }]}>Total</Text>
+                <Text style={[styles.centerValue, { color: colors.foreground }]}>
+                  {formatCurrency(data.total)}
+                </Text>
+              </View>
             </View>
-            <Text style={[styles.tagValue, { color: colors.foreground }]}>
-              {formatCurrency(tag.value)}
-            </Text>
           </View>
-        ))}
-      </View>
+
+          {/* Legenda */}
+          <View style={styles.legend}>
+            {data.tags.map((tag) => (
+              <View key={tag.name} style={styles.legendItem}>
+                <View style={styles.legendRow}>
+                  <View style={[styles.dot, { backgroundColor: tag.color }]} />
+                  <Text style={[styles.tagName, { color: colors.foreground }]}>{tag.name}</Text>
+                  <Text style={[styles.tagPercent, { color: colors.mutedForeground }]}>
+                    {tag.percent.toFixed(0)}%
+                  </Text>
+                </View>
+                <Text style={[styles.tagValue, { color: colors.foreground }]}>
+                  {formatCurrency(tag.value)}
+                </Text>
+              </View>
+            ))}
+          </View>
+        </>
+      )}
     </View>
   );
 }
@@ -137,11 +146,21 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 16,
     fontWeight: '700',
-    marginBottom: 24,
+    marginBottom: 12,
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
+  },
+  emptyText: {
+    fontSize: 14,
+    fontWeight: '500',
   },
   chartContainer: {
     alignItems: 'center',
     justifyContent: 'center',
+    marginTop: 24,
     marginBottom: 32,
     position: 'relative',
   },

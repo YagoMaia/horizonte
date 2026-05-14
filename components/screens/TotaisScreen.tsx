@@ -17,6 +17,7 @@ import { startOfWeek, endOfWeek, addWeeks, subWeeks } from 'date-fns'
 import { CategoryDonutChart } from '../CategoryDonutChart'
 
 type Period = 'semana' | 'mes' | 'ano'
+type ChartFilter = 'debito' | 'credito' | 'total'
 
 const MONTH_NAMES = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -28,6 +29,7 @@ export function TotaisScreen() {
   const { transactions, showPending } = useStoreContext()
 
   const [period, setPeriod] = useState<Period>('mes')
+  const [selectedChart, setSelectedChart] = useState<ChartFilter>('total')
 
   const [refDate, setRefDate] = useState(new Date())
 
@@ -93,6 +95,12 @@ export function TotaisScreen() {
   const filteredCredito = useMemo(() => {
     return filtered.filter(tx => tx.paymentMethod === 'credito')
   }, [filtered])
+
+  const chartTransactions = useMemo(() => {
+    if (selectedChart === 'debito') return filteredDebito
+    if (selectedChart === 'credito') return filteredCredito
+    return filtered
+  }, [selectedChart, filtered, filteredDebito, filteredCredito])
 
   const stats = useMemo(() => {
     const income = filtered.filter(t => t.type === 'receita').reduce((s, t) => s + t.amount, 0)
@@ -240,14 +248,26 @@ export function TotaisScreen() {
         </View>
       </View>
 
-      {/* 👉 INSERINDO O GRÁFICO AQUI */}
-      {filteredDebito.filter(t => t.type === 'despesa').length > 0 && (
-        <CategoryDonutChart transactions={filteredDebito} title="Despesas (Débito/Dinheiro)" />
-      )}
-      
-      {filteredCredito.filter(t => t.type === 'despesa').length > 0 && (
-        <CategoryDonutChart transactions={filteredCredito} title="Despesas (Cartão de Crédito)" />
-      )}
+      {/* 👉 GRÁFICO CONSOLIDADO COM SELETOR */}
+      <CategoryDonutChart
+        transactions={chartTransactions}
+        title="Gastos por Categoria"
+        headerComponent={
+          <View style={[styles.chartSelector, { backgroundColor: colors.secondary }]}>
+            {(['debito', 'credito', 'total'] as ChartFilter[]).map(cf => (
+              <TouchableOpacity
+                key={cf}
+                style={[styles.chartSelectorBtn, selectedChart === cf && { backgroundColor: colors.card }]}
+                onPress={() => setSelectedChart(cf)}
+              >
+                <Text style={[styles.chartSelectorText, { color: selectedChart === cf ? colors.foreground : colors.mutedForeground }]}>
+                  {cf === 'debito' ? 'Débito' : cf === 'credito' ? 'Crédito' : 'Total'}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        }
+      />
     </ScrollView>
   )
 }
@@ -280,4 +300,8 @@ const styles = StyleSheet.create({
 
   chartCard: { padding: 20, borderRadius: 24, borderWidth: StyleSheet.hairlineWidth },
   stackedBarContainer: { flexDirection: 'row', height: 16, borderRadius: 8, overflow: 'hidden', marginBottom: 24 },
+
+  chartSelector: { flexDirection: 'row', borderRadius: 10, padding: 3, marginBottom: 12 },
+  chartSelectorBtn: { flex: 1, paddingVertical: 6, borderRadius: 8, alignItems: 'center' },
+  chartSelectorText: { fontSize: 12, fontWeight: '600' },
 })
