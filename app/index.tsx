@@ -66,7 +66,7 @@ export default function HomePage() {
             onSelectCard={handleSelectCard} 
           />
         )
-      case 'menu': return <MenuScreen />
+      case 'menu': return <MenuScreen onNavigateToAccounts={() => setActiveTab('contas')} />
       default: return <SaldosScreen />
     }
   }
@@ -82,25 +82,6 @@ export default function HomePage() {
         </View>
 
         <View style={styles.headerRight}>
-          {/* Contas shortcut */}
-          <TouchableOpacity
-            style={[
-              styles.headerBtn,
-              { backgroundColor: activeTab === 'contas' ? colors.primary + '20' : 'transparent' }
-            ]}
-            onPress={() => {
-              if (activeTab !== 'contas') setDefaultValues({});
-              setActiveTab(activeTab === 'contas' ? 'saldos' : 'contas');
-            }}
-            activeOpacity={0.7}
-          >
-            <Ionicons
-              name="wallet-outline"
-              size={20}
-              color={activeTab === 'contas' ? colors.primary : colors.mutedForeground}
-            />
-          </TouchableOpacity>
-
           {/* Horizonte shortcut */}
           <TouchableOpacity
             style={[

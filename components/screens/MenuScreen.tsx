@@ -60,9 +60,10 @@ function MenuItem({ icon, label, value, onPress, danger, colors }: MenuItemProps
 }
 
 interface MenuScreenProps {
+  onNavigateToAccounts: () => void
 }
 
-export function MenuScreen({ }: MenuScreenProps) {
+export function MenuScreen({ onNavigateToAccounts }: MenuScreenProps) {
   const { colors, themeMode, setThemeMode, primaryColor, setPrimaryColor } = useTheme()
   // Puxamos a função 'monthlyBudgets' caso você a tenha exportado no StoreContext
   const { 
@@ -381,12 +382,20 @@ export function MenuScreen({ }: MenuScreenProps) {
       <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>CONFIGURAÇÕES</Text>
       <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <MenuItem 
-          icon="moon-outline" 
-          label="Tema escuro" 
-          value={themeModeLabel} 
-          onPress={() => setThemeModalVisible(true)}
+          icon="wallet-outline" 
+          label="Gerenciar Contas" 
+          onPress={onNavigateToAccounts}
           colors={colors} 
         />
+        <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
+          <MenuItem 
+            icon="moon-outline" 
+            label="Tema escuro" 
+            value={themeModeLabel} 
+            onPress={() => setThemeModalVisible(true)}
+            colors={colors} 
+          />
+        </View>
         <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
           <MenuItem 
             icon="pricetags-outline" 
