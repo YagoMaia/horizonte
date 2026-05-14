@@ -443,12 +443,6 @@ export function MenuScreen({ }: MenuScreenProps) {
             colors={colors} 
           />
         </View>
-        <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
-          <MenuItem icon="language-outline" label="Idioma" value="Português (BR)" colors={colors} />
-        </View>
-        <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
-          <MenuItem icon="cash-outline" label="Moeda" value="BRL (R$)" colors={colors} />
-        </View>
       </View>
 
       {/* Dados e Backup (NOVA SESSÃO) */}
@@ -473,20 +467,6 @@ export function MenuScreen({ }: MenuScreenProps) {
             icon="document-text-outline"
             label="Exportar para Excel (CSV)"
             onPress={handleExportCSV}
-            colors={colors}
-          />
-        </View>
-      </View>
-
-      {/* About */}
-      <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>SOBRE</Text>
-      <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <MenuItem icon="information-circle-outline" label="Versão" value="1.1.0" colors={colors} />
-        <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
-          <MenuItem
-            icon="star-outline"
-            label="Avaliar o app"
-            onPress={() => Alert.alert('Obrigado!', 'Sua avaliação é muito importante para nós 🧡')}
             colors={colors}
           />
         </View>

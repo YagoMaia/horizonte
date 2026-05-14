@@ -19,14 +19,16 @@ import { formatCurrency } from '@/lib/utils';
 import { Account } from '@/constants/types';
 
 const ACCOUNT_COLORS = [
-  '#42A5F5',
-  '#66BB6A',
-  '#FFA726',
-  '#AB47BC',
-  '#FF7043',
-  '#26C6DA',
-  '#EF5350',
-  '#8D6E63',
+  '#FF6D00', // Novo Laranja
+  '#E91E63', // Rosa
+  '#FBC02D', // Amarelo
+  '#D32F2F', // Vermelho
+  '#42A5F5', // Azul
+  '#66BB6A', // Verde
+  '#AB47BC', // Roxo
+  '#26C6DA', // Ciano
+  '#8D6E63', // Marrom
+  '#212121', // Preto
 ];
 
 const ACCOUNT_ICONS: { icon: string; label: string }[] = [

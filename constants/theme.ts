@@ -62,14 +62,17 @@ export const getThemeColors = (scheme: ColorScheme, primaryColor: string) => {
 
 // Backward compatibility (default colors)
 export const Colors = {
-  light: getThemeColors('light', '#E64A19'),
-  dark: getThemeColors('dark', '#FF7043'),
+  light: getThemeColors('light', '#FF6D00'),
+  dark: getThemeColors('dark', '#FF6D00'),
 }
 
 export type ThemeColors = typeof Colors.light
 
 export const PRIMARY_COLORS = [
-  { label: 'Laranja', value: '#E64A19' }, // Original
+  { label: 'Laranja', value: '#FF6D00' }, 
+  { label: 'Rosa', value: '#E91E63' },
+  { label: 'Amarelo', value: '#FBC02D' },
+  { label: 'Vermelho', value: '#D32F2F' },
   { label: 'Azul', value: '#1976D2' },
   { label: 'Verde', value: '#388E3C' },
   { label: 'Roxo', value: '#7B1FA2' },
