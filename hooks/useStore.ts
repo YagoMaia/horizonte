@@ -1,7 +1,7 @@
 // hooks/useStore.ts
 import { useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Transaction, Account, Tag, DEFAULT_TAGS } from '@/constants/types';
+import { Transaction, Account, Tag, DEFAULT_TAGS, Project } from '@/constants/types';
 import * as NotificationService from '../services/notificationService';
 import { addMonths, addYears, addWeeks, addDays, setDate } from 'date-fns';
 
@@ -173,42 +173,30 @@ export function useStore() {
         NotificationService.cancelReminder(targetAcc.notificationId);
       }
 
-      // 1. Atualiza as contas
-      setAccounts((currentAccounts) => {
-        const updated = currentAccounts.filter((a) => a.id !== id);
-        AsyncStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(updated));
-        return updated;
-      });
+      // 1. Atualiza as contas e transações de forma limpa
+      const updatedAccounts = accounts.filter((a) => a.id !== id);
+      const updatedTransactions = transactions.filter(
+        (tx) => tx.accountId !== id && tx.targetAccountId !== id,
+      );
 
-      // 2. Cascade Delete: Remove todas as transações vinculadas a esta conta
-      // Isso inclui transações onde ela é a conta principal (accountId)
-      // OU onde ela é a conta de destino em transferências (targetAccountId)
-      setTransactions((currentTransactions) => {
-        const updatedTxs = currentTransactions.filter(
-          (tx) => tx.accountId !== id && tx.targetAccountId !== id,
-        );
-        AsyncStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(updatedTxs));
-        return updatedTxs;
-      });
+      await saveAccounts(updatedAccounts);
+      await saveTransactions(updatedTransactions);
     },
-    [accounts],
+    [accounts, transactions, saveAccounts, saveTransactions],
   );
 
   const setPrimaryAccount = useCallback(
     async (id: string) => {
-      setAccounts((currentAccounts) => {
-        const accIndex = currentAccounts.findIndex((a) => a.id === id);
-        if (accIndex <= 0) return currentAccounts;
+      const accIndex = accounts.findIndex((a) => a.id === id);
+      if (accIndex <= 0) return;
 
-        const updated = [...currentAccounts];
-        const [acc] = updated.splice(accIndex, 1);
-        updated.unshift(acc);
-        
-        AsyncStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(updated));
-        return updated;
-      });
+      const updated = [...accounts];
+      const [acc] = updated.splice(accIndex, 1);
+      updated.unshift(acc);
+      
+      await saveAccounts(updated);
     },
-    [],
+    [accounts, saveAccounts],
   );
 
   const saveTags = useCallback(async (data: Tag[]) => {
@@ -476,6 +464,9 @@ export function useStore() {
               if (acc.id === tx.accountId) {
                 const delta = tx.type === 'receita' ? tx.amount : -tx.amount;
                 return { ...acc, balance: acc.balance + delta };
+              }
+              if (tx.type === 'transferencia' && acc.id === tx.targetAccountId) {
+                return { ...acc, balance: acc.balance + tx.amount };
               }
               return acc;
             });
@@ -785,14 +776,6 @@ export function useStore() {
     return sum + a.balance;
   }, 0);
 
-  const monthlyIncome = transactions
-    .filter((t) => t.type === 'receita' && t.paid)
-    .reduce((sum, t) => sum + t.amount, 0);
-
-  const monthlyExpense = transactions
-    .filter((t) => t.type === 'despesa' && t.paid)
-    .reduce((sum, t) => sum + t.amount, 0);
-
   const payCreditCardInvoice = useCallback(
     async (
       creditCardId: string,
@@ -1044,8 +1027,6 @@ export function useStore() {
     completeOnboarding,
     loading,
     totalBalance,
-    monthlyIncome,
-    monthlyExpense,
     addTransaction,
     deleteTransaction,
     updateTransaction,
