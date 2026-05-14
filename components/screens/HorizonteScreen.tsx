@@ -964,75 +964,77 @@ export function HorizonteScreen() {
                 >
                   Contas no Planejamento
                 </Text>
-                {accounts.map((acc) => {
-                  const isActive = activeAccountIds.includes(acc.id);
-                  return (
-                    <TouchableOpacity
-                      key={acc.id}
-                      activeOpacity={0.7}
-                      onPress={() => toggleAccount(acc.id)}
-                      style={[
-                        styles.accountOption,
-                        {
-                          backgroundColor: isActive
-                            ? colors.primary + "15"
-                            : colors.background,
-                          borderColor: isActive
-                            ? colors.primary
-                            : colors.border,
-                        },
-                      ]}
-                    >
-                      <View
-                        style={{
-                          flexDirection: "row",
-                          alignItems: "center",
-                          gap: 12,
-                        }}
-                      >
-                        <View
-                          style={[
-                            styles.accountOptionIcon,
-                            { backgroundColor: acc.color + "20" },
-                          ]}
-                        >
-                          <Ionicons
-                            name={acc.icon as any}
-                            size={16}
-                            color={acc.color}
-                          />
-                        </View>
-                        <View>
-                          <Text
-                            style={[
-                              styles.accountOptionName,
-                              { color: colors.foreground },
-                            ]}
-                          >
-                            {acc.name}
-                          </Text>
-                        </View>
-                      </View>
-                      <View
+                {accounts
+                  .filter((acc) => acc.type !== "cartao_credito")
+                  .map((acc) => {
+                    const isActive = activeAccountIds.includes(acc.id);
+                    return (
+                      <TouchableOpacity
+                        key={acc.id}
+                        activeOpacity={0.7}
+                        onPress={() => toggleAccount(acc.id)}
                         style={[
-                          styles.checkbox,
+                          styles.accountOption,
                           {
+                            backgroundColor: isActive
+                              ? colors.primary + "15"
+                              : colors.background,
                             borderColor: isActive
                               ? colors.primary
                               : colors.border,
-                            backgroundColor: isActive
-                              ? colors.primary
-                              : "transparent",
                           },
                         ]}
                       >
-                        {isActive && (
-                          <Ionicons name="checkmark" size={14} color="#FFF" />
-                        )}
-                      </View>
-                    </TouchableOpacity>
-                  );
-                })}
+                        <View
+                          style={{
+                            flexDirection: "row",
+                            alignItems: "center",
+                            gap: 12,
+                          }}
+                        >
+                          <View
+                            style={[
+                              styles.accountOptionIcon,
+                              { backgroundColor: acc.color + "20" },
+                            ]}
+                          >
+                            <Ionicons
+                              name={acc.icon as any}
+                              size={16}
+                              color={acc.color}
+                            />
+                          </View>
+                          <View>
+                            <Text
+                              style={[
+                                styles.accountOptionName,
+                                { color: colors.foreground },
+                              ]}
+                            >
+                              {acc.name}
+                            </Text>
+                          </View>
+                        </View>
+                        <View
+                          style={[
+                            styles.checkbox,
+                            {
+                              borderColor: isActive
+                                ? colors.primary
+                                : colors.border,
+                              backgroundColor: isActive
+                                ? colors.primary
+                                : "transparent",
+                            },
+                          ]}
+                        >
+                          {isActive && (
+                            <Ionicons name="checkmark" size={14} color="#FFF" />
+                          )}
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
               </ScrollView>
 
               <TouchableOpacity
