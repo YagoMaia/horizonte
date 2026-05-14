@@ -1,10 +1,18 @@
 // constants/types.ts
 
-export type TabType = 'saldos' | 'totais' | 'horizonte' | 'contas' | 'menu' | 'cartao'
+export type TabType = 'saldos' | 'totais' | 'horizonte' | 'contas' | 'menu' | 'cartao' | 'projetos'
 
 export type TransactionType = 'receita' | 'despesa' | 'transferencia'
 
 export type RecurrenceType = 'unica' | 'diaria' | 'semanal' | 'mensal' | 'anual' | 'quinto_dia_util'
+
+export interface Project {
+  id: string
+  name: string
+  targetBudget: number
+  color: string
+  active?: boolean
+}
 
 export interface Account {
   id: string
@@ -43,6 +51,7 @@ export interface Transaction {
   groupIndex?: number;
   isAdjustment?: boolean;
   notificationId?: string;
+  projectId?: string; // 👉 Novo: ID do projeto vinculado
 }
 
 export interface Tag {

@@ -71,7 +71,7 @@ export function AddTransactionModal({
   initialType,
 }: AddTransactionModalProps) {
   const { colors } = useTheme();
-  const { tags } = useStoreContext(); // 👉 Usando tags do contexto
+  const { tags, projects } = useStoreContext(); // 👉 Usando tags e projetos do contexto
   const insets = useSafeAreaInsets();
   const isEditing = !!transactionToEdit;
 
@@ -87,6 +87,7 @@ export function AddTransactionModal({
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
   const [tag, setTag] = useState<string>('Outros');
+  const [projectId, setProjectId] = useState<string | undefined>(undefined);
   
   const formatCurrencyMask = (value: string) => {
     const cleanValue = value.replace(/\D/g, '');
@@ -151,7 +152,8 @@ export function AddTransactionModal({
     setType(initialType ?? 'despesa');
     setDescription('');
     setAmount('');
-    setTag(tags[0]?.label || 'Outros'); // 👉 Ajuste para usar a primeira tag disponível
+    setTag(tags[0]?.label || 'Outros'); 
+    setProjectId(undefined);
     setAccountId(initialAccountId ?? accounts[0]?.id ?? '');
     setRecurrence('unica');
     
@@ -177,6 +179,7 @@ export function AddTransactionModal({
         setRecurrence(transactionToEdit.recurrence);
         setPaid(transactionToEdit.paid);
         setTag(transactionToEdit.tag || (tags[0]?.label || 'Outros'));
+        setProjectId(transactionToEdit.projectId);
         setInstallments(transactionToEdit.totalInstallments || 1);
         const d = new Date(transactionToEdit.date);
         setDate(
@@ -446,6 +449,7 @@ export function AddTransactionModal({
         : parseToISO(recurrenceStart),
       accountId,
       tag, // 👉 Inclui a tag selecionada
+      projectId: projectId || undefined, // 👉 Inclui o projeto selecionado
       recurrence: finalRecurrence,
       paid,
       recurrenceStartDate: (!isInstallment && finalRecurrence !== 'unica')
@@ -763,6 +767,63 @@ export function AddTransactionModal({
                 ))}
               </View>
             </View>
+
+            {/* SEÇÃO DE PROJETOS */}
+            {projects.length > 0 && (
+              <View style={styles.field}>
+                <Text style={[styles.label, { color: colors.mutedForeground }]}>
+                  Projeto (Centro de Custo)
+                </Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexDirection: 'row' }}>
+                  <TouchableOpacity
+                    style={[
+                      styles.tagChip,
+                      {
+                        borderColor: colors.border,
+                        backgroundColor: !projectId ? colors.border + '50' : 'transparent',
+                        marginRight: 8,
+                      },
+                      !projectId && { borderColor: colors.mutedForeground }
+                    ]}
+                    onPress={() => setProjectId(undefined)}
+                  >
+                    <Text
+                      style={[
+                        styles.tagChipText,
+                        { color: !projectId ? colors.foreground : colors.mutedForeground },
+                      ]}
+                    >
+                      Nenhum
+                    </Text>
+                  </TouchableOpacity>
+                  {projects.map((p) => (
+                    <TouchableOpacity
+                      key={p.id}
+                      style={[
+                        styles.tagChip,
+                        {
+                          borderColor: colors.border,
+                          backgroundColor: projectId === p.id ? p.color + '20' : 'transparent',
+                          marginRight: 8,
+                        },
+                        projectId === p.id && { borderColor: p.color }
+                      ]}
+                      onPress={() => setProjectId(p.id)}
+                    >
+                      <Ionicons name="briefcase-outline" size={14} color={projectId === p.id ? p.color : colors.mutedForeground} />
+                      <Text
+                        style={[
+                          styles.tagChipText,
+                          { color: projectId === p.id ? p.color : colors.foreground },
+                        ]}
+                      >
+                        {p.name}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
 
 
             {isCreditCardSelected && !isEditing && (

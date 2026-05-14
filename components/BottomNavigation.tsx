@@ -12,10 +12,9 @@ interface BottomNavigationProps {
   onAddClick: () => void
 }
 
-// 👉 Adicionamos 'cartao' aos LEFT_TABS e mantivemos o equilíbrio
 const LEFT_TABS: { id: TabType; label: string; icon: string }[] = [
   { id: 'saldos', label: 'Saldos', icon: 'wallet-outline' },
-  { id: 'cartao', label: 'Cartão', icon: 'card-outline' }, // Nova Aba
+  { id: 'cartao', label: 'Cartão', icon: 'card-outline' },
 ]
 
 const RIGHT_TABS: { id: TabType; label: string; icon: string }[] = [

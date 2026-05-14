@@ -10,6 +10,7 @@ import {
   ScrollView,
   Alert,
   Modal,
+  useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/hooks/useTheme';
@@ -36,10 +37,12 @@ const MONTHS = [
 
 export function SaldosScreen() {
   const { colors } = useTheme();
+  const { width: windowWidth } = useWindowDimensions();
   const {
     accounts,
     transactions,
     tags, // 👉 Puxando tags dinâmicas
+    projects, // 👉 Puxando projetos
     totalBalance,
     addTransaction,
     updateTransaction,
@@ -76,6 +79,29 @@ export function SaldosScreen() {
   const changeMonth = (offset: number) => {
     setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + offset, 1));
   };
+
+  // CÁLCULO PROJETOS ATIVOS
+  const activeProjectStats = useMemo(() => {
+    const activeProjects = projects.filter(p => p.active !== false);
+    
+    return activeProjects.map((project) => {
+      const projectTxs = transactions.filter(tx => tx.projectId === project.id);
+      
+      const totalSpent = projectTxs.reduce((sum, tx) => {
+        return sum + (tx.type === 'despesa' ? tx.amount : (tx.type === 'receita' ? -tx.amount : 0));
+      }, 0);
+
+      const progress = project.targetBudget > 0 ? Math.min(totalSpent / project.targetBudget, 1) : 0;
+      const isOverBudget = totalSpent > project.targetBudget;
+
+      return {
+        ...project,
+        totalSpent,
+        progress,
+        isOverBudget,
+      };
+    });
+  }, [projects, transactions]);
 
   // CÁLCULO DE ENTRADAS E SAÍDAS DO MÊS (Apenas movimentações de "caixa")
   const currentMonthStats = useMemo(() => {
@@ -281,6 +307,72 @@ export function SaldosScreen() {
           })}
         </View>
       </ScrollView>
+
+      {/* 2.5. SEÇÃO DE PROJETOS ATIVOS */}
+      {activeProjectStats.length > 0 && (
+        <>
+          <Text style={[styles.sectionTitle, { color: colors.foreground, marginTop: 8 }]}>Projetos Ativos</Text>
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false}
+            snapToInterval={windowWidth * 0.85 + 12}
+            decelerationRate="fast"
+            contentContainerStyle={{ paddingRight: 16 }}
+          >
+            <View style={styles.accountsRow}>
+              {activeProjectStats.map((project) => (
+                <View
+                  key={project.id}
+                  style={[
+                    styles.projectCard,
+                    { 
+                      backgroundColor: colors.card, 
+                      borderColor: colors.border,
+                      width: windowWidth * 0.85,
+                    },
+                  ]}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+                    <View style={[styles.accountIcon, { backgroundColor: project.color + '15', width: 40, height: 40, borderRadius: 12, marginBottom: 0 }]}>
+                      <Ionicons name="briefcase-outline" size={20} color={project.color} />
+                    </View>
+                    <Text style={[styles.accountName, { color: colors.foreground, flex: 1, fontSize: 16, fontWeight: '700' }]} numberOfLines={1}>
+                      {project.name}
+                    </Text>
+                  </View>
+                  
+                  <View>
+                    <View style={[styles.progressBarBg, { backgroundColor: colors.border, marginVertical: 16 }]}>
+                      <View
+                        style={[
+                          styles.progressBarFill,
+                          { 
+                            backgroundColor: project.isOverBudget ? colors.destructive : project.color,
+                            width: `${project.progress * 100}%` 
+                          }
+                        ]}
+                      />
+                    </View>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Text style={[styles.secondaryText, { color: project.isOverBudget ? colors.destructive : colors.foreground, fontWeight: '800', fontSize: 14 }]}>
+                        {formatCurrency(project.totalSpent)}
+                      </Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                        <Text style={[styles.secondaryText, { color: colors.mutedForeground, fontSize: 12 }]}>
+                          Meta:
+                        </Text>
+                        <Text style={[styles.secondaryText, { color: colors.foreground, fontSize: 12, fontWeight: '600' }]}>
+                          {formatCurrency(project.targetBudget)}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                </View>
+              ))}
+            </View>
+          </ScrollView>
+        </>
+      )}
 
       {/* 3. CABEÇALHO DE LANÇAMENTOS COM O BOTÃO DE FILTRO */}
       <View style={[styles.sectionHeader, { marginTop: 8 }]}>
@@ -535,6 +627,7 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 16, fontWeight: '600' },
   accountsRow: { flexDirection: 'row', gap: 12 },
   accountCard: { width: 140, borderRadius: 20, padding: 16, borderWidth: StyleSheet.hairlineWidth, minHeight: 110 },
+  projectCard: { borderRadius: 24, padding: 20, borderWidth: StyleSheet.hairlineWidth, minHeight: 120 },
   accountIcon: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
   accountTextContainer: { gap: 2 },
   accountName: { fontSize: 12, fontWeight: '500' },
@@ -614,5 +707,7 @@ const styles = StyleSheet.create({
   },
   hiddenAction: { justifyContent: 'center', alignItems: 'center', width: 80 },
   hiddenActionRight: { borderTopRightRadius: 20, borderBottomRightRadius: 20 },
-  hiddenActionText: { color: '#FFF', fontSize: 10, fontWeight: '700', marginTop: 4 }
+  hiddenActionText: { color: '#FFF', fontSize: 10, fontWeight: '700', marginTop: 4 },
+  progressBarBg: { height: 8, borderRadius: 4, backgroundColor: 'rgba(0,0,0,0.1)', overflow: 'hidden' },
+  progressBarFill: { height: '100%', borderRadius: 4 },
 });

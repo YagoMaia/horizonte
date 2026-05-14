@@ -12,6 +12,7 @@ const STORAGE_KEYS = {
   SHOW_PENDING: '@horizonte:show_pending',
   TAGS: '@horizonte:tags',
   ONBOARDING: '@horizonte:onboarding',
+  PROJECTS: '@horizonte:projects',
 };
 
 const DEFAULT_ACCOUNTS: Account[] = [];
@@ -20,6 +21,7 @@ const DEFAULT_TRANSACTIONS: Transaction[] = [];
 export function useStore() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [tags, setTags] = useState<Tag[]>(DEFAULT_TAGS); 
   const [monthlyBudgets, setMonthlyBudgets] = useState<Record<string, number>>({});
   const [showPending, setShowPendingState] = useState<boolean>(true);
@@ -28,11 +30,6 @@ export function useStore() {
 
   // --- MÉTODOS DE SALVAMENTO ---
 
-  const completeOnboarding = useCallback(async () => {
-    await AsyncStorage.setItem(STORAGE_KEYS.ONBOARDING, JSON.stringify(true));
-    setHasSeenOnboarding(true);
-  }, []);
-  
   const saveTransactions = useCallback(async (data: Transaction[]) => {
     await AsyncStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(data));
     setTransactions(data);
@@ -43,6 +40,38 @@ export function useStore() {
     setAccounts(data);
   }, []);
 
+  const saveProjects = useCallback(async (data: Project[]) => {
+    await AsyncStorage.setItem(STORAGE_KEYS.PROJECTS, JSON.stringify(data));
+    setProjects(data);
+  }, []);
+
+  const addProject = useCallback(async (project: Omit<Project, 'id'>) => {
+    const newProject: Project = { ...project, id: Date.now().toString() };
+    const updated = [...projects, newProject];
+    await saveProjects(updated);
+  }, [projects, saveProjects]);
+
+  const updateProject = useCallback(async (updatedProject: Project) => {
+    const updated = projects.map(p => p.id === updatedProject.id ? updatedProject : p);
+    await saveProjects(updated);
+  }, [projects, saveProjects]);
+
+  const deleteProject = useCallback(async (id: string) => {
+    // 1. Remove o projeto
+    const updatedProjects = projects.filter(p => p.id !== id);
+    await saveProjects(updatedProjects);
+
+    // 2. Remove o vínculo das transações (mantém a transação, mas limpa o projectId)
+    const updatedTxs = transactions.map(tx => 
+      tx.projectId === id ? { ...tx, projectId: undefined } : tx
+    );
+    await saveTransactions(updatedTxs);
+  }, [projects, transactions, saveProjects, saveTransactions]);
+
+  const completeOnboarding = useCallback(async () => {
+    await AsyncStorage.setItem(STORAGE_KEYS.ONBOARDING, JSON.stringify(true));
+    setHasSeenOnboarding(true);
+  }, []);
   const addAccount = useCallback(
     async (acc: Account) => {
       let notificationId: string | undefined;
@@ -229,7 +258,7 @@ export function useStore() {
 
   const loadData = useCallback(async () => {
     try {
-      const [txRaw, accRaw, budgetsRaw, showPendingRaw, tagsRaw, onboardingRaw] =
+      const [txRaw, accRaw, budgetsRaw, showPendingRaw, tagsRaw, onboardingRaw, projectsRaw] =
         await Promise.all([
           AsyncStorage.getItem(STORAGE_KEYS.TRANSACTIONS),
           AsyncStorage.getItem(STORAGE_KEYS.ACCOUNTS),
@@ -237,15 +266,18 @@ export function useStore() {
           AsyncStorage.getItem(STORAGE_KEYS.SHOW_PENDING),
           AsyncStorage.getItem(STORAGE_KEYS.TAGS),
           AsyncStorage.getItem(STORAGE_KEYS.ONBOARDING),
+          AsyncStorage.getItem(STORAGE_KEYS.PROJECTS),
         ]);
 
       const loadedTransactions = txRaw ? JSON.parse(txRaw) : DEFAULT_TRANSACTIONS;
       const loadedAccounts = accRaw ? JSON.parse(accRaw) : DEFAULT_ACCOUNTS;
       const loadedTags = tagsRaw ? JSON.parse(tagsRaw) : DEFAULT_TAGS;
+      const loadedProjects = projectsRaw ? JSON.parse(projectsRaw) : [];
 
       setTransactions(loadedTransactions);
       setAccounts(loadedAccounts);
       setTags(loadedTags);
+      setProjects(loadedProjects);
       setMonthlyBudgets(budgetsRaw ? JSON.parse(budgetsRaw) : {});
       setHasSeenOnboarding(onboardingRaw ? JSON.parse(onboardingRaw) : false);
 
@@ -283,10 +315,12 @@ export function useStore() {
       STORAGE_KEYS.SHOW_PENDING,
       STORAGE_KEYS.TAGS,
       STORAGE_KEYS.ONBOARDING,
+      STORAGE_KEYS.PROJECTS,
     ]);
     setTransactions(DEFAULT_TRANSACTIONS);
     setAccounts(DEFAULT_ACCOUNTS);
     setTags(DEFAULT_TAGS);
+    setProjects([]);
     setMonthlyBudgets({});
     setShowPendingState(true);
     setHasSeenOnboarding(false);
@@ -993,6 +1027,10 @@ export function useStore() {
   return {
     transactions,
     accounts,
+    projects, // 👉 Exportando projetos
+    addProject,
+    updateProject,
+    deleteProject,
     tags, // 👉 Exportando tags
     addTag, // 👉 Exportando métodos de tag
     updateTag,
