@@ -377,37 +377,6 @@ export function MenuScreen({ }: MenuScreenProps) {
         </View>
       </View>
 
-      {/* Accounts section */}
-      <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>CONTAS</Text>
-      <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        {accounts.map((acc, idx) => (
-          <View
-            key={acc.id}
-            style={[
-              styles.menuItem,
-              idx < accounts.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }
-            ]}
-          >
-            <View style={[styles.menuIcon, { backgroundColor: acc.color + '20' }]}>
-              <Ionicons name={acc.icon as any} size={18} color={acc.color} />
-            </View>
-            <Text style={[styles.menuLabel, { color: colors.foreground }]}>{acc.name}</Text>
-            <Text style={[styles.menuValue, { color: colors.mutedForeground }]}>
-              {formatCurrency(acc.balance)}
-            </Text>
-          </View>
-        ))}
-        <View style={[styles.menuItem, { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }]}>
-          <View style={[styles.menuIcon, { backgroundColor: colors.primary + '20' }]}>
-            <Ionicons name="wallet" size={18} color={colors.primary} />
-          </View>
-          <Text style={[styles.menuLabel, { color: colors.foreground, fontWeight: '600' }]}>Total</Text>
-          <Text style={[styles.menuValue, { color: colors.primary, fontWeight: '700' }]}>
-            {formatCurrency(totalBalance)}
-          </Text>
-        </View>
-      </View>
-
       {/* Settings */}
       <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>CONFIGURAÇÕES</Text>
       <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
