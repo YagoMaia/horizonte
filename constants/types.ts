@@ -14,7 +14,6 @@ export interface Account {
   color: string
   icon: string
   // Optional specific properties for credit cards
-  creditLimit?: number;
   closingDay?: number;
   dueDay?: number;
 }

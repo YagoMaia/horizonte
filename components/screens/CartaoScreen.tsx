@@ -23,6 +23,7 @@ import {
 import { Account, Transaction } from '@/constants/types';
 
 import { AddTransactionModal } from '../AddTransactionModal';
+import { CreditCardLimitBar } from '../CreditCardLimitBar';
 
 const MONTH_NAMES = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -105,6 +106,7 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
     limitUsagePercent,
     invoiceStatus,
     globalPendingDebt,
+    limit,
     isAll,
   } = useMemo(() => {
     if (!selectedCard)
@@ -144,13 +146,16 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
 
         const cardDebt = transactions.filter((tx: Transaction) => {
           if (tx.accountId !== card.id || tx.paymentMethod !== 'credito' || tx.paid) return false;
-          return getInvoiceForTx(tx.date, card).value >= openInvoiceValue;
+          
+          const isInstallment = tx.totalInstallments && tx.totalInstallments > 1;
+          
+          if (!isInstallment) {
+            if (getInvoiceForTx(tx.date, card).value > openInvoiceValue) return false;
+          }
+          return true;
         }).reduce((sum: number, tx: Transaction) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount), 0);
 
         globalDebt += cardDebt;
-        const cLimit = card.creditLimit || 0;
-        tLimit += cLimit;
-        tAvailable += Math.max(0, cLimit - cardDebt);
       });
 
       allTxs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -191,13 +196,9 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
     const globalPendingDebtValue = transactions
       .filter((tx: Transaction) => {
         if (tx.accountId !== selectedCard.id || tx.paymentMethod !== 'credito' || tx.paid) return false;
-        return getInvoiceForTx(tx.date, selectedCard).value >= openInvoiceValue;
+        return true; // Conta todas as faturas em aberto, garantindo que o limite consumido inclua passadas
       })
       .reduce((sum: number, tx: Transaction) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount), 0);
-
-    const cLimit = selectedCard.creditLimit || 0;
-    const aLimit = Math.max(0, cLimit - globalPendingDebtValue);
-    const percent = cLimit > 0 ? Math.min((globalPendingDebtValue / cLimit) * 100, 100) : 0;
 
     let status = 'ABERTA';
     let color = colors.primary;
@@ -221,7 +222,7 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
 
     return {
       totalInvoice: tInvoice, pendingInvoice: pInvoice, targetMonth: tMonth, targetYear: tYear,
-      invoiceTransactions: invTxs, limit: cLimit, availableLimit: aLimit, limitUsagePercent: percent,
+      invoiceTransactions: invTxs,
       invoiceStatus: status, statusColor: color, globalPendingDebt: globalPendingDebtValue, isAll: false
     };
   }, [selectedCard, transactions, monthOffset, colors, creditCards]);
@@ -468,22 +469,6 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
             <View style={styles.cardBody}>
               <Text style={styles.cardLabel}>Valor total da fatura</Text>
               <Text style={styles.cardAmount}>{formatCurrency(totalInvoice)}</Text>
-
-              <View style={styles.limitContainer}>
-                <View style={styles.limitBarBackground}>
-                  <View style={[styles.limitBarFill, { width: `${limitUsagePercent}%` }]} />
-                </View>
-                <View style={styles.limitInfo}>
-                  <View>
-                    <Text style={styles.limitValue}>{formatCurrency(globalPendingDebt)}</Text>
-                    <Text style={styles.limitLabel}>Utilizado</Text>
-                  </View>
-                  <View style={{ alignItems: 'flex-end' }}>
-                    <Text style={styles.limitValue}>{formatCurrency(availableLimit)}</Text>
-                    <Text style={styles.limitLabel}>Disponível</Text>
-                  </View>
-                </View>
-              </View>
             </View>
 
             <View style={styles.cardFooter}>

@@ -78,10 +78,10 @@ export function ContasScreen() {
   const openEdit = (acc: Account) => {
     setEditAccount(acc);
     setName(acc.name);
-    // Se for cartão, joga o creditLimit para o input de balance
+    // Se for cartão, o balance não é usado na mesma forma (saldo é sempre derivado da fatura)
     setBalance(
       acc.type === 'cartao_credito'
-        ? acc.creditLimit?.toString() || ''
+        ? ''
         : acc.balance.toString(),
     );
     setType(acc.type);
@@ -97,20 +97,18 @@ export function ContasScreen() {
 
     // 👉 LÓGICA DE SALVAMENTO SEPARADA
     let parsedBalance = 0;
-    let finalCreditLimit: number | undefined = undefined;
     let finalClosingDay: number | undefined = undefined;
     let finalDueDay: number | undefined = undefined;
 
     if (type === 'cartao_credito') {
-      const parsedLimit = parseFloat(balance.replace(',', '.'));
       const parsedClosing = parseInt(closingDay, 10);
       const parsedDue = parseInt(dueDay, 10);
 
       // Validação Brutal: Se os dados vitais do cartão não existirem, bloqueia.
-      if (isNaN(parsedLimit) || isNaN(parsedClosing) || isNaN(parsedDue)) {
+      if (isNaN(parsedClosing) || isNaN(parsedDue)) {
         Alert.alert(
           'Erro',
-          'Para Cartões de Crédito, o Limite, o Dia de Fechamento e o Vencimento são obrigatórios.',
+          'Para Cartões de Crédito, o Dia de Fechamento e o Vencimento são obrigatórios.',
         );
         return;
       }
@@ -129,7 +127,6 @@ export function ContasScreen() {
       }
 
       parsedBalance = 0; // O saldo (liquidez) de um cartão recém criado é sempre 0
-      finalCreditLimit = parsedLimit;
       finalClosingDay = parsedClosing;
       finalDueDay = parsedDue;
     } else {
@@ -144,7 +141,6 @@ export function ContasScreen() {
         type,
         color: selectedColor,
         icon: selectedIcon,
-        creditLimit: finalCreditLimit,
         closingDay: finalClosingDay,
         dueDay: finalDueDay,
       };
@@ -185,7 +181,6 @@ export function ContasScreen() {
         type,
         color: selectedColor,
         icon: selectedIcon,
-        creditLimit: finalCreditLimit,
         closingDay: finalClosingDay,
         dueDay: finalDueDay,
       };
@@ -307,7 +302,7 @@ export function ContasScreen() {
                         { color: colors.mutedForeground },
                       ]}
                     >
-                      Lim: {formatCurrency(acc.creditLimit || 0)}
+                      Cartão
                     </Text>
                   ) : (
                     <Text
@@ -461,28 +456,30 @@ export function ContasScreen() {
               placeholderTextColor={colors.mutedForeground}
             />
 
-            <Text
-              style={[styles.fieldLabel, { color: colors.mutedForeground }]}
-            >
-              {type === 'cartao_credito'
-                ? 'Limite do Cartão (R$)'
-                : 'Saldo Atual (R$)'}
-            </Text>
-            <TextInput
-              style={[
-                styles.input,
-                {
-                  color: colors.foreground,
-                  borderColor: colors.border,
-                  backgroundColor: colors.card,
-                },
-              ]}
-              value={balance}
-              onChangeText={setBalance}
-              placeholder='0,00'
-              placeholderTextColor={colors.mutedForeground}
-              keyboardType='decimal-pad'
-            />
+            {type !== 'cartao_credito' && (
+              <>
+                <Text
+                  style={[styles.fieldLabel, { color: colors.mutedForeground }]}
+                >
+                  Saldo Atual (R$)
+                </Text>
+                <TextInput
+                  style={[
+                    styles.input,
+                    {
+                      color: colors.foreground,
+                      borderColor: colors.border,
+                      backgroundColor: colors.card,
+                    },
+                  ]}
+                  value={balance}
+                  onChangeText={setBalance}
+                  placeholder='0,00'
+                  placeholderTextColor={colors.mutedForeground}
+                  keyboardType='decimal-pad'
+                />
+              </>
+            )}
 
             {/* 👉 CAMPOS EXCLUSIVOS DO CARTÃO DE CRÉDITO */}
             {type === 'cartao_credito' && (
