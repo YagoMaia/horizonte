@@ -526,7 +526,15 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
             {invoiceTransactions.length === 0 ? (
               <Text style={[styles.emptyTxText, { color: colors.mutedForeground }]}>Nenhum gasto nesta fatura.</Text>
             ) : (
-              <FlatList data={invoiceTransactions} keyExtractor={(item) => item.id} renderItem={renderTransaction} scrollEnabled={false} />
+              <FlatList 
+                data={invoiceTransactions} 
+                keyExtractor={(item) => item.id} 
+                renderItem={renderTransaction} 
+                scrollEnabled={false} 
+                initialNumToRender={10}
+                maxToRenderPerBatch={10}
+                windowSize={5}
+              />
             )}
           </View>
         </ScrollView>

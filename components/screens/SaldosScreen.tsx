@@ -475,6 +475,10 @@ export function SaldosScreen() {
         onEndReached={handleLoadMore}
         style={{ flex: 1, backgroundColor: colors.background }}
         contentContainerStyle={styles.content}
+        initialNumToRender={15}
+        maxToRenderPerBatch={15}
+        windowSize={5}
+        removeClippedSubviews={true}
         ListEmptyComponent={
           <View style={[styles.emptyState, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Ionicons name='calendar-outline' size={40} color={colors.mutedForeground} />

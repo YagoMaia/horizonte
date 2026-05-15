@@ -1,5 +1,5 @@
 // hooks/useStore.ts
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Transaction, Account, Tag, DEFAULT_TAGS, Project } from '@/constants/types';
 import * as NotificationService from '../services/notificationService';
@@ -769,12 +769,14 @@ export function useStore() {
     [monthlyBudgets],
   );
 
-  const totalBalance = accounts.reduce((sum, a) => {
-    if (a.type === 'cartao_credito') {
-      return sum;
-    }
-    return sum + a.balance;
-  }, 0);
+  const totalBalance = useMemo(() => {
+    return accounts.reduce((sum, a) => {
+      if (a.type === 'cartao_credito') {
+        return sum;
+      }
+      return sum + a.balance;
+    }, 0);
+  }, [accounts]);
 
   const payCreditCardInvoice = useCallback(
     async (

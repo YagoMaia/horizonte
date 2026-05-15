@@ -94,6 +94,10 @@ export function ProjectTransactionsModal({ project, onClose }: Props) {
             renderItem={renderItem}
             contentContainerStyle={styles.listContent}
             showsVerticalScrollIndicator={false}
+            initialNumToRender={10}
+            maxToRenderPerBatch={10}
+            windowSize={5}
+            removeClippedSubviews={true}
             ListEmptyComponent={
               <View style={styles.emptyState}>
                 <Ionicons name="receipt-outline" size={40} color={colors.mutedForeground} />
