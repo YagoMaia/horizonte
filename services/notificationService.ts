@@ -1,16 +1,13 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 
-// 1. Configuração do Serviço: Handler para exibir alertas com som mesmo com app aberto
-if (Platform.OS !== 'web') {
-  Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-      shouldShowAlert: true,
-      shouldPlaySound: true,
-      shouldSetBadge: false,
-    }),
-  });
-}
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+  }),
+});
 
 /**
  * Pede autorização ao usuário para enviar notificações
@@ -33,7 +30,7 @@ export async function requestPermissions() {
 
   if (Platform.OS === 'android') {
     await Notifications.setNotificationChannelAsync('default', {
-      name: 'default',
+      name: 'Lembretes Padrão',
       importance: Notifications.AndroidImportance.MAX,
       vibrationPattern: [0, 250, 250, 250],
       lightColor: '#FF231F7C',
@@ -62,6 +59,7 @@ export async function scheduleDailyReminder() {
       type: Notifications.SchedulableTriggerInputTypes.DAILY,
       hour: 20,
       minute: 0,
+      channelId: 'default',
     },
   });
 }
@@ -88,6 +86,7 @@ export async function scheduleMonthlyPaymentReminder(
       hour: 9,
       minute: 0,
       repeats: true,
+      channelId: 'default',
     },
   });
 
@@ -115,6 +114,7 @@ export async function scheduleCreditCardReminder(
       hour: 8,
       minute: 0,
       repeats: true,
+      channelId: 'default',
     },
   });
 

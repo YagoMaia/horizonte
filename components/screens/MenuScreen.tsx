@@ -18,6 +18,8 @@ import * as FileSystem from 'expo-file-system'
 import * as Sharing from 'expo-sharing'
 import * as DocumentPicker from 'expo-document-picker'
 import AsyncStorage from '@react-native-async-storage/async-storage'
+import * as Notifications from 'expo-notifications'
+import { requestPermissions, scheduleDailyReminder } from '@/services/notificationService'
 import { PRIMARY_COLORS } from '@/constants/theme'
 import { TagManagementModal } from '../TagManagementModal'
 import { AdjustmentManagementModal } from '../AdjustmentManagementModal'
@@ -137,6 +139,31 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects }: MenuS
           }
         ]
       )
+    }
+  }
+
+  const handleTestNotification = async () => {
+    try {
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: 'Notificação de Teste 🚀',
+          body: 'Isso é um teste de notificação funcionando no Android 13+!',
+          sound: true,
+        },
+        trigger: {
+          seconds: 5,
+          channelId: 'default',
+        },
+      });
+      if (Platform.OS === 'web') {
+        alert('A notificação aparecerá em 5 segundos.');
+      } else {
+        Alert.alert('Sucesso', 'A notificação aparecerá em 5 segundos. Oculte o app para testar em segundo plano.');
+      }
+    } catch (error) {
+      console.error(error);
+      if (Platform.OS === 'web') alert('Erro ao agendar a notificação de teste.');
+      else Alert.alert('Erro', 'Não foi possível agendar a notificação de teste.');
     }
   }
 
@@ -428,6 +455,41 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects }: MenuS
             value={currentColorLabel} 
             onPress={() => setColorModalVisible(true)}
             colors={colors} 
+          />
+        </View>
+      </View>
+
+      {/* Notificações */}
+      <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>NOTIFICAÇÕES</Text>
+      <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <MenuItem
+          icon="notifications-outline"
+          label="Ativar Lembretes Diários"
+          onPress={async () => {
+            const granted = await requestPermissions()
+            if (granted) {
+              await scheduleDailyReminder()
+              if (Platform.OS === 'web') {
+                alert('Lembretes diários ativados para as 20h!')
+              } else {
+                Alert.alert('Sucesso', 'Lembretes diários ativados para as 20h!')
+              }
+            } else {
+              if (Platform.OS === 'web') {
+                alert('As notificações não são suportadas no navegador para este recurso.')
+              } else {
+                Alert.alert('Erro', 'Permissão de notificação negada.')
+              }
+            }
+          }}
+          colors={colors}
+        />
+        <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
+          <MenuItem
+            icon="flask-outline"
+            label="Enviar Notificação de Teste"
+            onPress={handleTestNotification}
+            colors={colors}
           />
         </View>
       </View>
