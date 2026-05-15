@@ -80,7 +80,7 @@ export function HorizonteScreen() {
   const { transactions, accounts, getEffectiveBudget, saveMonthlyBudget } =
     useStoreContext();
 
-  const today = new Date();
+  const today = useMemo(() => new Date(), []);
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth());
   const [selectedDay, setSelectedDay] = useState<any | null>(null);
@@ -88,10 +88,26 @@ export function HorizonteScreen() {
   const [activeAccountIds, setActiveAccountIds] = useState<string[]>([]);
   const [budgetInput, setBudgetInput] = useState<string>("");
 
+  const scrollRef = React.useRef<ScrollView>(null);
+  const ROW_HEIGHT = 90; // Fixed height defined in styles.row
+
   // 👉 NOVO ESTADO: Alternar entre Lista e Mapa de Calor
   const [viewMode, setViewMode] = useState<"list" | "grid">("list");
 
   const currentBudget = getEffectiveBudget(year, month);
+
+  // Auto-scroll para hoje ao entrar na tela ou mudar para o mês atual
+  useEffect(() => {
+    if (viewMode === "list" && year === today.getFullYear() && month === today.getMonth()) {
+      const dayIndex = today.getDate() - 1;
+      setTimeout(() => {
+        scrollRef.current?.scrollTo({
+          y: dayIndex * ROW_HEIGHT,
+          animated: true,
+        });
+      }, 100);
+    }
+  }, [viewMode, year, month, today]);
 
   useEffect(() => {
     const loadConfig = async () => {
@@ -509,10 +525,19 @@ export function HorizonteScreen() {
                 return (
                   <TouchableOpacity
                     key={`${col.key}-${dayNum}`}
-                    style={[styles.gridCell, { backgroundColor: bgColor }]}
+                    style={[
+                      styles.gridCell,
+                      { backgroundColor: bgColor },
+                      dayData.isToday && { borderWidth: 2, borderColor: colors.primary },
+                    ]}
                     onPress={() => setSelectedDay(dayData)}
                   >
-                    <Text style={[styles.gridCellText, { color: textColor }]}>
+                    <Text
+                      style={[
+                        styles.gridCellText,
+                        { color: textColor, fontWeight: dayData.isToday ? "900" : "700" },
+                      ]}
+                    >
                       {formatCompactK(dayData.balance)}
                     </Text>
                   </TouchableOpacity>
@@ -531,7 +556,7 @@ export function HorizonteScreen() {
       style={{ flex: 1, backgroundColor: colors.background }}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
-      {/* HEADER E NAVEGAÇÃO DE MESES */}
+      {/* ... (header remains same) */}
       <View
         style={[
           styles.monthNav,
@@ -700,7 +725,7 @@ export function HorizonteScreen() {
       {viewMode === "grid" ? (
         renderHeatmapGrid()
       ) : (
-        <ScrollView showsVerticalScrollIndicator={false}>
+        <ScrollView ref={scrollRef} showsVerticalScrollIndicator={false}>
           {days.map((d, idx) => {
             const rowBg = d.isToday
               ? colors.primary + "10"
@@ -727,6 +752,7 @@ export function HorizonteScreen() {
                 style={[
                   styles.row,
                   { backgroundColor: rowBg, borderBottomColor: colors.border },
+                  d.isToday && { borderLeftWidth: 4, borderLeftColor: colors.primary },
                 ]}
               >
                 <View
@@ -740,12 +766,18 @@ export function HorizonteScreen() {
                   ]}
                 >
                   <Text
-                    style={[styles.dayNumber, { color: colors.foreground }]}
+                    style={[
+                      styles.dayNumber,
+                      { color: d.isToday ? colors.primary : colors.foreground },
+                    ]}
                   >
                     {d.day}
                   </Text>
                   <Text
-                    style={[styles.weekDay, { color: colors.mutedForeground }]}
+                    style={[
+                      styles.weekDay,
+                      { color: d.isToday ? colors.primary : colors.mutedForeground },
+                    ]}
                   >
                     {d.weekDay}
                   </Text>
