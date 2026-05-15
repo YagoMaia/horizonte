@@ -5,6 +5,7 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
+  Pressable,
   ActivityIndicator,
   FlatList,
   ScrollView,
@@ -21,12 +22,14 @@ import {
   getInvoiceForTx,
 } from '@/lib/utils';
 import { useStoreContext } from '@/context/StoreContext';
-import { Transaction, Account, TransactionType } from '@/constants/types';
+import { Transaction, Account, TransactionType, Project } from '@/constants/types';
 import { TransactionDetailModal } from '../TransactionDetailModal';
 import { AddTransactionModal } from '../AddTransactionModal';
+import { ProjectTransactionsModal } from '../ProjectTransactionsModal';
 import {
   GestureHandlerRootView,
   Swipeable,
+  TouchableOpacity as GHTouchableOpacity,
 } from 'react-native-gesture-handler';
 import { RecurrenceActionModal } from '../RecurrenceActionModal';
 
@@ -51,6 +54,7 @@ export function SaldosScreen() {
   } = useStoreContext();
 
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
+  const [selectedProjectForDetails, setSelectedProjectForDetails] = useState<Project | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [displayLimit, setDisplayLimit] = useState(20);
   const [recurrenceDeleteData, setRecurrenceDeleteData] = useState<string | null>(null);
@@ -317,12 +321,15 @@ export function SaldosScreen() {
             showsHorizontalScrollIndicator={false}
             snapToInterval={windowWidth * 0.85 + 12}
             decelerationRate="fast"
+            keyboardShouldPersistTaps="handled"
             contentContainerStyle={{ paddingRight: 16 }}
           >
             <View style={styles.accountsRow}>
               {activeProjectStats.map((project) => (
-                <View
+                <TouchableOpacity
                   key={project.id}
+                  activeOpacity={0.8}
+                  onPress={() => setSelectedProjectForDetails(project)}
                   style={[
                     styles.projectCard,
                     { 
@@ -367,7 +374,7 @@ export function SaldosScreen() {
                       </View>
                     </View>
                   </View>
-                </View>
+                </TouchableOpacity>
               ))}
             </View>
           </ScrollView>
@@ -422,42 +429,44 @@ export function SaldosScreen() {
     const tagInfo = tags.find(t => t.label === tx.tag) || tags.find(t => t.label === 'Outros');
 
     return (
-      <Swipeable
-        ref={(ref) => { if (ref) rowRefs.set(tx.id, ref); }}
-        renderRightActions={() => renderRightActions(tx.id)}
-        onSwipeableWillOpen={() => {
-          if (currentlyOpenRowId && currentlyOpenRowId !== tx.id) closeCurrentlyOpenRow();
-          currentlyOpenRowId = tx.id;
-        }}
-      >
-        <TouchableOpacity
-          style={[styles.txItem, { backgroundColor: colors.card, borderColor: colors.border }, isFirst && styles.txItemFirst, isLast && styles.txItemLast]}
-          onPress={() => setSelectedTx(tx)}
-          activeOpacity={1}
+      <GestureHandlerRootView>
+        <Swipeable
+          ref={(ref) => { if (ref) rowRefs.set(tx.id, ref); }}
+          renderRightActions={() => renderRightActions(tx.id)}
+          onSwipeableWillOpen={() => {
+            if (currentlyOpenRowId && currentlyOpenRowId !== tx.id) closeCurrentlyOpenRow();
+            currentlyOpenRowId = tx.id;
+          }}
         >
-          <View style={[styles.txIcon, { backgroundColor: (tagInfo?.color || colors.primary) + '15' }]}>
-            <Ionicons 
-              name={(tagInfo?.icon as any) || (isReceita ? 'arrow-up' : 'receipt')} 
-              size={18} 
-              color={tagInfo?.color || colors.primary} 
-            />
-          </View>
-          <View style={styles.txInfo}>
-            <Text style={[styles.txDesc, { color: colors.foreground }]} numberOfLines={1}>{tx.description}</Text>
-            <Text style={[styles.txMetaText, { color: colors.mutedForeground }]}>{formatDateShort(tx.date)} • {account?.name}</Text>
-          </View>
-          <Text style={[styles.txAmount, { color: isReceita ? colors.success : colors.destructive }]}>
-            {isReceita ? '+' : '-'}{formatCurrency(tx.amount)}
-          </Text>
-        </TouchableOpacity>
-      </Swipeable>
+          <TouchableOpacity
+            style={[styles.txItem, { backgroundColor: colors.card, borderColor: colors.border }, isFirst && styles.txItemFirst, isLast && styles.txItemLast]}
+            onPress={() => setSelectedTx(tx)}
+            activeOpacity={1}
+          >
+            <View style={[styles.txIcon, { backgroundColor: (tagInfo?.color || colors.primary) + '15' }]}>
+              <Ionicons 
+                name={(tagInfo?.icon as any) || (isReceita ? 'arrow-up' : 'receipt')} 
+                size={18} 
+                color={tagInfo?.color || colors.primary} 
+              />
+            </View>
+            <View style={styles.txInfo}>
+              <Text style={[styles.txDesc, { color: colors.foreground }]} numberOfLines={1}>{tx.description}</Text>
+              <Text style={[styles.txMetaText, { color: colors.mutedForeground }]}>{formatDateShort(tx.date)} • {account?.name}</Text>
+            </View>
+            <Text style={[styles.txAmount, { color: isReceita ? colors.success : colors.destructive }]}>
+              {isReceita ? '+' : '-'}{formatCurrency(tx.amount)}
+            </Text>
+          </TouchableOpacity>
+        </Swipeable>
+      </GestureHandlerRootView>
     );
   };
 
   if (loading) return <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}><ActivityIndicator size='large' color={colors.primary} /></View>;
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
+    <View style={{ flex: 1 }}>
       <FlatList
         data={paginatedTransactions}
         keyExtractor={(item) => item.id}
@@ -591,7 +600,14 @@ export function SaldosScreen() {
       </Modal>
 
       <RecurrenceActionModal visible={!!recurrenceDeleteData} actionType='delete' onClose={() => setRecurrenceDeleteData(null)} onSelect={(mode) => { if (recurrenceDeleteData) deleteTransaction(recurrenceDeleteData, mode); setRecurrenceDeleteData(null); }} />
-    </GestureHandlerRootView>
+
+      {selectedProjectForDetails && (
+        <ProjectTransactionsModal
+          project={selectedProjectForDetails}
+          onClose={() => setSelectedProjectForDetails(null)}
+        />
+      )}
+    </View>
   );
 }
 
