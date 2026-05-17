@@ -10,6 +10,8 @@ import {
   Platform,
   Modal,
   TextInput,
+  InteractionManager,
+  ActivityIndicator,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "@/hooks/useTheme";
@@ -93,12 +95,20 @@ export function HorizonteScreen() {
 
   // 👉 NOVO ESTADO: Alternar entre Lista e Mapa de Calor
   const [viewMode, setViewMode] = useState<"list" | "grid">("list");
+  const [isReady, setIsReady] = useState(false);
 
   const currentBudget = getEffectiveBudget(year, month);
 
+  useEffect(() => {
+    const task = InteractionManager.runAfterInteractions(() => {
+      setIsReady(true);
+    });
+    return () => task.cancel();
+  }, []);
+
   // Auto-scroll para hoje ao entrar na tela ou mudar para o mês atual
   useEffect(() => {
-    if (viewMode === "list" && year === today.getFullYear() && month === today.getMonth()) {
+    if (isReady && viewMode === "list" && year === today.getFullYear() && month === today.getMonth()) {
       const dayIndex = today.getDate() - 1;
       setTimeout(() => {
         scrollRef.current?.scrollTo({
@@ -107,7 +117,7 @@ export function HorizonteScreen() {
         });
       }, 100);
     }
-  }, [viewMode, year, month, today]);
+  }, [viewMode, year, month, today, isReady]);
 
   useEffect(() => {
     const loadConfig = async () => {
@@ -550,6 +560,14 @@ export function HorizonteScreen() {
       </View>
     );
   };
+
+  if (!isReady) {
+    return (
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: colors.background }}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
 
   return (
     <KeyboardAvoidingView
