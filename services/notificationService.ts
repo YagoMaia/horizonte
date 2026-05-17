@@ -46,22 +46,26 @@ export async function requestPermissions() {
 export async function scheduleDailyReminder() {
   if (Platform.OS === 'web') return;
 
-  // Limpa agendamentos anteriores para evitar duplicatas
-  await Notifications.cancelAllScheduledNotificationsAsync();
+  try {
+    // Limpa agendamentos anteriores para evitar duplicatas
+    await Notifications.cancelAllScheduledNotificationsAsync();
 
-  await Notifications.scheduleNotificationAsync({
-    content: {
-      title: 'Horizonte 💰',
-      body: 'Hora de cuidar do seu dinheiro! Já registrou seus gastos de hoje?',
-      sound: true,
-    },
-    trigger: {
-      type: Notifications.SchedulableTriggerInputTypes.DAILY,
-      hour: 20,
-      minute: 0,
-      channelId: 'default',
-    },
-  });
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: 'Horizonte 💰',
+        body: 'Hora de cuidar do seu dinheiro! Já registrou seus gastos de hoje?',
+        sound: true,
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DAILY,
+        hour: 20,
+        minute: 0,
+        channelId: 'default',
+      },
+    });
+  } catch (error) {
+    console.warn('Erro ao agendar notificação diária:', error);
+  }
 }
 
 /**
@@ -74,23 +78,28 @@ export async function scheduleMonthlyPaymentReminder(
 ) {
   if (Platform.OS === 'web') return undefined;
 
-  const notificationId = await Notifications.scheduleNotificationAsync({
-    content: {
-      title: `Vencimento Hoje: ${transactionName}`,
-      body: `Não esqueça de registrar o pagamento de R$ ${valor.toFixed(2)} no app.`,
-      sound: true,
-    },
-    trigger: {
-      type: Notifications.SchedulableTriggerInputTypes.CALENDAR,
-      day: diaDoMes,
-      hour: 9,
-      minute: 0,
-      repeats: true,
-      channelId: 'default',
-    },
-  });
+  try {
+    const notificationId = await Notifications.scheduleNotificationAsync({
+      content: {
+        title: `Vencimento Hoje: ${transactionName}`,
+        body: `Não esqueça de registrar o pagamento de R$ ${valor.toFixed(2)} no app.`,
+        sound: true,
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.CALENDAR,
+        day: diaDoMes,
+        hour: 9,
+        minute: 0,
+        repeats: true,
+        channelId: 'default',
+      },
+    });
 
-  return notificationId;
+    return notificationId;
+  } catch (error) {
+    console.warn('Erro ao agendar notificação mensal:', error);
+    return undefined;
+  }
 }
 
 /**
@@ -102,23 +111,28 @@ export async function scheduleCreditCardReminder(
 ) {
   if (Platform.OS === 'web') return undefined;
 
-  const notificationId = await Notifications.scheduleNotificationAsync({
-    content: {
-      title: `Fatura do Cartão: ${cardName}`,
-      body: `Sua fatura vence hoje. Não esqueça de conferir os lançamentos e realizar o pagamento!`,
-      sound: true,
-    },
-    trigger: {
-      type: Notifications.SchedulableTriggerInputTypes.CALENDAR,
-      day: dueDay,
-      hour: 8,
-      minute: 0,
-      repeats: true,
-      channelId: 'default',
-    },
-  });
+  try {
+    const notificationId = await Notifications.scheduleNotificationAsync({
+      content: {
+        title: `Fatura do Cartão: ${cardName}`,
+        body: `Sua fatura vence hoje. Não esqueça de conferir os lançamentos e realizar o pagamento!`,
+        sound: true,
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.CALENDAR,
+        day: dueDay,
+        hour: 8,
+        minute: 0,
+        repeats: true,
+        channelId: 'default',
+      },
+    });
 
-  return notificationId;
+    return notificationId;
+  } catch (error) {
+    console.warn('Erro ao agendar notificação de cartão de crédito:', error);
+    return undefined;
+  }
 }
 
 /**
