@@ -24,7 +24,7 @@ const PROJECT_COLORS = [
 export function ProjetosScreen() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  const { projects, getProjectSpent, addProject, updateProject, deleteProject } = useStoreContext();
+  const { transactions, projects, getProjectSpent, addProject, updateProject, deleteProject } = useStoreContext();
 
   const [modalVisible, setModalVisible] = useState(false);
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);

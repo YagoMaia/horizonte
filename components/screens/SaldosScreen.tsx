@@ -20,6 +20,7 @@ import {
   formatCurrency,
   formatDateShort,
   getInvoiceForTx,
+  getCurrentOpenInvoiceTotal,
 } from '@/lib/utils';
 import { useStoreContext } from '@/context/StoreContext';
 import { Transaction, Account, TransactionType, Project } from '@/constants/types';
@@ -242,9 +243,11 @@ export function SaldosScreen() {
           {accounts.map((acc: Account) => {
             const isCreditCard = acc.type === 'cartao_credito';
 
-            // Calcula a fatura atual se for cartão
+            // 👉 Sincronização Sênior: Para o card de "Contas e Cartões", sempre mostramos 
+            // a fatura que está ABERTA HOJE, independente do mês que o usuário está navegando na lista abaixo.
+            // Isso alinha com a CartaoScreen que abre por padrão na fatura atual.
             const currentInvoice = isCreditCard
-              ? calculateCreditCardInvoice(acc, transactions)
+              ? getCurrentOpenInvoiceTotal(acc, transactions)
               : 0;
 
             // Define o valor principal: 

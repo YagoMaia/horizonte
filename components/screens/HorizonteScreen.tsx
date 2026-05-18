@@ -201,8 +201,15 @@ export function HorizonteScreen() {
     const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
 
     const getEffectiveDate = (tx: any) => {
-      const d = new Date(tx.date);
-      const txDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+      // 👉 Extração Robusta (Sênior): "2026-06-01T..." -> [2026, 6, 1]
+      // Ignora o shift de timezone do ISO e extrai o "Dia do Calendário" pretendido
+      const dateStr = typeof tx.date === 'string' ? tx.date : (tx.date as Date).toISOString();
+      const parts = dateStr.split('T')[0].split('-').map(Number);
+      const y = parts[0];
+      const m = parts[1] - 1; // Ajuste para 0-indexed para o objeto Date
+      const d = parts[2];
+      
+      const txDay = new Date(y, m, d);
       
       // 👉 Correção Crítica 1: Se foi pago antecipadamente (data futura), o impacto no caixa é HOJE
       if (tx.paid && txDay > startOfToday) return startOfToday;
@@ -264,10 +271,14 @@ export function HorizonteScreen() {
       const invoiceTotals: Record<string, number> = {};
       
       cardUnpaidTxs.forEach(tx => {
-        const d = new Date(tx.date);
-        let m = d.getMonth() + 1;
-        let y = d.getFullYear();
-        if (d.getDate() >= closingDay) m += 1;
+        // 👉 Extração Robusta para Faturas
+        const dateStr = typeof tx.date === 'string' ? tx.date : (tx.date as Date).toISOString();
+        const parts = dateStr.split('T')[0].split('-').map(Number);
+        let y = parts[0];
+        let m = parts[1]; // 1-indexed
+        const day = parts[2];
+
+        if (day >= closingDay) m += 1;
         if (dueDay < closingDay) m += 1;
         while (m > 12) { m -= 12; y += 1; }
         
@@ -310,6 +321,20 @@ export function HorizonteScreen() {
 
       const monthTxs = transactions.filter((tx) => {
         const d = getEffectiveDate(tx);
+
+        // 👉 Validação de Data Inicial (Guard Clause Definitiva)
+        // Bypassa o Timezone Offset ao comparar meses absolutos baseados na string salva
+        const dateStr = typeof tx.date === 'string' ? tx.date : (tx.date as Date).toISOString();
+        const dateParts = dateStr.split('T')[0].split('-').map(Number); 
+        const startYearNum = dateParts[0];
+        const startMonthNum = dateParts[1]; // 1-12
+        
+        const startAbsolute = (startYearNum * 12) + startMonthNum;
+        const projAbsolute = (simYear * 12) + (simMonth + 1); // Ajuste simMonth (0-11) para 1-12
+
+        // Se o mês simulado for anterior ao mês de início, ignore.
+        if (projAbsolute < startAbsolute) return false;
+
         return d.getFullYear() === simYear && d.getMonth() === simMonth;
       });
 
@@ -323,7 +348,11 @@ export function HorizonteScreen() {
       // NOVO ALGORITMO: Calcula despesas fixas do mês para obter um "Daily Plan" base estático.
       let monthFixedExpenses = 0;
       const monthVirtualInvoices = Object.keys(virtualInvoiceTxs)
-        .filter(k => k.startsWith(`${simYear}-${simMonth}-`))
+        .filter(k => {
+          // 👉 Match Robusto: Evita que '2026-1-' pegue '2026-11-'
+          const [y, m] = k.split('-').map(Number);
+          return y === simYear && m === simMonth;
+        })
         .flatMap(k => virtualInvoiceTxs[k]);
         
       const allMonthActiveTxs = [...monthTxs, ...monthVirtualInvoices].filter(tx => {
