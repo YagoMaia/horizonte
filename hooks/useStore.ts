@@ -1,7 +1,14 @@
 // hooks/useStore.ts
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Transaction, Account } from '@/constants/types';
+import { 
+  scheduleTransactionNotification, 
+  scheduleCardClosingNotification, 
+  scheduleCardDueNotification,
+  cancelAllNotifications,
+  registerForPushNotificationsAsync
+} from '@/lib/notifications';
 
 const STORAGE_KEYS = {
   TRANSACTIONS: '@horizonte:transactions',
@@ -20,16 +27,51 @@ export function useStore() {
   const [showPending, setShowPendingState] = useState<boolean>(true);
   const [loading, setLoading] = useState(true);
 
+  // Mutex para serializar operações de escrita e evitar race conditions
+  const writeLock = useRef<Promise<void>>(Promise.resolve());
+
+  const withWriteLock = useCallback(<T,>(fn: () => Promise<T>): Promise<T> => {
+    const currentLock = writeLock.current;
+    let resolve: () => void;
+    writeLock.current = new Promise<void>((r) => { resolve = r; });
+    return currentLock.then(fn).finally(() => resolve!());
+  }, []);
+
   // --- MÉTODOS DE SALVAMENTO (Devem vir antes de serem usados em outros callbacks) ---
   
   const saveTransactions = useCallback(async (data: Transaction[]) => {
-    await AsyncStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(data));
-    setTransactions(data);
+    try {
+      await AsyncStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(data));
+      setTransactions(data);
+    } catch (e) {
+      console.error('Erro ao salvar transações:', e);
+      throw e;
+    }
   }, []);
 
   const saveAccounts = useCallback(async (data: Account[]) => {
-    await AsyncStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(data));
-    setAccounts(data);
+    try {
+      await AsyncStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(data));
+      setAccounts(data);
+    } catch (e) {
+      console.error('Erro ao salvar contas:', e);
+      throw e;
+    }
+  }, []);
+
+  // Escrita atômica: salva transações e contas juntas para evitar inconsistência
+  const saveTransactionsAndAccounts = useCallback(async (txData: Transaction[], accData: Account[]) => {
+    try {
+      await AsyncStorage.multiSet([
+        [STORAGE_KEYS.TRANSACTIONS, JSON.stringify(txData)],
+        [STORAGE_KEYS.ACCOUNTS, JSON.stringify(accData)],
+      ]);
+      setTransactions(txData);
+      setAccounts(accData);
+    } catch (e) {
+      console.error('Erro ao salvar dados:', e);
+      throw e;
+    }
   }, []);
 
   // --- MÉTODOS DE PROCESSAMENTO ---
@@ -48,6 +90,9 @@ export function useStore() {
       const isCreditCard = targetAccount?.type === 'cartao_credito';
 
       if (!tx.paid && !isCreditCard && isOverdue) {
+        if (tx.reminderEnabled) {
+          return tx;
+        }
         hasChanges = true;
         
         updatedAccounts = updatedAccounts.map(acc => {
@@ -67,10 +112,9 @@ export function useStore() {
     });
 
     if (hasChanges) {
-      await saveTransactions(updatedTransactions);
-      await saveAccounts(updatedAccounts);
+      await saveTransactionsAndAccounts(updatedTransactions, updatedAccounts);
     }
-  }, [saveTransactions, saveAccounts]);
+  }, [saveTransactionsAndAccounts]);
 
   const loadData = useCallback(async () => {
     try {
@@ -105,6 +149,35 @@ export function useStore() {
     loadData();
   }, [loadData]);
 
+  useEffect(() => {
+    const initNotifications = async () => {
+      await registerForPushNotificationsAsync();
+      
+      // Cancela todas as notificações existentes antes de reagendar
+      // para evitar duplicatas após mudanças de estado
+      await cancelAllNotifications();
+      
+      // Schedule card reminders
+      accounts.forEach(acc => {
+        if (acc.type === 'cartao_credito') {
+          scheduleCardClosingNotification(acc);
+          scheduleCardDueNotification(acc);
+        }
+      });
+
+      // Also ensure existing transactions with reminders are scheduled
+      transactions.forEach(tx => {
+        if (tx.reminderEnabled && !tx.paid) {
+          scheduleTransactionNotification(tx);
+        }
+      });
+    };
+
+    if (!loading) {
+      initNotifications();
+    }
+  }, [loading, accounts.length, transactions.length]);
+
   // --- DEMAIS MÉTODOS ---
 
   const setShowPending = useCallback(async (value: boolean) => {
@@ -116,6 +189,7 @@ export function useStore() {
   }, []);
 
   const clearAllData = useCallback(async () => {
+    await cancelAllNotifications();
     await AsyncStorage.multiRemove([
       STORAGE_KEYS.TRANSACTIONS,
       STORAGE_KEYS.ACCOUNTS,
@@ -129,7 +203,7 @@ export function useStore() {
   }, []);
 
   const addTransaction = useCallback(
-    async (tx: any) => {
+    (tx: any) => withWriteLock(async () => {
       const newTransactions: Transaction[] = [];
       let updatedAccounts = [...accounts];
 
@@ -165,10 +239,21 @@ export function useStore() {
           if (i === 0) {
             currentDate = new Date(baseDate);
           } else {
+            // Mantém o mesmo dia da compra original, avançando meses
+            // Isso garante que cada parcela caia na fatura correta baseado no closingDay
+            const purchaseDay = baseDate.getDate();
             let targetInvM = baseM + i;
-            let monthForDay1 = targetInvM - (dueDay < closingDay ? 1 : 0);
+            let monthForDate = targetInvM - (dueDay < closingDay ? 1 : 0);
 
-            currentDate = new Date(baseY, monthForDay1 - 1, 1, 12, 0, 0);
+            // Calcula o ano e mês corretos considerando overflow
+            let targetYear = baseY + Math.floor((monthForDate - 1) / 12);
+            let targetMonth = ((monthForDate - 1) % 12 + 12) % 12;
+
+            // Garante que o dia não exceda o máximo do mês alvo
+            const maxDay = new Date(targetYear, targetMonth + 1, 0).getDate();
+            const safeDay = Math.min(purchaseDay, maxDay);
+
+            currentDate = new Date(targetYear, targetMonth, safeDay, 12, 0, 0);
           }
 
           const descSuffix = installmentsCount > 1 ? ` (${i + 1}/${installmentsCount})` : '';
@@ -207,8 +292,10 @@ export function useStore() {
           } else if (tx.recurrence === 'diaria') {
             currentDate.setDate(baseDate.getDate() + i);
           } else if (tx.recurrence === 'quinto_dia_util') {
-            const targetMonth = baseDate.getMonth() + i;
-            const targetYear = baseDate.getFullYear();
+            // Calcula mês/ano corretamente para recorrências que cruzam virada de ano
+            const totalMonths = baseDate.getMonth() + i;
+            const targetYear = baseDate.getFullYear() + Math.floor(totalMonths / 12);
+            const targetMonth = totalMonths % 12;
             
             let businessDaysCount = 0;
             let day = 1;
@@ -277,15 +364,22 @@ export function useStore() {
       }
 
       const updated = [...newTransactions, ...transactions];
-      await saveTransactions(updated);
-      await saveAccounts(updatedAccounts);
+      await saveTransactionsAndAccounts(updated, updatedAccounts);
+
+      // Schedule notifications for new transactions
+      newTransactions.forEach(nt => {
+        if (nt.reminderEnabled && !nt.paid) {
+          scheduleTransactionNotification(nt);
+        }
+      });
+
       return newTransactions[0];
-    },
-    [transactions, accounts, saveTransactions, saveAccounts],
+    }),
+    [transactions, accounts, saveTransactionsAndAccounts, withWriteLock],
   );
 
   const deleteTransaction = useCallback(
-    async (id: string, mode: 'single' | 'future' | 'all' = 'single') => {
+    (id: string, mode: 'single' | 'future' | 'all' = 'single') => withWriteLock(async () => {
       const targetTx = transactions.find((t) => t.id === id);
       if (!targetTx) return;
 
@@ -337,17 +431,16 @@ export function useStore() {
         }
       });
 
-      await saveTransactions(updated);
-      await saveAccounts(updatedAccounts);
-    },
-    [transactions, accounts, saveTransactions, saveAccounts],
+      await saveTransactionsAndAccounts(updated, updatedAccounts);
+    }),
+    [transactions, accounts, saveTransactionsAndAccounts, withWriteLock],
   );
 
   const updateTransaction = useCallback(
-    async (
+    (
       updatedTx: Transaction,
       mode: 'single' | 'future' | 'all' = 'single',
-    ) => {
+    ) => withWriteLock(async () => {
       const oldTx = transactions.find((t) => t.id === updatedTx.id);
       if (!oldTx) return;
 
@@ -461,10 +554,14 @@ export function useStore() {
         );
       }
 
-      await saveTransactions(finalTransactions);
-      await saveAccounts(updatedAccounts);
-    },
-    [transactions, accounts, saveTransactions, saveAccounts],
+      await saveTransactionsAndAccounts(finalTransactions, updatedAccounts);
+
+      // Re-schedule notification
+      if (updatedTx.reminderEnabled && !updatedTx.paid) {
+        scheduleTransactionNotification(updatedTx);
+      }
+    }),
+    [transactions, accounts, saveTransactionsAndAccounts, withWriteLock],
   );
 
   const getEffectiveBudget = useCallback(
@@ -503,21 +600,39 @@ export function useStore() {
     return sum + a.balance;
   }, 0), [accounts]);
 
-  const monthlyIncome = useMemo(() => transactions
-    .filter((t) => t.type === 'receita' && t.paid)
-    .reduce((sum, t) => sum + t.amount, 0), [transactions]);
+  const monthlyIncome = useMemo(() => {
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+    return transactions
+      .filter((t) => {
+        if (t.type !== 'receita' || !t.paid) return false;
+        const d = new Date(t.date);
+        return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+      })
+      .reduce((sum, t) => sum + t.amount, 0);
+  }, [transactions]);
 
-  const monthlyExpense = useMemo(() => transactions
-    .filter((t) => t.type === 'despesa' && t.paid)
-    .reduce((sum, t) => sum + t.amount, 0), [transactions]);
+  const monthlyExpense = useMemo(() => {
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+    return transactions
+      .filter((t) => {
+        if (t.type !== 'despesa' || !t.paid) return false;
+        const d = new Date(t.date);
+        return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+      })
+      .reduce((sum, t) => sum + t.amount, 0);
+  }, [transactions]);
 
   const payCreditCardInvoice = useCallback(
-    async (
+    (
       creditCardId: string,
       sourceAccountId: string,
       targetMonth: number,
       targetYear: number,
-    ) => {
+    ) => withWriteLock(async () => {
       const cardAccount = accounts.find((a) => a.id === creditCardId);
       if (!cardAccount || cardAccount.type !== 'cartao_credito') return;
 
@@ -583,20 +698,19 @@ export function useStore() {
         return acc;
       });
 
-      await saveTransactions(finalTransactions);
-      await saveAccounts(updatedAccounts);
-    },
-    [transactions, accounts, saveTransactions, saveAccounts],
+      await saveTransactionsAndAccounts(finalTransactions, updatedAccounts);
+    }),
+    [transactions, accounts, saveTransactionsAndAccounts, withWriteLock],
   );
 
   const anticipateCreditCardPayment = useCallback(
-    async (
+    (
       creditCardId: string,
       sourceAccountId: string,
       amount: number,
       targetMonth: number,
       targetYear: number,
-    ) => {
+    ) => withWriteLock(async () => {
       const cardAccount = accounts.find((a) => a.id === creditCardId);
       if (!cardAccount) return;
 
@@ -641,14 +755,13 @@ export function useStore() {
         return acc;
       });
 
-      await saveTransactions(finalTransactions);
-      await saveAccounts(updatedAccounts);
-    },
-    [transactions, accounts, saveTransactions, saveAccounts]
+      await saveTransactionsAndAccounts(finalTransactions, updatedAccounts);
+    }),
+    [transactions, accounts, saveTransactionsAndAccounts, withWriteLock]
   );
 
   const deleteMultipleTransactions = useCallback(
-    async (txIds: string[]) => {
+    (txIds: string[]) => withWriteLock(async () => {
       let idsToRemove = new Set<string>();
 
       txIds.forEach((id) => {
@@ -688,10 +801,9 @@ export function useStore() {
         }
       });
 
-      await saveTransactions(updated);
-      await saveAccounts(updatedAccounts);
-    },
-    [transactions, accounts, saveTransactions, saveAccounts],
+      await saveTransactionsAndAccounts(updated, updatedAccounts);
+    }),
+    [transactions, accounts, saveTransactionsAndAccounts, withWriteLock],
   );
 
   return {

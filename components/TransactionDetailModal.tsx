@@ -123,6 +123,7 @@ export function TransactionDetailModal({ transaction, onClose, onEdit }: Transac
             } colors={colors} />
             <DetailRow label="Conta" value={account?.name ?? '—'} colors={colors} />
             <DetailRow label="Recorrência" value={RECURRENCE_LABELS[transaction.recurrence] ?? '—'} colors={colors} />
+            <DetailRow label="Lembrete" value={transaction.reminderEnabled ? 'Ativado' : 'Desativado'} colors={colors} />
             {transaction.notes && (
               <DetailRow label="Notas" value={transaction.notes} colors={colors} />
             )}

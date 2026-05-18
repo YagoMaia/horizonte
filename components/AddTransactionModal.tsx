@@ -102,6 +102,7 @@ export function AddTransactionModal({
   const [accountId, setAccountId] = useState(initialAccountId ?? accounts[0]?.id ?? '');
   const [recurrence, setRecurrence] = useState<RecurrenceType>('unica');
   const [paid, setPaid] = useState(true);
+  const [reminderEnabled, setReminderEnabled] = useState(false);
   const [targetAccountId, setTargetAccountId] = useState('');
   const [recurrenceActionVisible, setRecurrenceActionVisible] = useState(false);
   const [pendingTxData, setPendingTxData] = useState<any>(null);
@@ -172,6 +173,7 @@ export function AddTransactionModal({
         setAccountId(transactionToEdit.accountId);
         setRecurrence(transactionToEdit.recurrence);
         setPaid(transactionToEdit.paid);
+        setReminderEnabled(transactionToEdit.reminderEnabled || false);
         setInstallments(transactionToEdit.totalInstallments || 1);
         const d = new Date(transactionToEdit.date);
         setDate(
@@ -440,6 +442,7 @@ export function AddTransactionModal({
       accountId,
       recurrence: finalRecurrence,
       paid,
+      reminderEnabled,
       recurrenceStartDate: (!isInstallment && finalRecurrence !== 'unica')
         ? parseToISO(recurrenceStart)
         : undefined,
@@ -943,6 +946,22 @@ export function AddTransactionModal({
                 />
               </View>
             )}
+
+            <View style={styles.switchRow}>
+              <View>
+                <Text style={{ color: colors.foreground, fontWeight: '500' }}>
+                  Lembrete de Pagamento
+                </Text>
+                <Text style={{ fontSize: 10, color: colors.mutedForeground }}>
+                  Notificar no dia e não confirmar automaticamente
+                </Text>
+              </View>
+              <Switch
+                value={reminderEnabled}
+                onValueChange={setReminderEnabled}
+                trackColor={{ false: colors.border, true: colors.primary }}
+              />
+            </View>
           </ScrollView>
         ) : (
           <View style={styles.emptyStateContainer}>

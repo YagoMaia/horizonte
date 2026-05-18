@@ -40,6 +40,7 @@ export interface Transaction {
   targetAccountId?: string
   groupId?: string
   groupIndex?: number;
+  reminderEnabled?: boolean // If true, the app will notify and NOT auto-process as paid
 }
 
 export interface DailyBalance {

@@ -1,5 +1,5 @@
 // components/screens/SaldosScreen.tsx
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -52,6 +52,16 @@ export function SaldosScreen() {
   const [displayLimit, setDisplayLimit] = useState(20);
   const [recurrenceDeleteData, setRecurrenceDeleteData] = useState<string | null>(null);
   const [simpleDeleteData, setSimpleDeleteData] = useState<Transaction | null>(null);
+  
+  const overduePendingTransactions = useMemo(() => {
+    const today = new Date();
+    today.setHours(23, 59, 59, 999);
+    return transactions.filter(tx => 
+      !tx.paid && 
+      new Date(tx.date) <= today && 
+      tx.reminderEnabled
+    );
+  }, [transactions]);
 
   // ESTADOS PARA FILTROS
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
@@ -66,11 +76,11 @@ export function SaldosScreen() {
     (filterAccountId !== 'todas' ? 1 : 0);
 
   const rowRefs = React.useRef(new Map()).current;
-  let currentlyOpenRowId: string | null = null;
+  const currentlyOpenRowRef = useRef<string | null>(null);
 
   const closeCurrentlyOpenRow = () => {
-    if (currentlyOpenRowId && rowRefs.get(currentlyOpenRowId)) {
-      rowRefs.get(currentlyOpenRowId).close();
+    if (currentlyOpenRowRef.current && rowRefs.get(currentlyOpenRowRef.current)) {
+      rowRefs.get(currentlyOpenRowRef.current).close();
     }
   };
 
@@ -190,6 +200,19 @@ export function SaldosScreen() {
           </View>
         </View>
       </View>
+
+      {/* BANNER DE PENDÊNCIAS */}
+      {overduePendingTransactions.length > 0 && (
+        <View style={[styles.pendingBanner, { backgroundColor: colors.warning + '20', borderColor: colors.warning }]}>
+          <Ionicons name="alert-circle" size={20} color={colors.warning} />
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.pendingTitle, { color: colors.warning }]}>Lançamentos Atrasados</Text>
+            <Text style={[styles.pendingText, { color: colors.foreground }]}>
+              Você tem {overduePendingTransactions.length} {overduePendingTransactions.length === 1 ? 'pagamento que não foi confirmado' : 'pagamentos que não foram confirmados'}.
+            </Text>
+          </View>
+        </View>
+      )}
 
       {/* 2. SEÇÃO DE CONTAS E CARTÕES */}
       <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Contas e Cartões</Text>
@@ -314,8 +337,8 @@ export function SaldosScreen() {
         ref={(ref) => { if (ref) rowRefs.set(tx.id, ref); }}
         renderRightActions={() => renderRightActions(tx.id)}
         onSwipeableWillOpen={() => {
-          if (currentlyOpenRowId && currentlyOpenRowId !== tx.id) closeCurrentlyOpenRow();
-          currentlyOpenRowId = tx.id;
+          if (currentlyOpenRowRef.current && currentlyOpenRowRef.current !== tx.id) closeCurrentlyOpenRow();
+          currentlyOpenRowRef.current = tx.id;
         }}
       >
         <TouchableOpacity
@@ -612,5 +635,23 @@ const styles = StyleSheet.create({
   },
   hiddenAction: { justifyContent: 'center', alignItems: 'center', width: 80 },
   hiddenActionRight: { borderTopRightRadius: 20, borderBottomRightRadius: 20 },
-  hiddenActionText: { color: '#FFF', fontSize: 10, fontWeight: '700', marginTop: 4 }
-});
+  hiddenActionText: { color: '#FFF', fontSize: 10, fontWeight: '700', marginTop: 4 },
+  pendingBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 16,
+    borderRadius: 20,
+    borderWidth: 1,
+    marginTop: 8,
+  },
+  pendingTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  pendingText: {
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  });

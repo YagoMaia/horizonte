@@ -440,8 +440,8 @@ export function HorizonteScreen() {
                 </Text>
               </View>
               {columns.map((col) => {
-                const dayData = projectionsByMonth[col.key]?.find(
-                  (d) => d.day === dayNum,
+                const dayData = resultsMap[col.key]?.find(
+                  (d: any) => d.day === dayNum,
                 );
                 if (!dayData)
                   return (
