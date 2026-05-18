@@ -69,35 +69,43 @@ export async function scheduleDailyReminder() {
 }
 
 /**
- * Agenda um lembrete de pagamento mensal
+ * Agenda um lembrete para um lançamento recorrente ou único
  */
-export async function scheduleMonthlyPaymentReminder(
+export async function scheduleTransactionReminder(
   transactionName: string,
   valor: number,
-  diaDoMes: number
+  dueDate: Date
 ) {
   if (Platform.OS === 'web') return undefined;
+
+  // Gatilho para as 09:00 da manhã do dia do vencimento
+  const triggerDate = new Date(dueDate);
+  triggerDate.setHours(9, 0, 0, 0);
+
+  // Não agenda se a data já passou
+  if (triggerDate.getTime() <= Date.now()) {
+    return undefined;
+  }
+
+  const valorFormatado = `R$ ${valor.toFixed(2).replace('.', ',')}`;
 
   try {
     const notificationId = await Notifications.scheduleNotificationAsync({
       content: {
-        title: `Vencimento Hoje: ${transactionName}`,
-        body: `Não esqueça de registrar o pagamento de R$ ${valor.toFixed(2)} no app.`,
+        title: 'Vencimento Próximo: Lançamento Recorrente',
+        body: `O lançamento '${transactionName}' no valor de ${valorFormatado} vence em breve. Garanta o saldo em conta!`,
         sound: true,
       },
       trigger: {
-        type: Notifications.SchedulableTriggerInputTypes.CALENDAR,
-        day: diaDoMes,
-        hour: 9,
-        minute: 0,
-        repeats: true,
+        type: Notifications.SchedulableTriggerInputTypes.DATE,
+        date: triggerDate,
         channelId: 'default',
       },
     });
 
     return notificationId;
   } catch (error) {
-    console.warn('Erro ao agendar notificação mensal:', error);
+    console.warn('Erro ao agendar notificação de transação:', error);
     return undefined;
   }
 }

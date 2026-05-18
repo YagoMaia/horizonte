@@ -46,6 +46,7 @@ export function SaldosScreen() {
     transactions,
     tags, // 👉 Puxando tags dinâmicas
     projects, // 👉 Puxando projetos
+    getProjectSpent, // 👉 Nova função de cálculo centralizada
     totalBalance,
     addTransaction,
     updateTransaction,
@@ -89,11 +90,7 @@ export function SaldosScreen() {
     const activeProjects = projects.filter(p => p.active !== false);
     
     return activeProjects.map((project) => {
-      const projectTxs = transactions.filter(tx => tx.projectId === project.id);
-      
-      const totalSpent = projectTxs.reduce((sum, tx) => {
-        return sum + (tx.type === 'despesa' ? tx.amount : (tx.type === 'receita' ? -tx.amount : 0));
-      }, 0);
+      const totalSpent = getProjectSpent(project.id);
 
       const progress = project.targetBudget > 0 ? Math.min(totalSpent / project.targetBudget, 1) : 0;
       const isOverBudget = totalSpent > project.targetBudget;
@@ -105,7 +102,7 @@ export function SaldosScreen() {
         isOverBudget,
       };
     });
-  }, [projects, transactions]);
+  }, [projects, getProjectSpent, transactions]);
 
   // CÁLCULO DE ENTRADAS E SAÍDAS DO MÊS (Apenas movimentações de "caixa")
   const currentMonthStats = useMemo(() => {

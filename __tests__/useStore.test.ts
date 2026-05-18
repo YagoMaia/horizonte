@@ -14,6 +14,7 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
 jest.mock('../services/notificationService', () => ({
   scheduleCreditCardReminder: jest.fn(),
   scheduleMonthlyPaymentReminder: jest.fn(),
+  scheduleTransactionReminder: jest.fn(),
   cancelReminder: jest.fn(),
 }));
 
@@ -104,5 +105,72 @@ describe('useStore hook', () => {
     const projectTx = result.current.transactions.find(tx => tx.projectId === addedProject.id);
     expect(projectTx).toBeDefined();
     expect(projectTx?.amount).toBe(1500);
+
+    // Verifica a nova função centralizada
+    const spent = result.current.getProjectSpent(addedProject.id);
+    expect(spent).toBe(1500);
+  });
+
+  it('Cenário 3: getProjectSpent should include both "despesa" and "transferencia"', async () => {
+    const { result } = renderHook(() => useStore());
+
+    await act(async () => {
+      await result.current.clearAllData();
+      await result.current.addProject({
+        name: 'Projeto Teste',
+        targetBudget: 1000,
+        color: '#F00',
+        active: true,
+      });
+    });
+
+    const project = result.current.projects[0];
+
+    await act(async () => {
+      // Adiciona Despesa
+      await result.current.addTransaction({
+        description: 'Despesa',
+        amount: 200,
+        type: 'despesa',
+        date: new Date().toISOString(),
+        accountId: 'acc1',
+        paid: true,
+        projectId: project.id,
+        recurrence: 'unica',
+      });
+    });
+
+    await act(async () => {
+      // Adiciona Transferência (saída de valor para o projeto)
+      await result.current.addTransaction({
+        description: 'Transferência para Projeto',
+        amount: 300,
+        type: 'transferencia',
+        date: new Date().toISOString(),
+        accountId: 'acc1',
+        targetAccountId: 'acc2',
+        paid: true,
+        projectId: project.id,
+        recurrence: 'unica',
+      });
+    });
+
+    await act(async () => {
+      // Adiciona Receita (deve subtrair)
+      await result.current.addTransaction({
+        description: 'Reembolso',
+        amount: 50,
+        type: 'receita',
+        date: new Date().toISOString(),
+        accountId: 'acc1',
+        paid: true,
+        projectId: project.id,
+        recurrence: 'unica',
+      });
+    });
+
+    // 200 (despesa) + 300 (transferencia) - 50 (receita) = 450
+    const totalSpent = result.current.getProjectSpent(project.id);
+    expect(totalSpent).toBe(450);
   });
 });

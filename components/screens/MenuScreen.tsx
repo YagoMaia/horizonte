@@ -9,6 +9,7 @@ import {
   Alert,
   Platform,
   Modal,
+  Switch,
 } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { useTheme } from '@/hooks/useTheme'
@@ -77,7 +78,9 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects }: MenuS
     totalBalance, 
     clearAllData,
     syncBalances,
-    purgeAdjustments
+    purgeAdjustments,
+    notificationPreferences,
+    toggleNotificationPreference
   } = useStoreContext()
 
   const [themeModalVisible, setThemeModalVisible] = useState(false)
@@ -462,28 +465,46 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects }: MenuS
       {/* Notificações */}
       <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>NOTIFICAÇÕES</Text>
       <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <MenuItem
-          icon="notifications-outline"
-          label="Ativar Lembretes Diários"
-          onPress={async () => {
-            const granted = await requestPermissions()
-            if (granted) {
-              await scheduleDailyReminder()
-              if (Platform.OS === 'web') {
-                alert('Lembretes diários ativados para as 20h!')
+        <View style={styles.switchItem}>
+          <View style={{ flex: 1, paddingRight: 16 }}>
+            <Text style={[styles.switchLabel, { color: colors.foreground }]}>Lembretes Diários</Text>
+            <Text style={[styles.switchDesc, { color: colors.mutedForeground }]}>Lembrar de registrar os gastos do dia.</Text>
+          </View>
+          <Switch
+            value={notificationPreferences?.dailyReminders ?? true}
+            onValueChange={async (val) => {
+              const granted = await requestPermissions()
+              if (granted) {
+                await toggleNotificationPreference('dailyReminders', val)
               } else {
-                Alert.alert('Sucesso', 'Lembretes diários ativados para as 20h!')
+                if (Platform.OS === 'web') alert('Permissão necessária para notificações.');
+                else Alert.alert('Erro', 'Permissão de notificação negada.');
               }
-            } else {
-              if (Platform.OS === 'web') {
-                alert('As notificações não são suportadas no navegador para este recurso.')
-              } else {
-                Alert.alert('Erro', 'Permissão de notificação negada.')
-              }
-            }
-          }}
-          colors={colors}
-        />
+            }}
+            trackColor={{ true: colors.primary, false: colors.border }}
+          />
+        </View>
+        <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
+          <View style={styles.switchItem}>
+            <View style={{ flex: 1, paddingRight: 16 }}>
+              <Text style={[styles.switchLabel, { color: colors.foreground }]}>Alertas de Vencimento</Text>
+              <Text style={[styles.switchDesc, { color: colors.mutedForeground }]}>Avisar sobre contas e faturas próximas do vencimento.</Text>
+            </View>
+            <Switch
+              value={notificationPreferences?.billAlerts ?? true}
+              onValueChange={async (val) => {
+                const granted = await requestPermissions()
+                if (granted) {
+                  await toggleNotificationPreference('billAlerts', val)
+                } else {
+                  if (Platform.OS === 'web') alert('Permissão necessária para notificações.');
+                  else Alert.alert('Erro', 'Permissão de notificação negada.');
+                }
+              }}
+              trackColor={{ true: colors.primary, false: colors.border }}
+            />
+          </View>
+        </View>
         <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
           <MenuItem
             icon="flask-outline"
@@ -651,6 +672,9 @@ const styles = StyleSheet.create({
   menuIcon: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   menuLabel: { flex: 1, fontSize: 15, fontWeight: '400' },
   menuValue: { fontSize: 14 },
+  switchItem: { flexDirection: 'row', alignItems: 'center', padding: 14, gap: 12 },
+  switchLabel: { fontSize: 15, fontWeight: '500' },
+  switchDesc: { fontSize: 12, marginTop: 4 },
   footer: { textAlign: 'center', fontSize: 12, marginTop: 8 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 24 },
   modalContent: { width: '100%', borderRadius: 20, borderWidth: 1, padding: 24 },

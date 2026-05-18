@@ -13,7 +13,7 @@ interface Props {
 
 export function ProjectTransactionsModal({ project, onClose }: Props) {
   const { colors } = useTheme();
-  const { transactions } = useStoreContext();
+  const { transactions, getProjectSpent } = useStoreContext();
 
   const projectTransactions = useMemo(() => {
     if (!project) return [];
@@ -24,9 +24,7 @@ export function ProjectTransactionsModal({ project, onClose }: Props) {
 
   if (!project) return null;
 
-  const totalSpent = projectTransactions.reduce((sum, tx) => {
-    return sum + (tx.type === 'despesa' ? tx.amount : (tx.type === 'receita' ? -tx.amount : 0));
-  }, 0);
+  const totalSpent = getProjectSpent(project.id);
 
   const progress = project.targetBudget > 0 ? Math.min(totalSpent / project.targetBudget, 1) : 0;
   const isOverBudget = totalSpent > project.targetBudget;

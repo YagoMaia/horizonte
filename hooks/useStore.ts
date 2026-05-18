@@ -1,7 +1,7 @@
 // hooks/useStore.ts
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Transaction, Account, Tag, DEFAULT_TAGS, Project } from '@/constants/types';
+import { Transaction, Account, Tag, DEFAULT_TAGS, Project, NotificationPreferences } from '@/constants/types';
 import * as NotificationService from '../services/notificationService';
 import { addMonths, addYears, addWeeks, addDays, setDate } from 'date-fns';
 
@@ -13,10 +13,12 @@ const STORAGE_KEYS = {
   TAGS: '@horizonte:tags',
   ONBOARDING: '@horizonte:onboarding',
   PROJECTS: '@horizonte:projects',
+  NOTIFICATION_PREFS: '@horizonte:notification_prefs',
 };
 
 const DEFAULT_ACCOUNTS: Account[] = [];
 const DEFAULT_TRANSACTIONS: Transaction[] = [];
+const DEFAULT_NOTIFICATION_PREFS: NotificationPreferences = { dailyReminders: true, billAlerts: true };
 
 export function useStore() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -26,9 +28,26 @@ export function useStore() {
   const [monthlyBudgets, setMonthlyBudgets] = useState<Record<string, number>>({});
   const [showPending, setShowPendingState] = useState<boolean>(true);
   const [hasSeenOnboarding, setHasSeenOnboarding] = useState<boolean>(false);
+  const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferences>(DEFAULT_NOTIFICATION_PREFS);
   const [loading, setLoading] = useState(true);
 
   // --- MÉTODOS DE SALVAMENTO ---
+
+  const saveNotificationPreferences = useCallback(async (data: NotificationPreferences) => {
+    await AsyncStorage.setItem(STORAGE_KEYS.NOTIFICATION_PREFS, JSON.stringify(data));
+    setNotificationPreferences(data);
+  }, []);
+
+  const toggleNotificationPreference = useCallback(async (key: keyof NotificationPreferences, value: boolean) => {
+    const updated = { ...notificationPreferences, [key]: value };
+    await saveNotificationPreferences(updated);
+    
+    if (key === 'dailyReminders') {
+      if (value) {
+        await NotificationService.scheduleDailyReminder();
+      }
+    }
+  }, [notificationPreferences, saveNotificationPreferences]);
 
   const saveTransactions = useCallback(async (data: Transaction[]) => {
     await AsyncStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(data));
@@ -77,7 +96,7 @@ export function useStore() {
       let notificationId: string | undefined;
 
       // Agenda lembrete se for cartão de crédito
-      if (acc.type === "cartao_credito" && acc.dueDay) {
+      if (acc.type === 'cartao_credito' && acc.dueDay && notificationPreferences.billAlerts) {
         notificationId = await NotificationService.scheduleCreditCardReminder(
           acc.name,
           acc.dueDay
@@ -108,7 +127,7 @@ export function useStore() {
         await saveTransactions([adjustmentTx, ...transactions]);
       }
     },
-    [accounts, transactions, saveAccounts, saveTransactions],
+    [accounts, transactions, saveAccounts, saveTransactions, notificationPreferences.billAlerts],
   );
 
   const updateAccount = useCallback(
@@ -126,7 +145,7 @@ export function useStore() {
         if (notificationId) {
           await NotificationService.cancelReminder(notificationId);
         }
-        if (updatedAcc.dueDay) {
+        if (updatedAcc.dueDay && notificationPreferences.billAlerts) {
           notificationId = await NotificationService.scheduleCreditCardReminder(
             updatedAcc.name,
             updatedAcc.dueDay
@@ -161,7 +180,7 @@ export function useStore() {
       );
       await saveAccounts(updatedAccounts);
     },
-    [accounts, transactions, saveAccounts, saveTransactions],
+    [accounts, transactions, saveAccounts, saveTransactions, notificationPreferences.billAlerts],
   );
 
   const deleteAccount = useCallback(
@@ -246,7 +265,7 @@ export function useStore() {
 
   const loadData = useCallback(async () => {
     try {
-      const [txRaw, accRaw, budgetsRaw, showPendingRaw, tagsRaw, onboardingRaw, projectsRaw] =
+      const [txRaw, accRaw, budgetsRaw, showPendingRaw, tagsRaw, onboardingRaw, projectsRaw, notifPrefsRaw] =
         await Promise.all([
           AsyncStorage.getItem(STORAGE_KEYS.TRANSACTIONS),
           AsyncStorage.getItem(STORAGE_KEYS.ACCOUNTS),
@@ -255,6 +274,7 @@ export function useStore() {
           AsyncStorage.getItem(STORAGE_KEYS.TAGS),
           AsyncStorage.getItem(STORAGE_KEYS.ONBOARDING),
           AsyncStorage.getItem(STORAGE_KEYS.PROJECTS),
+          AsyncStorage.getItem(STORAGE_KEYS.NOTIFICATION_PREFS),
         ]);
 
       const loadedTransactions = txRaw ? JSON.parse(txRaw) : DEFAULT_TRANSACTIONS;
@@ -271,6 +291,10 @@ export function useStore() {
 
       if (showPendingRaw !== null) {
         setShowPendingState(JSON.parse(showPendingRaw));
+      }
+
+      if (notifPrefsRaw !== null) {
+        setNotificationPreferences(JSON.parse(notifPrefsRaw));
       }
 
       await autoProcessOverdueTransactions(loadedTransactions, loadedAccounts);
@@ -304,6 +328,7 @@ export function useStore() {
       STORAGE_KEYS.TAGS,
       STORAGE_KEYS.ONBOARDING,
       STORAGE_KEYS.PROJECTS,
+      STORAGE_KEYS.NOTIFICATION_PREFS,
     ]);
     setTransactions(DEFAULT_TRANSACTIONS);
     setAccounts(DEFAULT_ACCOUNTS);
@@ -312,6 +337,7 @@ export function useStore() {
     setMonthlyBudgets({});
     setShowPendingState(true);
     setHasSeenOnboarding(false);
+    setNotificationPreferences(DEFAULT_NOTIFICATION_PREFS);
   }, []);
 
   const addTag = useCallback(async (tag: Omit<Tag, 'id'>) => {
@@ -438,13 +464,12 @@ export function useStore() {
           const isPaid = isCreditCard ? false : (i === 0 ? tx.paid : false);
 
           let notificationId: string | undefined;
-          // Lembrete de Pagamento Mensal (apenas para a primeira parcela da série ou se preferir em todas)
-          // Aqui agendamos apenas para a primeira ocorrência da série recorrente
-          if (i === 0 && tx.type === 'despesa' && tx.recurrence === 'mensal') {
-            notificationId = await NotificationService.scheduleMonthlyPaymentReminder(
+          
+          if (tx.type === 'despesa' && notificationPreferences.billAlerts && !isPaid) {
+            notificationId = await NotificationService.scheduleTransactionReminder(
               tx.description,
               tx.amount,
-              currentDate.getDate()
+              currentDate
             );
           }
 
@@ -476,13 +501,13 @@ export function useStore() {
       else {
         let notificationId: string | undefined;
 
-        // Lembrete de Pagamento Mensal
-        if (tx.type === 'despesa' && tx.recurrence === 'mensal') {
+        // Lembrete de Pagamento
+        if (tx.type === 'despesa' && notificationPreferences.billAlerts && !tx.paid) {
           const date = new Date(tx.date);
-          notificationId = await NotificationService.scheduleMonthlyPaymentReminder(
+          notificationId = await NotificationService.scheduleTransactionReminder(
             tx.description,
             tx.amount,
-            date.getDate()
+            date
           );
         }
 
@@ -513,7 +538,7 @@ export function useStore() {
       await saveAccounts(updatedAccounts);
       return newTransactions[0];
     },
-    [transactions, accounts, saveTransactions, saveAccounts],
+    [transactions, accounts, saveTransactions, saveAccounts, notificationPreferences.billAlerts],
   );
 
   const deleteTransaction = useCallback(
@@ -675,17 +700,17 @@ export function useStore() {
 
           let notificationId = mutantOld.notificationId;
 
-          // 👉 Atualiza o lembrete se for a transação base da série
-          if ((mutantOld.groupIndex === 0 || mutantOld.groupIndex === undefined) && updatedTx.type === 'despesa' && updatedTx.recurrence === 'mensal') {
+          // 👉 Atualiza o lembrete para faturas futuras
+          if (updatedTx.type === 'despesa' && notificationPreferences.billAlerts && !mutantOld.paid && updatedTx.notifyRecurrence !== false) {
             if (notificationId) {
               await NotificationService.cancelReminder(notificationId);
             }
-            notificationId = await NotificationService.scheduleMonthlyPaymentReminder(
+            notificationId = await NotificationService.scheduleTransactionReminder(
               updatedTx.description,
               updatedTx.amount,
-              newMutantDate.getDate()
+              newMutantDate
             );
-          } else if (notificationId && updatedTx.type !== 'despesa') {
+          } else if (notificationId && (updatedTx.type !== 'despesa' || mutantOld.paid || updatedTx.notifyRecurrence === false)) {
             await NotificationService.cancelReminder(notificationId);
             notificationId = undefined;
           }
@@ -713,17 +738,17 @@ export function useStore() {
 
         let notificationId = oldTx.notificationId;
 
-        if (updatedTx.type === 'despesa' && updatedTx.recurrence === 'mensal') {
+        if (updatedTx.type === 'despesa' && notificationPreferences.billAlerts && !updatedTx.paid) {
           if (notificationId) {
             await NotificationService.cancelReminder(notificationId);
           }
           const date = new Date(updatedTx.date);
-          notificationId = await NotificationService.scheduleMonthlyPaymentReminder(
+          notificationId = await NotificationService.scheduleTransactionReminder(
             updatedTx.description,
             updatedTx.amount,
-            date.getDate()
+            date
           );
-        } else if (notificationId && updatedTx.type !== 'despesa') {
+        } else if (notificationId && (updatedTx.type !== 'despesa' || updatedTx.paid)) {
           await NotificationService.cancelReminder(notificationId);
           notificationId = undefined;
         }
@@ -737,7 +762,7 @@ export function useStore() {
       await saveTransactions(finalTransactions);
       await saveAccounts(updatedAccounts);
     },
-    [transactions, accounts, saveTransactions, saveAccounts],
+    [transactions, accounts, saveTransactions, saveAccounts, notificationPreferences.billAlerts],
   );
 
   const getEffectiveBudget = useCallback(
@@ -1009,13 +1034,33 @@ export function useStore() {
     await saveTransactions(updatedTxs);
   }, [transactions, saveTransactions]);
 
+  const getProjectSpent = useCallback((projectId: string) => {
+    if (!projectId) return 0;
+    const projectTxs = transactions.filter(tx => tx.projectId === projectId);
+    return projectTxs.reduce((sum, tx) => {
+      const amount = Number(tx.amount) || 0;
+      // Considera despesas e transferências como gasto positivo (saída). 
+      // Receita no projeto subtrai do gasto (ex: reembolso).
+      if (tx.type === 'despesa' || tx.type === 'transferencia') {
+        return sum + amount;
+      }
+      if (tx.type === 'receita') {
+        return sum - amount;
+      }
+      return sum;
+    }, 0);
+  }, [transactions]);
+
   return {
+    notificationPreferences,
+    toggleNotificationPreference,
     transactions,
     accounts,
     projects, // 👉 Exportando projetos
     addProject,
     updateProject,
     deleteProject,
+    getProjectSpent, // 👉 Nova função de cálculo centralizada
     tags, // 👉 Exportando tags
     addTag, // 👉 Exportando métodos de tag
     updateTag,

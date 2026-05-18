@@ -24,7 +24,7 @@ const PROJECT_COLORS = [
 export function ProjetosScreen() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  const { projects, transactions, addProject, updateProject, deleteProject } = useStoreContext();
+  const { projects, getProjectSpent, addProject, updateProject, deleteProject } = useStoreContext();
 
   const [modalVisible, setModalVisible] = useState(false);
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
@@ -116,12 +116,7 @@ export function ProjetosScreen() {
 
   const projectStats = useMemo(() => {
     return projects.map((project) => {
-      const projectTxs = transactions.filter(tx => tx.projectId === project.id);
-      
-      const totalSpent = projectTxs.reduce((sum, tx) => {
-        // Considera despesas como gasto positivo. Se houver receita no projeto, subtrai do gasto.
-        return sum + (tx.type === 'despesa' ? tx.amount : (tx.type === 'receita' ? -tx.amount : 0));
-      }, 0);
+      const totalSpent = getProjectSpent(project.id);
 
       const progress = project.targetBudget > 0 ? Math.min(totalSpent / project.targetBudget, 1) : 0;
       const isOverBudget = totalSpent > project.targetBudget;
@@ -133,7 +128,7 @@ export function ProjetosScreen() {
         isOverBudget,
       };
     });
-  }, [projects, transactions]);
+  }, [projects, getProjectSpent, transactions]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
