@@ -18,7 +18,14 @@ const STORAGE_KEYS = {
 
 const DEFAULT_ACCOUNTS: Account[] = [];
 const DEFAULT_TRANSACTIONS: Transaction[] = [];
-const DEFAULT_NOTIFICATION_PREFS: NotificationPreferences = { dailyReminders: true, billAlerts: true };
+const DEFAULT_NOTIFICATION_PREFS: NotificationPreferences = { 
+  dailyReminders: true, 
+  dailyReminderTime: { hour: 20, minute: 0 },
+  expenseReminders: true, 
+  expenseReminderTime: { hour: 9, minute: 0 },
+  creditCardAlerts: true,
+  creditCardAlertTime: { hour: 8, minute: 0 }
+};
 
 export function useStore() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -32,22 +39,6 @@ export function useStore() {
   const [loading, setLoading] = useState(true);
 
   // --- MÉTODOS DE SALVAMENTO ---
-
-  const saveNotificationPreferences = useCallback(async (data: NotificationPreferences) => {
-    await AsyncStorage.setItem(STORAGE_KEYS.NOTIFICATION_PREFS, JSON.stringify(data));
-    setNotificationPreferences(data);
-  }, []);
-
-  const toggleNotificationPreference = useCallback(async (key: keyof NotificationPreferences, value: boolean) => {
-    const updated = { ...notificationPreferences, [key]: value };
-    await saveNotificationPreferences(updated);
-    
-    if (key === 'dailyReminders') {
-      if (value) {
-        await NotificationService.scheduleDailyReminder();
-      }
-    }
-  }, [notificationPreferences, saveNotificationPreferences]);
 
   const saveTransactions = useCallback(async (data: Transaction[]) => {
     await AsyncStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(data));
@@ -63,6 +54,101 @@ export function useStore() {
     await AsyncStorage.setItem(STORAGE_KEYS.PROJECTS, JSON.stringify(data));
     setProjects(data);
   }, []);
+
+  const saveTags = useCallback(async (data: Tag[]) => {
+    await AsyncStorage.setItem(STORAGE_KEYS.TAGS, JSON.stringify(data));
+    setTags(data);
+  }, []);
+
+  const saveNotificationPreferences = useCallback(async (data: NotificationPreferences) => {
+    await AsyncStorage.setItem(STORAGE_KEYS.NOTIFICATION_PREFS, JSON.stringify(data));
+    setNotificationPreferences(data);
+  }, []);
+
+  const saveMonthlyBudget = useCallback(
+    async (year: number, month: number, value: number) => {
+      const key = `${year}-${String(month).padStart(2, '0')}`;
+      const updatedBudgets = { ...monthlyBudgets, [key]: value };
+
+      setMonthlyBudgets(updatedBudgets);
+      await AsyncStorage.setItem(
+        STORAGE_KEYS.MONTHLY_BUDGETS,
+        JSON.stringify(updatedBudgets),
+      );
+    },
+    [monthlyBudgets],
+  );
+
+  const toggleNotificationPreference = useCallback(async (key: keyof NotificationPreferences, value: boolean) => {
+    const updated = { ...notificationPreferences, [key]: value };
+    await saveNotificationPreferences(updated);
+    
+    if (key === 'dailyReminders') {
+      if (value) {
+        await NotificationService.scheduleDailyReminder(
+          notificationPreferences.dailyReminderTime.hour,
+          notificationPreferences.dailyReminderTime.minute
+        );
+      }
+    }
+    // Para despesas e cartões, se desativar, poderíamos cancelar tudo, 
+    // mas o sistema já lida com isso na hora de criar/editar.
+    // Se ativar, não reagendamos tudo automaticamente para não sobrecarregar,
+    // o usuário teria que editar ou criar novos. 
+    // Mas para o tempo, talvez precisemos de um "rescheduleAll".
+  }, [notificationPreferences, saveNotificationPreferences]);
+
+  const updateNotificationTime = useCallback(async (key: 'dailyReminderTime' | 'expenseReminderTime' | 'creditCardAlertTime', hour: number, minute: number) => {
+    const updated = { ...notificationPreferences, [key]: { hour, minute } };
+    await saveNotificationPreferences(updated);
+
+    if (key === 'dailyReminderTime' && notificationPreferences.dailyReminders) {
+      await NotificationService.scheduleDailyReminder(hour, minute);
+    }
+    
+    if (key === 'expenseReminderTime' && notificationPreferences.expenseReminders) {
+      // Reschedule all expense reminders
+      const updatedTransactions = [...transactions];
+      for (let i = 0; i < updatedTransactions.length; i++) {
+        const tx = updatedTransactions[i];
+        if (tx.type === 'despesa' && !tx.paid) {
+          if (tx.notificationId) {
+            await NotificationService.cancelReminder(tx.notificationId);
+          }
+          const notificationId = await NotificationService.scheduleTransactionReminder(
+            tx.description,
+            tx.amount,
+            new Date(tx.date),
+            hour,
+            minute
+          );
+          updatedTransactions[i] = { ...tx, notificationId };
+        }
+      }
+      await saveTransactions(updatedTransactions);
+    }
+
+    if (key === 'creditCardAlertTime' && notificationPreferences.creditCardAlerts) {
+      // Reschedule all credit card reminders
+      const updatedAccounts = [...accounts];
+      for (let i = 0; i < updatedAccounts.length; i++) {
+        const acc = updatedAccounts[i];
+        if (acc.type === 'cartao_credito' && acc.dueDay) {
+          if (acc.notificationId) {
+            await NotificationService.cancelReminder(acc.notificationId);
+          }
+          const notificationId = await NotificationService.scheduleCreditCardReminder(
+            acc.name,
+            acc.dueDay,
+            hour,
+            minute
+          );
+          updatedAccounts[i] = { ...acc, notificationId };
+        }
+      }
+      await saveAccounts(updatedAccounts);
+    }
+  }, [notificationPreferences, transactions, accounts, saveNotificationPreferences, saveTransactions, saveAccounts]);
 
   const addProject = useCallback(async (project: Omit<Project, 'id'>) => {
     const newProject: Project = { ...project, id: Date.now().toString() };
@@ -96,10 +182,12 @@ export function useStore() {
       let notificationId: string | undefined;
 
       // Agenda lembrete se for cartão de crédito
-      if (acc.type === 'cartao_credito' && acc.dueDay && notificationPreferences.billAlerts) {
+      if (acc.type === 'cartao_credito' && acc.dueDay && notificationPreferences.creditCardAlerts) {
         notificationId = await NotificationService.scheduleCreditCardReminder(
           acc.name,
-          acc.dueDay
+          acc.dueDay,
+          notificationPreferences.creditCardAlertTime.hour,
+          notificationPreferences.creditCardAlertTime.minute
         );
       }
 
@@ -127,7 +215,7 @@ export function useStore() {
         await saveTransactions([adjustmentTx, ...transactions]);
       }
     },
-    [accounts, transactions, saveAccounts, saveTransactions, notificationPreferences.billAlerts],
+    [accounts, transactions, saveAccounts, saveTransactions, notificationPreferences.expenseReminders],
   );
 
   const updateAccount = useCallback(
@@ -138,19 +226,20 @@ export function useStore() {
       let notificationId = oldAcc.notificationId;
 
       // Reagenda lembrete se dia de vencimento ou nome mudou
-      if (
-        updatedAcc.type === "cartao_credito" && 
-        (updatedAcc.dueDay !== oldAcc.dueDay || updatedAcc.name !== oldAcc.name)
+      if (updatedAcc.type === "cartao_credito" && 
+      (updatedAcc.dueDay !== oldAcc.dueDay || updatedAcc.name !== oldAcc.name)
       ) {
-        if (notificationId) {
-          await NotificationService.cancelReminder(notificationId);
-        }
-        if (updatedAcc.dueDay && notificationPreferences.billAlerts) {
-          notificationId = await NotificationService.scheduleCreditCardReminder(
-            updatedAcc.name,
-            updatedAcc.dueDay
-          );
-        }
+      if (notificationId) {
+        await NotificationService.cancelReminder(notificationId);
+      }
+      if (updatedAcc.dueDay && notificationPreferences.creditCardAlerts) {
+        notificationId = await NotificationService.scheduleCreditCardReminder(
+          updatedAcc.name,
+          updatedAcc.dueDay,
+          notificationPreferences.creditCardAlertTime.hour,
+          notificationPreferences.creditCardAlertTime.minute
+        );
+      }
       }
 
       const finalAcc = { ...updatedAcc, notificationId };
@@ -180,7 +269,7 @@ export function useStore() {
       );
       await saveAccounts(updatedAccounts);
     },
-    [accounts, transactions, saveAccounts, saveTransactions, notificationPreferences.billAlerts],
+    [accounts, transactions, saveAccounts, saveTransactions, notificationPreferences.expenseReminders],
   );
 
   const deleteAccount = useCallback(
@@ -217,11 +306,6 @@ export function useStore() {
     },
     [accounts, saveAccounts],
   );
-
-  const saveTags = useCallback(async (data: Tag[]) => {
-    await AsyncStorage.setItem(STORAGE_KEYS.TAGS, JSON.stringify(data));
-    setTags(data);
-  }, []);
 
   // --- MÉTODOS DE PROCESSAMENTO ---
 
@@ -465,11 +549,13 @@ export function useStore() {
 
           let notificationId: string | undefined;
           
-          if (tx.type === 'despesa' && notificationPreferences.billAlerts && !isPaid) {
+          if (tx.type === 'despesa' && notificationPreferences.expenseReminders) {
             notificationId = await NotificationService.scheduleTransactionReminder(
               tx.description,
               tx.amount,
-              currentDate
+              currentDate,
+              notificationPreferences.expenseReminderTime.hour,
+              notificationPreferences.expenseReminderTime.minute
             );
           }
 
@@ -501,15 +587,16 @@ export function useStore() {
       else {
         let notificationId: string | undefined;
 
-        // Lembrete de Pagamento
-        if (tx.type === 'despesa' && notificationPreferences.billAlerts && !tx.paid) {
-          const date = new Date(tx.date);
-          notificationId = await NotificationService.scheduleTransactionReminder(
-            tx.description,
-            tx.amount,
-            date
-          );
-        }
+          if (tx.type === 'despesa' && notificationPreferences.expenseReminders) {
+            const date = new Date(tx.date);
+            notificationId = await NotificationService.scheduleTransactionReminder(
+              tx.description,
+              tx.amount,
+              date,
+              notificationPreferences.expenseReminderTime.hour,
+              notificationPreferences.expenseReminderTime.minute
+            );
+          }
 
         const newTx: Transaction = {
           ...tx,
@@ -538,7 +625,7 @@ export function useStore() {
       await saveAccounts(updatedAccounts);
       return newTransactions[0];
     },
-    [transactions, accounts, saveTransactions, saveAccounts, notificationPreferences.billAlerts],
+    [transactions, accounts, saveTransactions, saveAccounts, notificationPreferences.expenseReminders],
   );
 
   const deleteTransaction = useCallback(
@@ -701,16 +788,18 @@ export function useStore() {
           let notificationId = mutantOld.notificationId;
 
           // 👉 Atualiza o lembrete para faturas futuras
-          if (updatedTx.type === 'despesa' && notificationPreferences.billAlerts && !mutantOld.paid && updatedTx.notifyRecurrence !== false) {
+          if (updatedTx.type === 'despesa' && notificationPreferences.expenseReminders && updatedTx.notifyRecurrence !== false) {
             if (notificationId) {
               await NotificationService.cancelReminder(notificationId);
             }
             notificationId = await NotificationService.scheduleTransactionReminder(
               updatedTx.description,
               updatedTx.amount,
-              newMutantDate
+              newMutantDate,
+              notificationPreferences.expenseReminderTime.hour,
+              notificationPreferences.expenseReminderTime.minute
             );
-          } else if (notificationId && (updatedTx.type !== 'despesa' || mutantOld.paid || updatedTx.notifyRecurrence === false)) {
+          } else if (notificationId && (updatedTx.type !== 'despesa' || updatedTx.notifyRecurrence === false)) {
             await NotificationService.cancelReminder(notificationId);
             notificationId = undefined;
           }
@@ -738,7 +827,7 @@ export function useStore() {
 
         let notificationId = oldTx.notificationId;
 
-        if (updatedTx.type === 'despesa' && notificationPreferences.billAlerts && !updatedTx.paid) {
+        if (updatedTx.type === 'despesa' && notificationPreferences.expenseReminders) {
           if (notificationId) {
             await NotificationService.cancelReminder(notificationId);
           }
@@ -746,9 +835,11 @@ export function useStore() {
           notificationId = await NotificationService.scheduleTransactionReminder(
             updatedTx.description,
             updatedTx.amount,
-            date
+            date,
+            notificationPreferences.expenseReminderTime.hour,
+            notificationPreferences.expenseReminderTime.minute
           );
-        } else if (notificationId && (updatedTx.type !== 'despesa' || updatedTx.paid)) {
+        } else if (notificationId && updatedTx.type !== 'despesa') {
           await NotificationService.cancelReminder(notificationId);
           notificationId = undefined;
         }
@@ -762,7 +853,7 @@ export function useStore() {
       await saveTransactions(finalTransactions);
       await saveAccounts(updatedAccounts);
     },
-    [transactions, accounts, saveTransactions, saveAccounts, notificationPreferences.billAlerts],
+    [transactions, accounts, saveTransactions, saveAccounts, notificationPreferences.expenseReminders],
   );
 
   const getEffectiveBudget = useCallback(
@@ -776,20 +867,6 @@ export function useStore() {
       }
 
       return 0;
-    },
-    [monthlyBudgets],
-  );
-
-  const saveMonthlyBudget = useCallback(
-    async (year: number, month: number, value: number) => {
-      const key = `${year}-${String(month).padStart(2, '0')}`;
-      const updatedBudgets = { ...monthlyBudgets, [key]: value };
-
-      setMonthlyBudgets(updatedBudgets);
-      await AsyncStorage.setItem(
-        STORAGE_KEYS.MONTHLY_BUDGETS,
-        JSON.stringify(updatedBudgets),
-      );
     },
     [monthlyBudgets],
   );
@@ -1054,6 +1131,7 @@ export function useStore() {
   return {
     notificationPreferences,
     toggleNotificationPreference,
+    updateNotificationTime,
     transactions,
     accounts,
     projects, // 👉 Exportando projetos

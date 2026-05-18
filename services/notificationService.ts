@@ -41,9 +41,9 @@ export async function requestPermissions() {
 }
 
 /**
- * Agenda um lembrete diário para as 20h00
+ * Agenda um lembrete diário
  */
-export async function scheduleDailyReminder() {
+export async function scheduleDailyReminder(hour = 20, minute = 0) {
   if (Platform.OS === 'web') return;
 
   try {
@@ -58,8 +58,8 @@ export async function scheduleDailyReminder() {
       },
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.DAILY,
-        hour: 20,
-        minute: 0,
+        hour: hour,
+        minute: minute,
         channelId: 'default',
       },
     });
@@ -74,13 +74,15 @@ export async function scheduleDailyReminder() {
 export async function scheduleTransactionReminder(
   transactionName: string,
   valor: number,
-  dueDate: Date
+  dueDate: Date,
+  hour = 9,
+  minute = 0
 ) {
   if (Platform.OS === 'web') return undefined;
 
-  // Gatilho para as 09:00 da manhã do dia do vencimento
+  // Gatilho para o horário configurado no dia do vencimento
   const triggerDate = new Date(dueDate);
-  triggerDate.setHours(9, 0, 0, 0);
+  triggerDate.setHours(hour, minute, 0, 0);
 
   // Não agenda se a data já passou
   if (triggerDate.getTime() <= Date.now()) {
@@ -92,8 +94,8 @@ export async function scheduleTransactionReminder(
   try {
     const notificationId = await Notifications.scheduleNotificationAsync({
       content: {
-        title: 'Vencimento Próximo: Lançamento Recorrente',
-        body: `O lançamento '${transactionName}' no valor de ${valorFormatado} vence em breve. Garanta o saldo em conta!`,
+        title: 'Lembrete de Pagamento',
+        body: `O lançamento '${transactionName}' no valor de ${valorFormatado} vence hoje.`,
         sound: true,
       },
       trigger: {
@@ -115,7 +117,9 @@ export async function scheduleTransactionReminder(
  */
 export async function scheduleCreditCardReminder(
   cardName: string,
-  dueDay: number
+  dueDay: number,
+  hour = 8,
+  minute = 0
 ) {
   if (Platform.OS === 'web') return undefined;
 
@@ -129,8 +133,8 @@ export async function scheduleCreditCardReminder(
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.CALENDAR,
         day: dueDay,
-        hour: 8,
-        minute: 0,
+        hour: hour,
+        minute: minute,
         repeats: true,
         channelId: 'default',
       },

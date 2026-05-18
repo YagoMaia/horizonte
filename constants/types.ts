@@ -64,7 +64,11 @@ export interface Tag {
 
 export interface NotificationPreferences {
   dailyReminders: boolean;
-  billAlerts: boolean;
+  dailyReminderTime: { hour: number; minute: number };
+  expenseReminders: boolean;
+  expenseReminderTime: { hour: number; minute: number };
+  creditCardAlerts: boolean;
+  creditCardAlertTime: { hour: number; minute: number };
 }
 
 export const DEFAULT_TAGS: Tag[] = [

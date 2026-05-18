@@ -80,13 +80,39 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects }: MenuS
     syncBalances,
     purgeAdjustments,
     notificationPreferences,
-    toggleNotificationPreference
+    toggleNotificationPreference,
+    updateNotificationTime
   } = useStoreContext()
 
   const [themeModalVisible, setThemeModalVisible] = useState(false)
   const [colorModalVisible, setColorModalVisible] = useState(false)
   const [tagModalVisible, setTagModalVisible] = useState(false) // 👉 Novo estado
   const [adjustmentModalVisible, setAdjustmentModalVisible] = useState(false) // 👉 Novo estado
+  const [timePickerVisible, setTimePickerVisible] = useState(false)
+  const [editingTimeKey, setEditingTimeKey] = useState<'dailyReminderTime' | 'expenseReminderTime' | 'creditCardAlertTime' | null>(null)
+  const [tempHour, setTempHour] = useState(0)
+  const [tempMinute, setTempMinute] = useState(0)
+
+  const openTimePicker = (key: 'dailyReminderTime' | 'expenseReminderTime' | 'creditCardAlertTime') => {
+    const time = notificationPreferences[key] || { hour: 0, minute: 0 }
+    setTempHour(time.hour)
+    setTempMinute(time.minute)
+    setEditingTimeKey(key)
+    setTimePickerVisible(true)
+  }
+
+  const handleSaveTime = async () => {
+    if (editingTimeKey) {
+      await updateNotificationTime(editingTimeKey, tempHour, tempMinute)
+      setTimePickerVisible(false)
+      setEditingTimeKey(null)
+    }
+  }
+
+  const formatTime = (time: { hour: number; minute: number }) => {
+    if (!time) return '00:00'
+    return `${String(time.hour).padStart(2, '0')}:${String(time.minute).padStart(2, '0')}`
+  }
 
   const themeModeLabel = {
     light: 'Claro',
@@ -467,7 +493,17 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects }: MenuS
       <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <View style={styles.switchItem}>
           <View style={{ flex: 1, paddingRight: 16 }}>
-            <Text style={[styles.switchLabel, { color: colors.foreground }]}>Lembretes Diários</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Text style={[styles.switchLabel, { color: colors.foreground }]}>Lembretes Diários</Text>
+              <TouchableOpacity 
+                style={[styles.timeBadge, { backgroundColor: colors.primary + '15' }]}
+                onPress={() => openTimePicker('dailyReminderTime')}
+              >
+                <Text style={{ color: colors.primary, fontSize: 12, fontWeight: '600' }}>
+                  {formatTime(notificationPreferences?.dailyReminderTime)}
+                </Text>
+              </TouchableOpacity>
+            </View>
             <Text style={[styles.switchDesc, { color: colors.mutedForeground }]}>Lembrar de registrar os gastos do dia.</Text>
           </View>
           <Switch
@@ -487,15 +523,57 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects }: MenuS
         <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
           <View style={styles.switchItem}>
             <View style={{ flex: 1, paddingRight: 16 }}>
-              <Text style={[styles.switchLabel, { color: colors.foreground }]}>Alertas de Vencimento</Text>
-              <Text style={[styles.switchDesc, { color: colors.mutedForeground }]}>Avisar sobre contas e faturas próximas do vencimento.</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Text style={[styles.switchLabel, { color: colors.foreground }]}>Lembrete de Despesas</Text>
+                <TouchableOpacity 
+                  style={[styles.timeBadge, { backgroundColor: colors.primary + '15' }]}
+                  onPress={() => openTimePicker('expenseReminderTime')}
+                >
+                  <Text style={{ color: colors.primary, fontSize: 12, fontWeight: '600' }}>
+                    {formatTime(notificationPreferences?.expenseReminderTime)}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+              <Text style={[styles.switchDesc, { color: colors.mutedForeground }]}>Avisar sobre o pagamento de despesas registradas.</Text>
             </View>
             <Switch
-              value={notificationPreferences?.billAlerts ?? true}
+              value={notificationPreferences?.expenseReminders ?? true}
               onValueChange={async (val) => {
                 const granted = await requestPermissions()
                 if (granted) {
-                  await toggleNotificationPreference('billAlerts', val)
+                  await toggleNotificationPreference('expenseReminders', val)
+                } else {
+                  if (Platform.OS === 'web') alert('Permissão necessária para notificações.');
+                  else Alert.alert('Erro', 'Permissão de notificação negada.');
+                }
+              }}
+              trackColor={{ true: colors.primary, false: colors.border }}
+            />
+          </View>
+        </View>
+
+        <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
+          <View style={styles.switchItem}>
+            <View style={{ flex: 1, paddingRight: 16 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Text style={[styles.switchLabel, { color: colors.foreground }]}>Alertas de Cartão</Text>
+                <TouchableOpacity 
+                  style={[styles.timeBadge, { backgroundColor: colors.primary + '15' }]}
+                  onPress={() => openTimePicker('creditCardAlertTime')}
+                >
+                  <Text style={{ color: colors.primary, fontSize: 12, fontWeight: '600' }}>
+                    {formatTime(notificationPreferences?.creditCardAlertTime)}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+              <Text style={[styles.switchDesc, { color: colors.mutedForeground }]}>Avisar sobre o vencimento da fatura dos cartões.</Text>
+            </View>
+            <Switch
+              value={notificationPreferences?.creditCardAlerts ?? true}
+              onValueChange={async (val) => {
+                const granted = await requestPermissions()
+                if (granted) {
+                  await toggleNotificationPreference('creditCardAlerts', val)
                 } else {
                   if (Platform.OS === 'web') alert('Permissão necessária para notificações.');
                   else Alert.alert('Erro', 'Permissão de notificação negada.');
@@ -651,6 +729,59 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects }: MenuS
         visible={adjustmentModalVisible}
         onClose={() => setAdjustmentModalVisible(false)}
       />
+
+      <Modal visible={timePickerVisible} transparent animationType="fade" onRequestClose={() => setTimePickerVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[styles.modalTitle, { color: colors.foreground }]}>Selecionar Horário</Text>
+            
+            <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 24, marginBottom: 32 }}>
+              <View style={{ alignItems: 'center', gap: 12 }}>
+                <TouchableOpacity onPress={() => setTempHour(h => (h + 1) % 24)}>
+                  <Ionicons name="chevron-up" size={32} color={colors.primary} />
+                </TouchableOpacity>
+                <Text style={{ fontSize: 42, fontWeight: '700', color: colors.foreground }}>
+                  {String(tempHour).padStart(2, '0')}
+                </Text>
+                <TouchableOpacity onPress={() => setTempHour(h => (h - 1 + 24) % 24)}>
+                  <Ionicons name="chevron-down" size={32} color={colors.primary} />
+                </TouchableOpacity>
+                <Text style={{ fontSize: 12, color: colors.mutedForeground, fontWeight: '600' }}>HORA</Text>
+              </View>
+
+              <Text style={{ fontSize: 42, fontWeight: '700', color: colors.foreground, marginTop: -20 }}>:</Text>
+
+              <View style={{ alignItems: 'center', gap: 12 }}>
+                <TouchableOpacity onPress={() => setTempMinute(m => (m + 5) % 60)}>
+                  <Ionicons name="chevron-up" size={32} color={colors.primary} />
+                </TouchableOpacity>
+                <Text style={{ fontSize: 42, fontWeight: '700', color: colors.foreground }}>
+                  {String(tempMinute).padStart(2, '0')}
+                </Text>
+                <TouchableOpacity onPress={() => setTempMinute(m => (m - 5 + 60) % 60)}>
+                  <Ionicons name="chevron-down" size={32} color={colors.primary} />
+                </TouchableOpacity>
+                <Text style={{ fontSize: 12, color: colors.mutedForeground, fontWeight: '600' }}>MIN</Text>
+              </View>
+            </View>
+
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <TouchableOpacity 
+                style={[styles.modalCloseBtn, { flex: 1, borderTopWidth: 0 }]} 
+                onPress={() => setTimePickerVisible(false)}
+              >
+                <Text style={{ color: colors.mutedForeground, fontSize: 16, fontWeight: '600' }}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.modalCloseBtn, { flex: 1, borderTopWidth: 0 }]} 
+                onPress={handleSaveTime}
+              >
+                <Text style={{ color: colors.primary, fontSize: 16, fontWeight: '700' }}>Salvar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   )
 }
@@ -675,6 +806,7 @@ const styles = StyleSheet.create({
   switchItem: { flexDirection: 'row', alignItems: 'center', padding: 14, gap: 12 },
   switchLabel: { fontSize: 15, fontWeight: '500' },
   switchDesc: { fontSize: 12, marginTop: 4 },
+  timeBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
   footer: { textAlign: 'center', fontSize: 12, marginTop: 8 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 24 },
   modalContent: { width: '100%', borderRadius: 20, borderWidth: 1, padding: 24 },
