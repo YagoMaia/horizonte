@@ -106,10 +106,13 @@ export function HorizonteScreen() {
     return () => task.cancel();
   }, []);
 
-  // Auto-scroll para hoje ao entrar na tela ou mudar para o mês atual
+  // Auto-scroll inteligente: hoje (se mês atual) ou dia 1º (outros meses)
   useEffect(() => {
-    if (isReady && viewMode === "list" && year === today.getFullYear() && month === today.getMonth()) {
-      const dayIndex = today.getDate() - 1;
+    if (isReady && viewMode === "list") {
+      const isMesAtual = month === today.getMonth() && year === today.getFullYear();
+      const diaAlvo = isMesAtual ? today.getDate() : 1;
+      const dayIndex = diaAlvo - 1;
+
       setTimeout(() => {
         scrollRef.current?.scrollTo({
           y: dayIndex * ROW_HEIGHT,
