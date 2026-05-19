@@ -76,6 +76,18 @@ export function SaldosScreen() {
   const rowRefs = React.useRef(new Map()).current;
   let currentlyOpenRowId: string | null = null;
 
+  // FILTRO LOCAL: Apenas transações até hoje
+  const transacoesAteHoje = useMemo(() => {
+    const hojeFinalDoDia = new Date();
+    hojeFinalDoDia.setHours(23, 59, 59, 999);
+    const timestampHoje = hojeFinalDoDia.getTime();
+
+    return transactions.filter(tx => {
+      const txTime = new Date(tx.date).getTime();
+      return txTime <= timestampHoje;
+    });
+  }, [transactions]);
+
   const closeCurrentlyOpenRow = () => {
     if (currentlyOpenRowId && rowRefs.get(currentlyOpenRowId)) {
       rowRefs.get(currentlyOpenRowId).close();
@@ -103,7 +115,7 @@ export function SaldosScreen() {
         isOverBudget,
       };
     });
-  }, [projects, getProjectSpent, transactions]);
+  }, [projects, getProjectSpent, transacoesAteHoje]);
 
   // CÁLCULO DE ENTRADAS E SAÍDAS DO MÊS (Apenas movimentações de "caixa")
   const currentMonthStats = useMemo(() => {
@@ -113,18 +125,25 @@ export function SaldosScreen() {
     const targetMonth = currentDate.getMonth();
     const targetYear = currentDate.getFullYear();
 
-    transactions.forEach((tx) => {
-      const txDate = new Date(tx.date);
-      
-      // Filtra pelo mês selecionado
-      if (
-        txDate.getMonth() === targetMonth &&
-        txDate.getFullYear() === targetYear
-      ) {
-        // Ignora transferências para não inflar os totais
-        if (tx.type === 'transferencia') return;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
 
-        const account = accounts.find(a => a.id === tx.accountId);
+    transacoesAteHoje.forEach((tx) => {
+      // 1. Extração de Data Robusta (Sênior)
+      const txDateParts = tx.date.split('T')[0].split('-').map(Number);
+      const txDate = new Date(txDateParts[0], txDateParts[1] - 1, txDateParts[2]);
+      txDate.setHours(0, 0, 0, 0);
+
+      // 2. Filtra pelo mês selecionado
+      if (txDate.getMonth() !== targetMonth || txDate.getFullYear() !== targetYear) return;
+
+      // 3. Trava de segurança: Se a transação for no futuro, IGNORA do saldo bancário de hoje
+      if (txDate > today) return;
+
+      // Ignora transferências para não inflar os totais
+      if (tx.type === 'transferencia') return;
+
+      const account = accounts.find(a => a.id === tx.accountId);
         
         // Ignora transações de cartão de crédito e faturas
         // Só conta se for de uma conta corrente, poupança, etc.
@@ -138,11 +157,10 @@ export function SaldosScreen() {
         } else if (tx.type === 'despesa') {
           expense += tx.amount;
         }
-      }
     });
 
     return { income, expense };
-  }, [transactions, currentDate, accounts]);
+  }, [transacoesAteHoje, currentDate, accounts]);
 
   // MOTOR DE BUSCA ATUALIZADO (Filtro por Mês)
   const displayedTransactions = useMemo(() => {
@@ -171,6 +189,28 @@ export function SaldosScreen() {
       })
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [transactions, currentDate, filterType, filterAccountId]);
+
+  // Cálculo Local do Saldo Total
+  const localTotalBalance = useMemo(() => {
+    let total = 0;
+    accounts.forEach(acc => {
+      if (acc.type === 'cartao_credito') return;
+      let bal = 0;
+      transacoesAteHoje.forEach(tx => {
+        if (!tx.paid) return;
+        if (tx.accountId === acc.id) {
+          if (tx.type === 'receita') bal += tx.amount;
+          else if (tx.type === 'despesa') bal -= tx.amount;
+          else if (tx.type === 'transferencia') bal -= tx.amount;
+        }
+        if (tx.type === 'transferencia' && tx.targetAccountId === acc.id) {
+           bal += tx.amount;
+        }
+      });
+      total += bal;
+    });
+    return total;
+  }, [accounts, transacoesAteHoje]);
 
   const paginatedTransactions = useMemo(() => {
     return displayedTransactions.slice(0, displayLimit);
@@ -222,7 +262,7 @@ export function SaldosScreen() {
       {/* 1. CARD DE SALDO TOTAL */}
       <View style={[styles.balanceCard, { backgroundColor: colors.primary }]}>
         <Text style={styles.balanceLabel}>Saldo Total</Text>
-        <Text style={styles.balanceValue}>{formatCurrency(totalBalance)}</Text>
+        <Text style={styles.balanceValue}>{formatCurrency(localTotalBalance)}</Text>
         <View style={styles.balanceRow}>
           <View style={styles.balanceStat}>
             <Ionicons name='arrow-up-circle' size={16} color='rgba(255,255,255,0.8)' />
@@ -247,13 +287,29 @@ export function SaldosScreen() {
             // a fatura que está ABERTA HOJE, independente do mês que o usuário está navegando na lista abaixo.
             // Isso alinha com a CartaoScreen que abre por padrão na fatura atual.
             const currentInvoice = isCreditCard
-              ? getCurrentOpenInvoiceTotal(acc, transactions)
+              ? getCurrentOpenInvoiceTotal(acc, transacoesAteHoje)
               : 0;
+
+            // Calcular saldo local da conta normal (evita dados futuros salvos no useStore)
+            let localAccBalance = 0;
+            if (!isCreditCard) {
+              transacoesAteHoje.forEach(tx => {
+                if (!tx.paid) return;
+                if (tx.accountId === acc.id) {
+                  if (tx.type === 'receita') localAccBalance += tx.amount;
+                  else if (tx.type === 'despesa') localAccBalance -= tx.amount;
+                  else if (tx.type === 'transferencia') localAccBalance -= tx.amount;
+                }
+                if (tx.type === 'transferencia' && tx.targetAccountId === acc.id) {
+                  localAccBalance += tx.amount;
+                }
+              });
+            }
 
             // Define o valor principal: 
             // Se for cartão -> valor da fatura
             // Se for conta -> saldo em conta
-            const mainDisplayValue = isCreditCard ? currentInvoice : acc.balance;
+            const mainDisplayValue = isCreditCard ? currentInvoice : localAccBalance;
 
             return (
               <View

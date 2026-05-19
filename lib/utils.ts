@@ -48,8 +48,9 @@ export function generateDailyProjection(
 
     // Filtramos transações do dia que afetam o caixa (não ignoramos transferências aqui)
     const dayTxs = transactions.filter((t) => {
-      const txDate = new Date(t.date).toISOString().split('T')[0];
-      return txDate === dateStr && !t.paid; // Apenas as não pagas (futuras)
+      // 👉 Comparação Robusta: Ignora Timezone Shift usando string YYYY-MM-DD
+      const txDateStr = typeof t.date === 'string' ? t.date.split('T')[0] : (t.date as Date).toISOString().split('T')[0];
+      return txDateStr === dateStr && !t.paid; // Apenas as não pagas (futuras)
     });
 
     const income = dayTxs

@@ -322,18 +322,18 @@ export function HorizonteScreen() {
       const monthTxs = transactions.filter((tx) => {
         const d = getEffectiveDate(tx);
 
-        // 👉 Validação de Data Inicial (Guard Clause Definitiva)
-        // Bypassa o Timezone Offset ao comparar meses absolutos baseados na string salva
-        const dateStr = typeof tx.date === 'string' ? tx.date : (tx.date as Date).toISOString();
-        const dateParts = dateStr.split('T')[0].split('-').map(Number); 
-        const startYearNum = dateParts[0];
-        const startMonthNum = dateParts[1]; // 1-12
-        
-        const startAbsolute = (startYearNum * 12) + startMonthNum;
-        const projAbsolute = (simYear * 12) + (simMonth + 1); // Ajuste simMonth (0-11) para 1-12
+        // 👉 Validação de Data Inicial (Comparação de String ISO YYYY-MM) - REESCRITA SÊNIOR
+        // Ignora fuso horário e índices 0-11, tratando a data como texto puro de calendário.
+        const dataString = typeof tx.date === 'string' ? tx.date : (tx.date as Date).toISOString();
+        const startYearMonth = dataString.substring(0, 7); // Ex: '2026-06'
 
-        // Se o mês simulado for anterior ao mês de início, ignore.
-        if (projAbsolute < startAbsolute) return false;
+        const mesFormatado = String(simMonth + 1).padStart(2, '0');
+        const projYearMonth = `${simYear}-${mesFormatado}`; // Ex: '2026-05'
+
+        // Bloqueio: Se o mês simulado for ANTES do mês de início da despesa, ignore.
+        if (projYearMonth < startYearMonth) {
+            return false;
+        }
 
         return d.getFullYear() === simYear && d.getMonth() === simMonth;
       });
