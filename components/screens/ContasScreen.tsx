@@ -19,15 +19,27 @@ import { formatCurrency } from '@/lib/utils';
 import { Account } from '@/constants/types';
 
 const ACCOUNT_COLORS = [
-  '#FF6D00', // Novo Laranja
-  '#E91E63', // Rosa
+  '#FF6D00', // Laranja Escuro
+  '#FF9800', // Laranja
+  '#FFC107', // Amarelo Âmbar
   '#FBC02D', // Amarelo
-  '#D32F2F', // Vermelho
-  '#42A5F5', // Azul
+  '#8BC34A', // Verde Claro
   '#66BB6A', // Verde
-  '#AB47BC', // Roxo
+  '#4CAF50', // Verde Esmeralda
+  '#009688', // Verde Azulado (Teal)
   '#26C6DA', // Ciano
+  '#00BCD4', // Azul Celeste
+  '#42A5F5', // Azul Claro
+  '#2196F3', // Azul
+  '#3F51B5', // Índigo
+  '#5E35B1', // Roxo Escuro
+  '#AB47BC', // Roxo
+  '#E91E63', // Rosa
+  '#F06292', // Rosa Claro
+  '#D32F2F', // Vermelho Escuro
+  '#F44336', // Vermelho
   '#8D6E63', // Marrom
+  '#607D8B', // Azul Cinzento
   '#212121', // Preto
 ];
 
