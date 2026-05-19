@@ -125,7 +125,7 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects }: MenuS
   const handleSyncBalances = async () => {
     if (Platform.OS === 'web') {
       if (window.confirm('Isso irá recalcular o saldo de todas as suas contas com base no histórico de transações. Deseja continuar?')) {
-        await syncBalances();
+        await syncBalances(transactions, accounts);
         alert('Saldos sincronizados com sucesso!');
       }
     } else {
@@ -137,7 +137,7 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects }: MenuS
           { 
             text: 'Sincronizar', 
             onPress: async () => {
-              await syncBalances();
+              await syncBalances(transactions, accounts);
               Alert.alert('Sucesso', 'Saldos sincronizados com sucesso!');
             } 
           }

@@ -94,17 +94,34 @@ export function SaldosScreen() {
     return { income, expense };
   }, [transacoesDoMesSelecionado]);
 
-  // 3. LÓGICA DE SALDO DINÂMICO (CABEÇALHO)
-  const isMesAtual = useMemo(() => {
+  // 3. LÓGICA DE NAVEGAÇÃO TEMPORAL (TIME TRAVEL)
+  const temporalState = useMemo(() => {
     const hoje = new Date();
-    return currentDate.getMonth() === hoje.getMonth() && currentDate.getFullYear() === hoje.getFullYear();
-  }, [currentDate]);
+    const anoAtual = hoje.getFullYear();
+    const mesAtual = hoje.getMonth();
+    const selectedYear = currentDate.getFullYear();
+    const selectedMonth = currentDate.getMonth();
 
-  const valorSaldoCabecalho = useMemo(() => {
-    return isMesAtual 
-      ? totalBalance 
-      : totalBalance + monthlyStats.income - monthlyStats.expense;
-  }, [isMesAtual, totalBalance, monthlyStats]);
+    const isPassado = selectedYear < anoAtual || (selectedYear === anoAtual && selectedMonth < mesAtual);
+    const isPresente = selectedYear === anoAtual && selectedMonth === mesAtual;
+    const isFuturo = selectedYear > anoAtual || (selectedYear === anoAtual && selectedMonth > mesAtual);
+
+    let titulo = '';
+    let valor = 0;
+
+    if (isPassado) {
+      titulo = 'Balanço do Mês';
+      valor = monthlyStats.income - monthlyStats.expense;
+    } else if (isPresente) {
+      titulo = 'Saldo Atual';
+      valor = totalBalance;
+    } else {
+      titulo = 'Saldo Projetado';
+      valor = totalBalance + monthlyStats.income - monthlyStats.expense;
+    }
+
+    return { titulo, valor, isPassado, isPresente, isFuturo };
+  }, [currentDate, totalBalance, monthlyStats]);
 
   // 4. FILTRO LOCAL PARA CARDS DE CONTA (ATÉ HOJE)
   const transacoesAteHoje = useMemo(() => {
@@ -213,10 +230,17 @@ export function SaldosScreen() {
 
   const renderHeader = () => (
     <View style={{ gap: 16, paddingBottom: 8 }}>
-      {/* 1. CARD DE SALDO DINÂMICO */}
+      {/* 1. CARD DE SALDO DINÂMICO (TIME TRAVEL) */}
       <View style={[styles.balanceCard, { backgroundColor: colors.primary }]}>
-        <Text style={styles.balanceLabel}>{isMesAtual ? 'Saldo Atual' : 'Saldo Projetado'}</Text>
-        <Text style={styles.balanceValue}>{formatCurrency(valorSaldoCabecalho)}</Text>
+        <Text style={styles.balanceLabel}>{temporalState.titulo}</Text>
+        <Text 
+          style={[
+            styles.balanceValue, 
+            temporalState.isPassado && temporalState.valor < 0 && { color: '#FFD7D7' } // Destaque leve para negativo no passado
+          ]}
+        >
+          {formatCurrency(temporalState.valor)}
+        </Text>
         <View style={styles.balanceRow}>
           <View style={styles.balanceStat}>
             <Ionicons name='arrow-up-circle' size={16} color='rgba(255,255,255,0.8)' />
