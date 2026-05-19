@@ -29,6 +29,8 @@ import {
 } from 'react-native-gesture-handler';
 import { RecurrenceActionModal } from '../RecurrenceActionModal';
 import { ConfirmDeleteModal } from '../ConfirmDeleteModal';
+import { SearchBar } from '../SearchBar';
+import { useTransactionSearch } from '@/hooks/useTransactionSearch';
 
 const MONTHS = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -70,6 +72,17 @@ export function SaldosScreen() {
 
   // ESTADOS PARA NAVEGAÇÃO DE DATA
   const [currentDate, setCurrentDate] = useState(new Date());
+
+  // SEARCH HOOK
+  const {
+    searchTerm,
+    setSearchTerm,
+    clearSearch,
+    isSearchActive,
+    displayedResults,
+    loadMore: searchLoadMore,
+    hasMore: searchHasMore,
+  } = useTransactionSearch(transactions, { type: filterType, accountId: filterAccountId });
 
   const activeFiltersCount =
     (filterType !== 'todas' ? 1 : 0) +
@@ -305,30 +318,42 @@ export function SaldosScreen() {
       </View>
 
       {/* 4. BARRA DE NAVEGAÇÃO DOS MESES (Agora abaixo do botão de filtros) */}
-      <View style={[styles.dateNavigator, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <TouchableOpacity onPress={() => changeMonth(-1)} style={styles.navArrow}>
-          <Ionicons name="chevron-back" size={20} color={colors.primary} />
-        </TouchableOpacity>
-
-        <View style={styles.dateLabelContainer}>
-          <Text style={[styles.monthLabel, { color: colors.foreground }]}>
-            {MONTHS[currentDate.getMonth()]}
-          </Text>
-          <Text style={[styles.yearLabel, { color: colors.mutedForeground }]}>
-            {currentDate.getFullYear()}
+      {isSearchActive ? (
+        <View style={[styles.searchModeLabel, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Ionicons name="search" size={18} color={colors.primary} />
+          <Text style={[styles.searchModeLabelText, { color: colors.foreground }]}>
+            Resultados da busca
           </Text>
         </View>
+      ) : (
+        <View style={[styles.dateNavigator, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <TouchableOpacity onPress={() => changeMonth(-1)} style={styles.navArrow}>
+            <Ionicons name="chevron-back" size={20} color={colors.primary} />
+          </TouchableOpacity>
 
-        <TouchableOpacity onPress={() => changeMonth(1)} style={styles.navArrow}>
-          <Ionicons name="chevron-forward" size={20} color={colors.primary} />
-        </TouchableOpacity>
-      </View>
+          <View style={styles.dateLabelContainer}>
+            <Text style={[styles.monthLabel, { color: colors.foreground }]}>
+              {MONTHS[currentDate.getMonth()]}
+            </Text>
+            <Text style={[styles.yearLabel, { color: colors.mutedForeground }]}>
+              {currentDate.getFullYear()}
+            </Text>
+          </View>
+
+          <TouchableOpacity onPress={() => changeMonth(1)} style={styles.navArrow}>
+            <Ionicons name="chevron-forward" size={20} color={colors.primary} />
+          </TouchableOpacity>
+        </View>
+      )}
     </View>
   );
 
+  // Determine which data source to use based on search state
+  const listData = isSearchActive ? displayedResults : paginatedTransactions;
+
   const renderItem = ({ item: tx, index }: { item: Transaction; index: number }) => {
     const isFirst = index === 0;
-    const isLast = index === paginatedTransactions.length - 1;
+    const isLast = index === listData.length - 1;
     const account = accounts.find((a) => a.id === tx.accountId);
     const visuals = getTransactionVisuals(tx.type, colors);
 
@@ -365,30 +390,46 @@ export function SaldosScreen() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <FlatList
-        data={paginatedTransactions}
-        keyExtractor={(item) => item.id}
-        renderItem={renderItem}
-        ListHeaderComponent={renderHeader}
-        onEndReached={handleLoadMore}
-        style={{ flex: 1, backgroundColor: colors.background }}
-        contentContainerStyle={styles.content}
-        initialNumToRender={10}
-        maxToRenderPerBatch={5}
-        windowSize={5}
-        removeClippedSubviews={true}
-        getItemLayout={(_, index) => ({
-          length: 72, 
-          offset: 72 * index,
-          index,
-        })}
-        ListEmptyComponent={
-          <View style={[styles.emptyState, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Ionicons name='calendar-outline' size={40} color={colors.mutedForeground} />
-            <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>Nenhum lançamento em {MONTHS[currentDate.getMonth()]}</Text>
-          </View>
-        }
-      />
+      <View style={{ flex: 1, backgroundColor: colors.background }}>
+        {/* SEARCH BAR - Outside FlatList to prevent keyboard dismissal on re-render */}
+        <View style={{ paddingHorizontal: 16, paddingTop: 16 }}>
+          <SearchBar
+            value={searchTerm}
+            onChangeText={setSearchTerm}
+            onClear={clearSearch}
+          />
+        </View>
+
+        <FlatList
+          data={listData}
+          keyExtractor={(item) => item.id}
+          renderItem={renderItem}
+          ListHeaderComponent={renderHeader}
+          onEndReached={isSearchActive ? searchLoadMore : handleLoadMore}
+          onEndReachedThreshold={0.5}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          style={{ flex: 1 }}
+          contentContainerStyle={styles.content}
+          initialNumToRender={10}
+          maxToRenderPerBatch={5}
+          windowSize={5}
+          removeClippedSubviews={false}
+          getItemLayout={(_, index) => ({
+            length: 72, 
+            offset: 72 * index,
+            index,
+          })}
+          ListEmptyComponent={
+            <View style={[styles.emptyState, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Ionicons name={isSearchActive ? 'search-outline' : 'calendar-outline'} size={40} color={colors.mutedForeground} />
+              <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
+                {isSearchActive ? 'Nenhuma transação encontrada' : `Nenhum lançamento em ${MONTHS[currentDate.getMonth()]}`}
+              </Text>
+            </View>
+          }
+        />
+      </View>
 
       <TransactionDetailModal transaction={isEditing ? null : selectedTx} onClose={() => setSelectedTx(null)} onEdit={() => setIsEditing(true)} />
       {isEditing && selectedTx && (
@@ -653,5 +694,18 @@ const styles = StyleSheet.create({
   pendingText: {
     fontSize: 12,
     lineHeight: 16,
+  },
+  searchModeLabel: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 12,
+    borderRadius: 15,
+    borderWidth: StyleSheet.hairlineWidth,
+    gap: 8,
+  },
+  searchModeLabelText: {
+    fontSize: 16,
+    fontWeight: '700',
   },
   });
