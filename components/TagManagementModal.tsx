@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -43,6 +43,8 @@ export function TagManagementModal({ visible, onClose }: TagManagementModalProps
   const insets = useSafeAreaInsets();
   const { tags, addTag, updateTag, deleteTag } = useStoreContext();
 
+  const scrollRef = useRef<ScrollView>(null);
+
   const [editingTag, setEditingTag] = useState<Tag | null>(null);
   const [label, setLabel] = useState('');
   const [selectedIcon, setSelectedIcon] = useState(ICON_OPTIONS[0]);
@@ -60,6 +62,9 @@ export function TagManagementModal({ visible, onClose }: TagManagementModalProps
     setLabel(tag.label);
     setSelectedIcon(tag.icon);
     setSelectedColor(tag.color);
+
+    // Rolar para o topo suavemente
+    scrollRef.current?.scrollTo({ y: 0, animated: true });
   };
 
   const handleSave = () => {
@@ -108,7 +113,11 @@ export function TagManagementModal({ visible, onClose }: TagManagementModalProps
           <View style={{ width: 40 }} />
         </View>
 
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <ScrollView 
+          ref={scrollRef}
+          contentContainerStyle={styles.content} 
+          keyboardShouldPersistTaps="handled"
+        >
           {/* FORMULÁRIO */}
           <View style={[styles.form, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Text style={[styles.formTitle, { color: colors.foreground }]}>
