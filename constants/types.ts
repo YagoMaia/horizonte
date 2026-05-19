@@ -1,6 +1,6 @@
 // constants/types.ts
 
-export type TabType = 'saldos' | 'totais' | 'horizonte' | 'contas' | 'menu' | 'cartao'
+export type TabType = 'saldos' | 'totais' | 'horizonte' | 'contas' | 'menu' | 'cartao' | 'metas'
 
 export type TransactionType = 'receita' | 'despesa' | 'transferencia'
 
@@ -49,4 +49,41 @@ export interface DailyBalance {
   income: number
   expense: number
   transactions: Transaction[]
+}
+
+
+export interface SavingsGoal {
+  id: string                    // Unique identifier (Date.now().toString())
+  name: string                  // 1-50 characters, non-whitespace-only
+  targetAmount: number          // 0.01 - 999,999,999.99
+  accumulatedAmount: number     // Calculated from deposits on load
+  deadline: string | null       // ISO date string or null
+  icon: string                  // Ionicons name, default "flag-outline"
+  color: string                 // Hex color, default theme primary
+  createdAt: string             // ISO date string
+  updatedAt: string             // ISO date string
+}
+
+export interface GoalDeposit {
+  id: string                    // Unique identifier
+  goalId: string                // Reference to SavingsGoal.id
+  amount: number                // Positive for deposits, negative for withdrawals
+  date: string                  // ISO date string (system-generated)
+  accountId?: string            // Linked account (optional)
+}
+
+export interface CreateGoalInput {
+  name: string
+  targetAmount: number
+  deadline: string | null
+  icon: string
+  color: string
+}
+
+export interface UpdateGoalInput {
+  name: string
+  targetAmount: number
+  deadline: string | null
+  icon: string
+  color: string
 }

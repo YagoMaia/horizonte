@@ -20,6 +20,7 @@ const LEFT_TABS: { id: TabType; label: string; icon: string }[] = [
 
 const RIGHT_TABS: { id: TabType; label: string; icon: string }[] = [
   { id: 'totais', label: 'Totais', icon: 'bar-chart-outline' },
+  { id: 'metas', label: 'Metas', icon: 'trophy-outline' },
   { id: 'menu', label: 'Menu', icon: 'menu-outline' },
 ]
 
@@ -60,7 +61,13 @@ export function BottomNavigation({ activeTab, onTabChange, onAddClick }: BottomN
       {LEFT_TABS.map(renderTab)}
 
       <TouchableOpacity
-        style={[styles.addButton, { backgroundColor: colors.primary }]}
+        style={[
+          styles.addButton, 
+          { 
+            backgroundColor: colors.primary,
+            shadowColor: colors.primary,
+          }
+        ]}
         onPress={onAddClick}
         activeOpacity={0.85}
       >
@@ -98,7 +105,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: -20,
-    shadowColor: '#E64A19',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.4,
     shadowRadius: 8,

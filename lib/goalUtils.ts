@@ -1,0 +1,69 @@
+import { GoalDeposit } from '@/constants/types';
+
+/**
+ * Calculates the progress percentage of a savings goal.
+ * Returns floor(accumulated / target * 100), capped at 100.
+ */
+export function calculateProgress(accumulated: number, target: number): number {
+  if (target <= 0) return 0;
+  return Math.min(100, Math.floor((accumulated / target) * 100));
+}
+
+/**
+ * Calculates the remaining calendar days from today to the deadline (inclusive).
+ * Returns null if no deadline is provided.
+ */
+export function calculateRemainingDays(deadline: string | null): number | null {
+  if (!deadline) return null;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const deadlineDate = new Date(deadline);
+  deadlineDate.setHours(0, 0, 0, 0);
+
+  const diffMs = deadlineDate.getTime() - today.getTime();
+  const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+
+  if (diffDays < 0) return null;
+
+  // Inclusive of deadline day: if deadline is today, remaining = 1
+  return diffDays + 1;
+}
+
+/**
+ * Calculates the number of days past the deadline.
+ * Returns null if not overdue (deadline is today or in the future, or no deadline).
+ */
+export function calculateOverdueDays(deadline: string | null): number | null {
+  if (!deadline) return null;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const deadlineDate = new Date(deadline);
+  deadlineDate.setHours(0, 0, 0, 0);
+
+  const diffMs = today.getTime() - deadlineDate.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+  if (diffDays <= 0) return null;
+
+  return diffDays;
+}
+
+/**
+ * Calculates the remaining amount to reach the target.
+ * Returns max(0, target - accumulated).
+ */
+export function calculateRemainingAmount(target: number, accumulated: number): number {
+  return Math.max(0, target - accumulated);
+}
+
+/**
+ * Recalculates the accumulated amount from all deposits.
+ * Deposits have positive amounts, withdrawals have negative amounts.
+ */
+export function recalculateAccumulated(deposits: GoalDeposit[]): number {
+  return deposits.reduce((sum, deposit) => sum + deposit.amount, 0);
+}

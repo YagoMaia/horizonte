@@ -11,7 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
 import { useTheme } from '@/hooks/useTheme'
 import { useStoreContext } from '@/context/StoreContext'
-import { TabType, Account } from '@/constants/types'
+import { TabType, Account, SavingsGoal } from '@/constants/types'
 import { BottomNavigation } from '@/components/BottomNavigation'
 import { AddTransactionModal } from '@/components/AddTransactionModal'
 import { SaldosScreen } from '@/components/screens/SaldosScreen'
@@ -20,13 +20,20 @@ import { HorizonteScreen } from '@/components/screens/HorizonteScreen'
 import { ContasScreen } from '@/components/screens/ContasScreen'
 import { MenuScreen } from '@/components/screens/MenuScreen'
 import { CartaoScreen } from '@/components/screens/CartaoScreen'
+import { GoalsScreen } from '@/components/screens/GoalsScreen'
+import { GoalDetailScreen } from '@/components/screens/GoalDetailScreen'
+import { useSavingsGoals } from '@/hooks/useSavingsGoals'
 
 export default function HomePage() {
   const { colors } = useTheme()
   const store = useStoreContext()
+  const { goals, deposits } = useSavingsGoals()
   const [activeTab, setActiveTab] = useState<TabType>('saldos')
   const [modalVisible, setModalVisible] = useState(false)
   
+  // Internal navigation state for "metas" tab (stores selected goal object)
+  const [selectedGoal, setSelectedGoal] = useState<SavingsGoal | null>(null)
+
   // 👉 Estado para armazenar valores padrão dinâmicos para o modal
   const [defaultValues, setDefaultValues] = useState<{
     accountId?: string;
@@ -64,6 +71,22 @@ export default function HomePage() {
         return (
           <CartaoScreen 
             onSelectCard={handleSelectCard} 
+          />
+        )
+      case 'metas':
+        if (selectedGoal) {
+          const goalDeposits = deposits.filter((d) => d.goalId === selectedGoal.id)
+          return (
+            <GoalDetailScreen
+              goal={selectedGoal}
+              onBack={() => setSelectedGoal(null)}
+              deposits={goalDeposits}
+            />
+          )
+        }
+        return (
+          <GoalsScreen
+            onGoalPress={(goal) => setSelectedGoal(goal)}
           />
         )
       case 'menu': return <MenuScreen />
@@ -138,6 +161,7 @@ export default function HomePage() {
         activeTab={activeTab}
         onTabChange={(tab) => {
           if (tab !== 'cartao') setDefaultValues({});
+          if (tab !== 'metas') setSelectedGoal(null);
           setActiveTab(tab);
         }}
         onAddClick={() => setModalVisible(true)}
