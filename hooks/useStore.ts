@@ -876,7 +876,7 @@ export function useStore() {
     const projectTxs = transactions.filter(tx => tx.projectId === projectId);
     return projectTxs.reduce((sum, tx) => {
       const amount = Number(tx.amount) || 0;
-      // Considera despesas e transferências como gasto positivo (saída). 
+      // Considera despesas e transferências como gasto positivo (saída).
       // Receita no projeto subtrai do gasto (ex: reembolso).
       if (tx.type === 'despesa' || tx.type === 'transferencia') {
         return sum + amount;
@@ -888,6 +888,39 @@ export function useStore() {
     }, 0);
   }, [transactions]);
 
+  const getInvoiceTotalForMonth = useCallback((creditCardId: string, targetMonth: number, targetYear: number) => {
+    const cardAccount = accounts.find((a) => a.id === creditCardId);
+    if (!cardAccount || cardAccount.type !== 'cartao_credito') return 0;
+  
+    const closingDay = cardAccount.closingDay || 25;
+    const dueDay = cardAccount.dueDay || 5;
+    let invoiceTotal = 0;
+  
+    transactions.forEach((tx) => {
+      // Ignora outras contas ou métodos.
+      // NÃO filtramos tx.paid aqui, pois a tela de faturas soma tudo (pago ou não).
+      if (tx.accountId !== creditCardId || tx.paymentMethod !== 'credito') return;
+  
+      // Como o app já desmembra parcelas e recorrências, avaliamos apenas a data salva
+      const d = new Date(tx.date);
+      let m = d.getMonth() + 1;
+      let y = d.getFullYear();
+  
+      if (d.getDate() >= closingDay) m += 1;
+      if (dueDay < closingDay) m += 1;
+  
+      while (m > 12) {
+        m -= 12;
+        y += 1;
+      }
+  
+      if ((m - 1) === targetMonth && y === targetYear) {
+        invoiceTotal += (tx.type === 'receita' ? -tx.amount : tx.amount);
+      }
+    });
+  
+    return invoiceTotal;
+  }, [transactions, accounts]);
   return {
     notificationPreferences,
     toggleNotificationPreference,
@@ -899,6 +932,7 @@ export function useStore() {
     updateProject,
     deleteProject,
     getProjectSpent, // 👉 Nova função de cálculo centralizada
+    getInvoiceTotalForMonth, // 👉 Nova função de projeção de fatura
     tags, // 👉 Exportando tags
     addTag, // 👉 Exportando métodos de tag
     updateTag,

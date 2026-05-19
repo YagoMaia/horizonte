@@ -79,7 +79,7 @@ function formatCompactK(value: number): string {
 
 export function HorizonteScreen() {
   const { colors } = useTheme();
-  const { transactions, accounts, getEffectiveBudget, saveMonthlyBudget } =
+  const { transactions, accounts, getEffectiveBudget, saveMonthlyBudget, getInvoiceTotalForMonth } =
     useStoreContext();
 
   const today = useMemo(() => new Date(), []);
@@ -258,66 +258,44 @@ export function HorizonteScreen() {
       endYear++;
     }
 
-    // 👉 PRÉ-CÁLCULO DE FATURAS DE CARTÃO DE CRÉDITO (NÃO PAGAS)
-    const virtualInvoiceTxs: Record<string, any[]> = {};
-    accounts.filter(a => a.type === 'cartao_credito' && activeAccountIds.includes(a.id)).forEach(card => {
-      const closingDay = card.closingDay || 25;
-      const dueDay = card.dueDay || 5;
-      
-      const cardUnpaidTxs = transactions.filter(tx => 
-        tx.accountId === card.id && tx.paymentMethod === 'credito' && !tx.paid
-      );
-      
-      const invoiceTotals: Record<string, number> = {};
-      
-      cardUnpaidTxs.forEach(tx => {
-        // 👉 Extração Robusta para Faturas
-        const dateStr = typeof tx.date === 'string' ? tx.date : (tx.date as Date).toISOString();
-        const parts = dateStr.split('T')[0].split('-').map(Number);
-        let y = parts[0];
-        let m = parts[1]; // 1-indexed
-        const day = parts[2];
-
-        if (day >= closingDay) m += 1;
-        if (dueDay < closingDay) m += 1;
-        while (m > 12) { m -= 12; y += 1; }
-        
-        const invoiceMonth = m - 1;
-        const invoiceYear = y;
-        const dateKey = `${invoiceYear}-${invoiceMonth}-${dueDay}`;
-        
-        invoiceTotals[dateKey] = (invoiceTotals[dateKey] || 0) + (tx.type === 'receita' ? -tx.amount : tx.amount);
-      });
-      
-      Object.entries(invoiceTotals).forEach(([dateKey, amount]) => {
-        if (amount > 0) {
-          const [y, m, d] = dateKey.split('-').map(Number);
-          const rawDate = new Date(y, m, d);
-          const effectiveDate = rawDate < startOfToday ? startOfToday : rawDate;
-          const effKey = `${effectiveDate.getFullYear()}-${effectiveDate.getMonth()}-${effectiveDate.getDate()}`;
-
-          if (!virtualInvoiceTxs[effKey]) virtualInvoiceTxs[effKey] = [];
-          virtualInvoiceTxs[effKey].push({
-            id: `virtual-invoice-${card.id}-${dateKey}`,
-            description: `Fatura ${card.name}`,
-            amount: amount,
-            type: 'despesa',
-            date: effectiveDate.toISOString(),
-            accountId: card.id,
-            paymentMethod: 'debito', 
-            paid: false,
-            isVirtual: true, 
-          });
-        }
-      });
-    });
-
     // 2. Roda a fita do tempo
+    const virtualInvoiceTxs: Record<string, any[]> = {};
+
     while (simYear < endYear || (simYear === endYear && simMonth <= endMonth)) {
       const simDaysCount = getDaysInMonth(simYear, simMonth);
       const simBudget = getEffectiveBudget(simYear, simMonth);
       const monthKey = `${simYear}-${simMonth}`;
       resultsMap[monthKey] = [];
+
+      // 👉 INJEÇÃO DE FATURA FUTURA (Substitui o pré-cálculo antigo)
+      const isFuturoEstrito = simYear > today.getFullYear() || (simYear === today.getFullYear() && simMonth > today.getMonth());
+      
+      if (isFuturoEstrito) {
+        // Removido o activeAccountIds.includes(card.id) pois faturas devem furar o bloqueio
+        accounts.filter(a => a.type === 'cartao_credito').forEach(card => {
+          const valorCalculado = getInvoiceTotalForMonth(card.id, simMonth, simYear);
+          if (valorCalculado > 0) {
+            const effKey = `${simYear}-${simMonth}-1`; // Sempre dia 1º
+            if (!virtualInvoiceTxs[effKey]) virtualInvoiceTxs[effKey] = [];
+            
+            // Impede duplicação caso o loop passe mais de uma vez (safety check)
+            const exists = virtualInvoiceTxs[effKey].find(v => v.id === `virtual-invoice-${card.id}-${simMonth}`);
+            if (!exists) {
+              virtualInvoiceTxs[effKey].push({
+                id: `virtual-invoice-${card.id}-${simMonth}`,
+                description: `Fatura do cartão de crédito ${card.name}`,
+                amount: valorCalculado,
+                type: 'despesa',
+                date: new Date(simYear, simMonth, 1, 12, 0, 0).toISOString(),
+                accountId: card.id,
+                paymentMethod: 'debito', 
+                paid: false,
+                isVirtual: true 
+              });
+            }
+          }
+        });
+      }
 
       const monthTxs = transactions.filter((tx) => {
         const d = getEffectiveDate(tx);
@@ -356,6 +334,7 @@ export function HorizonteScreen() {
         .flatMap(k => virtualInvoiceTxs[k]);
         
       const allMonthActiveTxs = [...monthTxs, ...monthVirtualInvoices].filter(tx => {
+        if (tx.isVirtual) return true; // Fatura furando o bloqueio
         const isFromActive = activeAccountIds.includes(tx.accountId);
         const isToActive = tx.type === 'transferencia' && tx.targetAccountId && activeAccountIds.includes(tx.targetAccountId);
         return isFromActive || isToActive;
@@ -365,7 +344,7 @@ export function HorizonteScreen() {
         if (tx.paymentMethod === 'credito') return;
         if (tx.isAdjustment) return; // 👉 Ignore adjustments for budget math
 
-        const isFromActive = activeAccountIds.includes(tx.accountId);
+        const isFromActive = activeAccountIds.includes(tx.accountId) || tx.isVirtual; // Fatura furando o bloqueio
         const isToActive = tx.type === 'transferencia' && tx.targetAccountId && activeAccountIds.includes(tx.targetAccountId);
 
         if (tx.type === 'despesa' && isFromActive) {
@@ -390,6 +369,7 @@ export function HorizonteScreen() {
         // Filtramos transações para exibição no Modal apenas de contas ativas e omitimos os ajustes
         const dayTxs = rawDayTxs.filter(tx => {
            if (tx.isAdjustment) return false;
+           if (tx.isVirtual) return true; // Fatura furando o bloqueio
            const isFromActive = activeAccountIds.includes(tx.accountId);
            const isToActive = tx.type === 'transferencia' && tx.targetAccountId && activeAccountIds.includes(tx.targetAccountId);
            return isFromActive || isToActive;
@@ -397,6 +377,7 @@ export function HorizonteScreen() {
 
         // Para os cálculos financeiros do dia precisamos manter os ajustes (mas eles não irão para o display dayTxs)
         const mathDayTxs = rawDayTxs.filter(tx => {
+           if (tx.isVirtual) return true; // Fatura furando o bloqueio
            const isFromActive = activeAccountIds.includes(tx.accountId);
            const isToActive = tx.type === 'transferencia' && tx.targetAccountId && activeAccountIds.includes(tx.targetAccountId);
            return isFromActive || isToActive;
@@ -410,7 +391,7 @@ export function HorizonteScreen() {
         let dayAdjustmentNet = 0;
 
         effectiveMathDayTxs.forEach(tx => {
-           const isFromActive = activeAccountIds.includes(tx.accountId);
+           const isFromActive = activeAccountIds.includes(tx.accountId) || tx.isVirtual; // Fatura furando o bloqueio
            const isToActive = tx.type === 'transferencia' && tx.targetAccountId && activeAccountIds.includes(tx.targetAccountId);
 
            if (tx.isAdjustment) {
