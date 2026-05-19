@@ -15,11 +15,13 @@ interface BottomNavigationProps {
 // 👉 Adicionamos 'cartao' aos LEFT_TABS e mantivemos o equilíbrio
 const LEFT_TABS: { id: TabType; label: string; icon: string }[] = [
   { id: 'saldos', label: 'Saldos', icon: 'wallet-outline' },
-  { id: 'cartao', label: 'Cartão', icon: 'card-outline' }, // Nova Aba
+  { id: 'cartao', label: 'Cartão', icon: 'card-outline' },
+  { id: 'relatorios', label: 'Relatórios', icon: 'stats-chart-outline' },
 ]
 
 const RIGHT_TABS: { id: TabType; label: string; icon: string }[] = [
   { id: 'totais', label: 'Totais', icon: 'bar-chart-outline' },
+ 
   { id: 'metas', label: 'Metas', icon: 'trophy-outline' },
   { id: 'menu', label: 'Menu', icon: 'menu-outline' },
 ]

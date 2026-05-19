@@ -22,6 +22,7 @@ import { MenuScreen } from '@/components/screens/MenuScreen'
 import { CartaoScreen } from '@/components/screens/CartaoScreen'
 import { GoalsScreen } from '@/components/screens/GoalsScreen'
 import { GoalDetailScreen } from '@/components/screens/GoalDetailScreen'
+import { ReportsScreen } from '@/components/screens/ReportsScreen'
 import { useSavingsGoals } from '@/hooks/useSavingsGoals'
 
 export default function HomePage() {
@@ -89,6 +90,7 @@ export default function HomePage() {
             onGoalPress={(goal) => setSelectedGoal(goal)}
           />
         )
+      case 'relatorios': return <ReportsScreen />
       case 'menu': return <MenuScreen />
       default: return <SaldosScreen />
     }
