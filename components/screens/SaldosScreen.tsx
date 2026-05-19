@@ -94,32 +94,17 @@ export function SaldosScreen() {
     return { income, expense };
   }, [transacoesDoMesSelecionado]);
 
-  // 3. CÁLCULO DO SALDO PROJETADO
-  const saldoProjetado = useMemo(() => {
+  // 3. LÓGICA DE SALDO DINÂMICO (CABEÇALHO)
+  const isMesAtual = useMemo(() => {
     const hoje = new Date();
-    hoje.setHours(0, 0, 0, 0);
+    return currentDate.getMonth() === hoje.getMonth() && currentDate.getFullYear() === hoje.getFullYear();
+  }, [currentDate]);
 
-    let fluxoPendente = 0;
-
-    transacoesDoMesSelecionado.forEach(tx => {
-      const txDateParts = tx.date.split('T')[0].split('-').map(Number);
-      const txDate = new Date(txDateParts[0], txDateParts[1] - 1, txDateParts[2]);
-      txDate.setHours(0, 0, 0, 0);
-
-      if (txDate > hoje || !tx.paid) {
-        if (tx.type === 'receita') fluxoPendente += tx.amount;
-        if (tx.type === 'despesa') fluxoPendente -= tx.amount;
-        if (tx.type === 'transferencia') {
-           const sourceAcc = accounts.find(a => a.id === tx.accountId);
-           const targetAcc = accounts.find(a => a.id === tx.targetAccountId);
-           if (sourceAcc && sourceAcc.type !== 'cartao_credito') fluxoPendente -= tx.amount;
-           if (targetAcc && targetAcc.type !== 'cartao_credito') fluxoPendente += tx.amount;
-        }
-      }
-    });
-
-    return totalBalance + fluxoPendente;
-  }, [transacoesDoMesSelecionado, totalBalance, accounts]);
+  const valorSaldoCabecalho = useMemo(() => {
+    return isMesAtual 
+      ? totalBalance 
+      : totalBalance + monthlyStats.income - monthlyStats.expense;
+  }, [isMesAtual, totalBalance, monthlyStats]);
 
   // 4. FILTRO LOCAL PARA CARDS DE CONTA (ATÉ HOJE)
   const transacoesAteHoje = useMemo(() => {
@@ -228,10 +213,10 @@ export function SaldosScreen() {
 
   const renderHeader = () => (
     <View style={{ gap: 16, paddingBottom: 8 }}>
-      {/* 1. CARD DE SALDO PROJETADO */}
+      {/* 1. CARD DE SALDO DINÂMICO */}
       <View style={[styles.balanceCard, { backgroundColor: colors.primary }]}>
-        <Text style={styles.balanceLabel}>Saldo Projetado</Text>
-        <Text style={styles.balanceValue}>{formatCurrency(saldoProjetado)}</Text>
+        <Text style={styles.balanceLabel}>{isMesAtual ? 'Saldo Atual' : 'Saldo Projetado'}</Text>
+        <Text style={styles.balanceValue}>{formatCurrency(valorSaldoCabecalho)}</Text>
         <View style={styles.balanceRow}>
           <View style={styles.balanceStat}>
             <Ionicons name='arrow-up-circle' size={16} color='rgba(255,255,255,0.8)' />
