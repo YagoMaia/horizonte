@@ -607,6 +607,9 @@ export function useStore() {
           ...tx,
           id: Date.now().toString(),
           paymentMethod: finalizedTxMethod,
+          // Trava de segurança: Se for cartão de crédito, nasce como pendente (false). 
+          // Se for débito/dinheiro, respeita o toggle que veio da tela (tx.paid).
+          paid: isCreditCard ? false : tx.paid,
         };
         newTransactions.push(newTx);
       }
