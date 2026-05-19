@@ -493,55 +493,26 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects }: MenuS
       <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <View style={styles.switchItem}>
           <View style={{ flex: 1, paddingRight: 16 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Text style={[styles.switchLabel, { color: colors.foreground }]}>Lembretes Diários</Text>
-              <TouchableOpacity 
-                style={[styles.timeBadge, { backgroundColor: colors.primary + '15' }]}
-                onPress={() => openTimePicker('dailyReminderTime')}
-              >
-                <Text style={{ color: colors.primary, fontSize: 12, fontWeight: '600' }}>
-                  {formatTime(notificationPreferences?.dailyReminderTime)}
-                </Text>
-              </TouchableOpacity>
-            </View>
+            <Text style={[styles.switchLabel, { color: colors.foreground }]}>Lembretes Diários</Text>
             <Text style={[styles.switchDesc, { color: colors.mutedForeground }]}>Lembrar de registrar os gastos do dia.</Text>
           </View>
-          <Switch
-            value={notificationPreferences?.dailyReminders ?? true}
-            onValueChange={async (val) => {
-              const granted = await requestPermissions()
-              if (granted) {
-                await toggleNotificationPreference('dailyReminders', val)
-              } else {
-                if (Platform.OS === 'web') alert('Permissão necessária para notificações.');
-                else Alert.alert('Erro', 'Permissão de notificação negada.');
-              }
-            }}
-            trackColor={{ true: colors.primary, false: colors.border }}
-          />
-        </View>
-        <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
-          <View style={styles.switchItem}>
-            <View style={{ flex: 1, paddingRight: 16 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text style={[styles.switchLabel, { color: colors.foreground }]}>Lembrete de Despesas</Text>
-                <TouchableOpacity 
-                  style={[styles.timeBadge, { backgroundColor: colors.primary + '15' }]}
-                  onPress={() => openTimePicker('expenseReminderTime')}
-                >
-                  <Text style={{ color: colors.primary, fontSize: 12, fontWeight: '600' }}>
-                    {formatTime(notificationPreferences?.expenseReminderTime)}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-              <Text style={[styles.switchDesc, { color: colors.mutedForeground }]}>Avisar sobre o pagamento de despesas registradas.</Text>
-            </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <TouchableOpacity 
+              onPress={() => openTimePicker('dailyReminderTime')}
+              disabled={!(notificationPreferences?.dailyReminders ?? true)}
+              style={[
+                styles.editIconContainer, 
+                { opacity: (notificationPreferences?.dailyReminders ?? true) ? 1 : 0.3 }
+              ]}
+            >
+              <Ionicons name="pencil" size={20} color="#FFF" />
+            </TouchableOpacity>
             <Switch
-              value={notificationPreferences?.expenseReminders ?? true}
+              value={notificationPreferences?.dailyReminders ?? true}
               onValueChange={async (val) => {
                 const granted = await requestPermissions()
                 if (granted) {
-                  await toggleNotificationPreference('expenseReminders', val)
+                  await toggleNotificationPreference('dailyReminders', val)
                 } else {
                   if (Platform.OS === 'web') alert('Permissão necessária para notificações.');
                   else Alert.alert('Erro', 'Permissão de notificação negada.');
@@ -555,32 +526,68 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects }: MenuS
         <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
           <View style={styles.switchItem}>
             <View style={{ flex: 1, paddingRight: 16 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text style={[styles.switchLabel, { color: colors.foreground }]}>Alertas de Cartão</Text>
-                <TouchableOpacity 
-                  style={[styles.timeBadge, { backgroundColor: colors.primary + '15' }]}
-                  onPress={() => openTimePicker('creditCardAlertTime')}
-                >
-                  <Text style={{ color: colors.primary, fontSize: 12, fontWeight: '600' }}>
-                    {formatTime(notificationPreferences?.creditCardAlertTime)}
-                  </Text>
-                </TouchableOpacity>
-              </View>
+              <Text style={[styles.switchLabel, { color: colors.foreground }]}>Lembrete de Despesas</Text>
+              <Text style={[styles.switchDesc, { color: colors.mutedForeground }]}>Avisar sobre o pagamento de despesas registradas.</Text>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <TouchableOpacity 
+                onPress={() => openTimePicker('expenseReminderTime')}
+                disabled={!(notificationPreferences?.expenseReminders ?? true)}
+                style={[
+                  styles.editIconContainer, 
+                  { opacity: (notificationPreferences?.expenseReminders ?? true) ? 1 : 0.3 }
+                ]}
+              >
+                <Ionicons name="pencil" size={20} color="#FFF" />
+              </TouchableOpacity>
+              <Switch
+                value={notificationPreferences?.expenseReminders ?? true}
+                onValueChange={async (val) => {
+                  const granted = await requestPermissions()
+                  if (granted) {
+                    await toggleNotificationPreference('expenseReminders', val)
+                  } else {
+                    if (Platform.OS === 'web') alert('Permissão necessária para notificações.');
+                    else Alert.alert('Erro', 'Permissão de notificação negada.');
+                  }
+                }}
+                trackColor={{ true: colors.primary, false: colors.border }}
+              />
+            </View>
+          </View>
+        </View>
+
+        <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
+          <View style={styles.switchItem}>
+            <View style={{ flex: 1, paddingRight: 16 }}>
+              <Text style={[styles.switchLabel, { color: colors.foreground }]}>Alertas de Cartão</Text>
               <Text style={[styles.switchDesc, { color: colors.mutedForeground }]}>Avisar sobre o vencimento da fatura dos cartões.</Text>
             </View>
-            <Switch
-              value={notificationPreferences?.creditCardAlerts ?? true}
-              onValueChange={async (val) => {
-                const granted = await requestPermissions()
-                if (granted) {
-                  await toggleNotificationPreference('creditCardAlerts', val)
-                } else {
-                  if (Platform.OS === 'web') alert('Permissão necessária para notificações.');
-                  else Alert.alert('Erro', 'Permissão de notificação negada.');
-                }
-              }}
-              trackColor={{ true: colors.primary, false: colors.border }}
-            />
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <TouchableOpacity 
+                onPress={() => openTimePicker('creditCardAlertTime')}
+                disabled={!(notificationPreferences?.creditCardAlerts ?? true)}
+                style={[
+                  styles.editIconContainer, 
+                  { opacity: (notificationPreferences?.creditCardAlerts ?? true) ? 1 : 0.3 }
+                ]}
+              >
+                <Ionicons name="pencil" size={20} color="#FFF" />
+              </TouchableOpacity>
+              <Switch
+                value={notificationPreferences?.creditCardAlerts ?? true}
+                onValueChange={async (val) => {
+                  const granted = await requestPermissions()
+                  if (granted) {
+                    await toggleNotificationPreference('creditCardAlerts', val)
+                  } else {
+                    if (Platform.OS === 'web') alert('Permissão necessária para notificações.');
+                    else Alert.alert('Erro', 'Permissão de notificação negada.');
+                  }
+                }}
+                trackColor={{ true: colors.primary, false: colors.border }}
+              />
+            </View>
           </View>
         </View>
         <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
@@ -813,5 +820,6 @@ const styles = StyleSheet.create({
   modalTitle: { fontSize: 18, fontWeight: '700', marginBottom: 16, textAlign: 'center' },
   modalOption: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 14, paddingHorizontal: 16, borderRadius: 12, marginBottom: 8 },
   modalCloseBtn: { alignItems: 'center', paddingTop: 16, marginTop: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(0,0,0,0.1)' },
-  colorCircle: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' }
+  colorCircle: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  editIconContainer: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
 })
