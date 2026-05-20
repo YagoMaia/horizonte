@@ -111,6 +111,7 @@ export function AddTransactionModal({
   const [pendingTxData, setPendingTxData] = useState<any>(null);
 
   const [installments, setInstallments] = useState(1);
+  const [enableNotification, setEnableNotification] = useState(true);
 
   const [date, setDate] = useState(getFormattedDate(0));
   const [recurrenceStart, setRecurrenceStart] = useState(getFormattedDate(0));
@@ -1011,6 +1012,19 @@ export function AddTransactionModal({
                     />
                   </TouchableOpacity>
                 </View>
+              </View>
+            )}
+
+            {recurrence !== 'unica' && (
+              <View style={styles.switchRow}>
+                <Text style={{ color: colors.foreground, fontWeight: '500' }}>
+                  Receber lembrete de vencimento
+                </Text>
+                <Switch
+                  value={enableNotification}
+                  onValueChange={setEnableNotification}
+                  trackColor={{ false: colors.border, true: colors.primary }}
+                />
               </View>
             )}
 

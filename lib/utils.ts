@@ -48,8 +48,9 @@ export function generateDailyProjection(
 
     // Filtramos transações do dia que afetam o caixa (não ignoramos transferências aqui)
     const dayTxs = transactions.filter((t) => {
-      const txDate = new Date(t.date).toISOString().split('T')[0];
-      return txDate === dateStr && !t.paid; // Apenas as não pagas (futuras)
+      // 👉 Comparação Robusta: Ignora Timezone Shift usando string YYYY-MM-DD
+      const txDateStr = typeof t.date === 'string' ? t.date.split('T')[0] : (t.date as Date).toISOString().split('T')[0];
+      return txDateStr === dateStr && !t.paid; // Apenas as não pagas (futuras)
     });
 
     const income = dayTxs
@@ -83,12 +84,14 @@ export function generateDailyProjection(
 export function getInvoiceForTx(dateStr: string, account: any) {
   const closingDay = account?.closingDay || 25;
   const dueDay = account?.dueDay || 5;
-  const d = new Date(dateStr);
+  
+  // 👉 Extração Robusta (Sênior): Evita que shifts de Timezone alterem o dia/mês pretendido
+  const parts = dateStr.split('T')[0].split('-').map(Number);
+  let y = parts[0];
+  let m = parts[1]; // 1-indexed
+  const day = parts[2];
 
-  let m = d.getMonth() + 1;
-  let y = d.getFullYear();
-
-  if (d.getDate() >= closingDay) m += 1;
+  if (day >= closingDay) m += 1;
   if (dueDay < closingDay) m += 1;
 
   while (m > 12) {
@@ -100,6 +103,40 @@ export function getInvoiceForTx(dateStr: string, account: any) {
 }
 
 // Usa a nova função para garantir alinhamento absoluto com a CartaoScreen
+// 👉 NOVA FUNÇÃO: Calcula o total de uma fatura específica de um cartão
+export function getInvoiceTotal(
+  card: Account,
+  transactions: Transaction[],
+  targetMonth: number,
+  targetYear: number
+): number {
+  if (card.type !== 'cartao_credito') return 0;
+  
+  const targetValue = targetYear * 100 + (targetMonth + 1);
+
+  return transactions
+    .filter((tx) => {
+      if (tx.accountId !== card.id || tx.paymentMethod !== 'credito') return false;
+      const txInvoice = getInvoiceForTx(tx.date, card);
+      return txInvoice.value === targetValue;
+    })
+    .reduce((sum, tx) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount), 0);
+}
+
+// 👉 NOVA FUNÇÃO: Identifica e calcula a fatura "Aberta" atual do cartão
+export function getCurrentOpenInvoiceTotal(
+  card: Account,
+  transactions: Transaction[]
+): number {
+  if (card.type !== 'cartao_credito') return 0;
+  
+  // A fatura "Aberta" é aquela correspondente à data de hoje
+  const today = new Date().toISOString();
+  const currentInvoice = getInvoiceForTx(today, card);
+  
+  return getInvoiceTotal(card, transactions, currentInvoice.viewMonth, currentInvoice.viewYear);
+}
+
 export function calculateCreditCardInvoice(
   account: any,
   transactions: any[],

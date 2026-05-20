@@ -26,6 +26,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   
   const [themeMode, setThemeModeState] = useState<ThemeMode>('system')
   const [primaryColor, setPrimaryColorState] = useState<string>(PRIMARY_COLORS[0].value)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     const loadThemeSettings = async () => {
@@ -37,6 +38,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         if (savedColor) setPrimaryColorState(savedColor)
       } catch (e) {
         console.error('Failed to load theme settings', e)
+      } finally {
+        setLoading(false)
       }
     }
     loadThemeSettings()
@@ -55,6 +58,10 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const activeScheme = themeMode === 'system' ? systemScheme : themeMode
   const colors = getThemeColors(activeScheme, primaryColor)
   const isDark = activeScheme === 'dark'
+
+  if (loading) {
+    return null; // Prevents FOUC
+  }
 
   return (
     <ThemeContext.Provider

@@ -9,6 +9,7 @@ import {
   Alert,
   Platform,
   Modal,
+  Switch,
 } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { useTheme } from '@/hooks/useTheme'
@@ -18,6 +19,8 @@ import * as FileSystem from 'expo-file-system'
 import * as Sharing from 'expo-sharing'
 import * as DocumentPicker from 'expo-document-picker'
 import AsyncStorage from '@react-native-async-storage/async-storage'
+import * as Notifications from 'expo-notifications'
+import { requestPermissions, scheduleDailyReminder } from '@/services/notificationService'
 import { PRIMARY_COLORS } from '@/constants/theme'
 import { TagManagementModal } from '../TagManagementModal'
 import { AdjustmentManagementModal } from '../AdjustmentManagementModal'
@@ -75,13 +78,41 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects }: MenuS
     totalBalance, 
     clearAllData,
     syncBalances,
-    purgeAdjustments
+    purgeAdjustments,
+    notificationPreferences,
+    toggleNotificationPreference,
+    updateNotificationTime
   } = useStoreContext()
 
   const [themeModalVisible, setThemeModalVisible] = useState(false)
   const [colorModalVisible, setColorModalVisible] = useState(false)
   const [tagModalVisible, setTagModalVisible] = useState(false) // 👉 Novo estado
   const [adjustmentModalVisible, setAdjustmentModalVisible] = useState(false) // 👉 Novo estado
+  const [timePickerVisible, setTimePickerVisible] = useState(false)
+  const [editingTimeKey, setEditingTimeKey] = useState<'dailyReminderTime' | 'expenseReminderTime' | 'creditCardAlertTime' | null>(null)
+  const [tempHour, setTempHour] = useState(0)
+  const [tempMinute, setTempMinute] = useState(0)
+
+  const openTimePicker = (key: 'dailyReminderTime' | 'expenseReminderTime' | 'creditCardAlertTime') => {
+    const time = notificationPreferences[key] || { hour: 0, minute: 0 }
+    setTempHour(time.hour)
+    setTempMinute(time.minute)
+    setEditingTimeKey(key)
+    setTimePickerVisible(true)
+  }
+
+  const handleSaveTime = async () => {
+    if (editingTimeKey) {
+      await updateNotificationTime(editingTimeKey, tempHour, tempMinute)
+      setTimePickerVisible(false)
+      setEditingTimeKey(null)
+    }
+  }
+
+  const formatTime = (time: { hour: number; minute: number }) => {
+    if (!time) return '00:00'
+    return `${String(time.hour).padStart(2, '0')}:${String(time.minute).padStart(2, '0')}`
+  }
 
   const themeModeLabel = {
     light: 'Claro',
@@ -94,7 +125,7 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects }: MenuS
   const handleSyncBalances = async () => {
     if (Platform.OS === 'web') {
       if (window.confirm('Isso irá recalcular o saldo de todas as suas contas com base no histórico de transações. Deseja continuar?')) {
-        await syncBalances();
+        await syncBalances(transactions, accounts);
         alert('Saldos sincronizados com sucesso!');
       }
     } else {
@@ -106,7 +137,7 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects }: MenuS
           { 
             text: 'Sincronizar', 
             onPress: async () => {
-              await syncBalances();
+              await syncBalances(transactions, accounts);
               Alert.alert('Sucesso', 'Saldos sincronizados com sucesso!');
             } 
           }
@@ -137,6 +168,31 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects }: MenuS
           }
         ]
       )
+    }
+  }
+
+  const handleTestNotification = async () => {
+    try {
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: 'Notificação de Teste 🚀',
+          body: 'Isso é um teste de notificação funcionando no Android 13+!',
+          sound: true,
+        },
+        trigger: {
+          seconds: 5,
+          channelId: 'default',
+        },
+      });
+      if (Platform.OS === 'web') {
+        alert('A notificação aparecerá em 5 segundos.');
+      } else {
+        Alert.alert('Sucesso', 'A notificação aparecerá em 5 segundos. Oculte o app para testar em segundo plano.');
+      }
+    } catch (error) {
+      console.error(error);
+      if (Platform.OS === 'web') alert('Erro ao agendar a notificação de teste.');
+      else Alert.alert('Erro', 'Não foi possível agendar a notificação de teste.');
     }
   }
 
@@ -432,6 +488,118 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects }: MenuS
         </View>
       </View>
 
+      {/* Notificações */}
+      <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>NOTIFICAÇÕES</Text>
+      <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View style={styles.switchItem}>
+          <View style={{ flex: 1, paddingRight: 16 }}>
+            <Text style={[styles.switchLabel, { color: colors.foreground }]}>Lembretes Diários</Text>
+            <Text style={[styles.switchDesc, { color: colors.mutedForeground }]}>Lembrar de registrar os gastos do dia.</Text>
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <TouchableOpacity 
+              onPress={() => openTimePicker('dailyReminderTime')}
+              disabled={!(notificationPreferences?.dailyReminders ?? true)}
+              style={[
+                styles.editIconContainer, 
+                { opacity: (notificationPreferences?.dailyReminders ?? true) ? 1 : 0.3 }
+              ]}
+            >
+              <Ionicons name="pencil" size={20} color="#FFF" />
+            </TouchableOpacity>
+            <Switch
+              value={notificationPreferences?.dailyReminders ?? true}
+              onValueChange={async (val) => {
+                const granted = await requestPermissions()
+                if (granted) {
+                  await toggleNotificationPreference('dailyReminders', val)
+                } else {
+                  if (Platform.OS === 'web') alert('Permissão necessária para notificações.');
+                  else Alert.alert('Erro', 'Permissão de notificação negada.');
+                }
+              }}
+              trackColor={{ true: colors.primary, false: colors.border }}
+            />
+          </View>
+        </View>
+
+        <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
+          <View style={styles.switchItem}>
+            <View style={{ flex: 1, paddingRight: 16 }}>
+              <Text style={[styles.switchLabel, { color: colors.foreground }]}>Lembrete de Despesas</Text>
+              <Text style={[styles.switchDesc, { color: colors.mutedForeground }]}>Avisar sobre o pagamento de despesas registradas.</Text>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <TouchableOpacity 
+                onPress={() => openTimePicker('expenseReminderTime')}
+                disabled={!(notificationPreferences?.expenseReminders ?? true)}
+                style={[
+                  styles.editIconContainer, 
+                  { opacity: (notificationPreferences?.expenseReminders ?? true) ? 1 : 0.3 }
+                ]}
+              >
+                <Ionicons name="pencil" size={20} color="#FFF" />
+              </TouchableOpacity>
+              <Switch
+                value={notificationPreferences?.expenseReminders ?? true}
+                onValueChange={async (val) => {
+                  const granted = await requestPermissions()
+                  if (granted) {
+                    await toggleNotificationPreference('expenseReminders', val)
+                  } else {
+                    if (Platform.OS === 'web') alert('Permissão necessária para notificações.');
+                    else Alert.alert('Erro', 'Permissão de notificação negada.');
+                  }
+                }}
+                trackColor={{ true: colors.primary, false: colors.border }}
+              />
+            </View>
+          </View>
+        </View>
+
+        <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
+          <View style={styles.switchItem}>
+            <View style={{ flex: 1, paddingRight: 16 }}>
+              <Text style={[styles.switchLabel, { color: colors.foreground }]}>Alertas de Cartão</Text>
+              <Text style={[styles.switchDesc, { color: colors.mutedForeground }]}>Avisar sobre o vencimento da fatura dos cartões.</Text>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <TouchableOpacity 
+                onPress={() => openTimePicker('creditCardAlertTime')}
+                disabled={!(notificationPreferences?.creditCardAlerts ?? true)}
+                style={[
+                  styles.editIconContainer, 
+                  { opacity: (notificationPreferences?.creditCardAlerts ?? true) ? 1 : 0.3 }
+                ]}
+              >
+                <Ionicons name="pencil" size={20} color="#FFF" />
+              </TouchableOpacity>
+              <Switch
+                value={notificationPreferences?.creditCardAlerts ?? true}
+                onValueChange={async (val) => {
+                  const granted = await requestPermissions()
+                  if (granted) {
+                    await toggleNotificationPreference('creditCardAlerts', val)
+                  } else {
+                    if (Platform.OS === 'web') alert('Permissão necessária para notificações.');
+                    else Alert.alert('Erro', 'Permissão de notificação negada.');
+                  }
+                }}
+                trackColor={{ true: colors.primary, false: colors.border }}
+              />
+            </View>
+          </View>
+        </View>
+        <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
+          <MenuItem
+            icon="flask-outline"
+            label="Enviar Notificação de Teste"
+            onPress={handleTestNotification}
+            colors={colors}
+          />
+        </View>
+      </View>
+
       {/* Dados e Backup (NOVA SESSÃO) */}
       <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>BACKUP E EXPORTAÇÃO</Text>
       <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -568,6 +736,59 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects }: MenuS
         visible={adjustmentModalVisible}
         onClose={() => setAdjustmentModalVisible(false)}
       />
+
+      <Modal visible={timePickerVisible} transparent animationType="fade" onRequestClose={() => setTimePickerVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[styles.modalTitle, { color: colors.foreground }]}>Selecionar Horário</Text>
+            
+            <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 24, marginBottom: 32 }}>
+              <View style={{ alignItems: 'center', gap: 12 }}>
+                <TouchableOpacity onPress={() => setTempHour(h => (h + 1) % 24)}>
+                  <Ionicons name="chevron-up" size={32} color={colors.primary} />
+                </TouchableOpacity>
+                <Text style={{ fontSize: 42, fontWeight: '700', color: colors.foreground }}>
+                  {String(tempHour).padStart(2, '0')}
+                </Text>
+                <TouchableOpacity onPress={() => setTempHour(h => (h - 1 + 24) % 24)}>
+                  <Ionicons name="chevron-down" size={32} color={colors.primary} />
+                </TouchableOpacity>
+                <Text style={{ fontSize: 12, color: colors.mutedForeground, fontWeight: '600' }}>HORA</Text>
+              </View>
+
+              <Text style={{ fontSize: 42, fontWeight: '700', color: colors.foreground, marginTop: -20 }}>:</Text>
+
+              <View style={{ alignItems: 'center', gap: 12 }}>
+                <TouchableOpacity onPress={() => setTempMinute(m => (m + 5) % 60)}>
+                  <Ionicons name="chevron-up" size={32} color={colors.primary} />
+                </TouchableOpacity>
+                <Text style={{ fontSize: 42, fontWeight: '700', color: colors.foreground }}>
+                  {String(tempMinute).padStart(2, '0')}
+                </Text>
+                <TouchableOpacity onPress={() => setTempMinute(m => (m - 5 + 60) % 60)}>
+                  <Ionicons name="chevron-down" size={32} color={colors.primary} />
+                </TouchableOpacity>
+                <Text style={{ fontSize: 12, color: colors.mutedForeground, fontWeight: '600' }}>MIN</Text>
+              </View>
+            </View>
+
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <TouchableOpacity 
+                style={[styles.modalCloseBtn, { flex: 1, borderTopWidth: 0 }]} 
+                onPress={() => setTimePickerVisible(false)}
+              >
+                <Text style={{ color: colors.mutedForeground, fontSize: 16, fontWeight: '600' }}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.modalCloseBtn, { flex: 1, borderTopWidth: 0 }]} 
+                onPress={handleSaveTime}
+              >
+                <Text style={{ color: colors.primary, fontSize: 16, fontWeight: '700' }}>Salvar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   )
 }
@@ -589,11 +810,16 @@ const styles = StyleSheet.create({
   menuIcon: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   menuLabel: { flex: 1, fontSize: 15, fontWeight: '400' },
   menuValue: { fontSize: 14 },
+  switchItem: { flexDirection: 'row', alignItems: 'center', padding: 14, gap: 12 },
+  switchLabel: { fontSize: 15, fontWeight: '500' },
+  switchDesc: { fontSize: 12, marginTop: 4 },
+  timeBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
   footer: { textAlign: 'center', fontSize: 12, marginTop: 8 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 24 },
   modalContent: { width: '100%', borderRadius: 20, borderWidth: 1, padding: 24 },
   modalTitle: { fontSize: 18, fontWeight: '700', marginBottom: 16, textAlign: 'center' },
   modalOption: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 14, paddingHorizontal: 16, borderRadius: 12, marginBottom: 8 },
   modalCloseBtn: { alignItems: 'center', paddingTop: 16, marginTop: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(0,0,0,0.1)' },
-  colorCircle: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' }
+  colorCircle: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  editIconContainer: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
 })

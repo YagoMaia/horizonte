@@ -5,6 +5,7 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
+  Pressable,
   ActivityIndicator,
   FlatList,
   ScrollView,
@@ -15,15 +16,15 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/hooks/useTheme';
 import {
-  calculateCreditCardInvoice,
   formatCurrency,
   formatDateShort,
-  getInvoiceForTx,
+  getCurrentOpenInvoiceTotal,
 } from '@/lib/utils';
 import { useStoreContext } from '@/context/StoreContext';
-import { Transaction, Account, TransactionType } from '@/constants/types';
+import { Transaction, Account, TransactionType, Project } from '@/constants/types';
 import { TransactionDetailModal } from '../TransactionDetailModal';
 import { AddTransactionModal } from '../AddTransactionModal';
+import { ProjectTransactionsModal } from '../ProjectTransactionsModal';
 import {
   GestureHandlerRootView,
   Swipeable,
@@ -41,8 +42,9 @@ export function SaldosScreen() {
   const {
     accounts,
     transactions,
-    tags, // 👉 Puxando tags dinâmicas
-    projects, // 👉 Puxando projetos
+    tags,
+    projects,
+    getProjectSpent,
     totalBalance,
     addTransaction,
     updateTransaction,
@@ -50,25 +52,115 @@ export function SaldosScreen() {
     loading,
   } = useStoreContext();
 
+  // --- ESTADOS ---
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
+  const [selectedProjectForDetails, setSelectedProjectForDetails] = useState<Project | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [displayLimit, setDisplayLimit] = useState(20);
   const [recurrenceDeleteData, setRecurrenceDeleteData] = useState<string | null>(null);
-
-  // ESTADOS PARA FILTROS
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
   const [filterType, setFilterType] = useState<TransactionType | 'todas'>('todas');
   const [filterAccountId, setFilterAccountId] = useState<string | 'todas'>('todas');
-
-  // ESTADOS PARA NAVEGAÇÃO DE DATA
   const [currentDate, setCurrentDate] = useState(new Date());
 
-  const activeFiltersCount =
-    (filterType !== 'todas' ? 1 : 0) +
-    (filterAccountId !== 'todas' ? 1 : 0);
-
+  // --- REFS ---
   const rowRefs = React.useRef(new Map()).current;
   let currentlyOpenRowId: string | null = null;
+
+  // --- CALCULOS PROJETADOS E REATIVOS (CABEÇALHO) ---
+
+  // 1. FILTRO DE TRANSAÇÕES DO MÊS SELECIONADO NA UI
+  const transacoesDoMesSelecionado = useMemo(() => {
+    const selectedMonth = currentDate.getMonth();
+    const selectedYear = currentDate.getFullYear();
+
+    return transactions.filter(tx => {
+      if (tx.isAdjustment) return false;
+      const txDate = new Date(tx.date);
+      return txDate.getMonth() === selectedMonth && txDate.getFullYear() === selectedYear;
+    });
+  }, [transactions, currentDate]);
+
+  // 2. CÁLCULO DE RECEITAS E DESPESAS DO MÊS
+  const monthlyStats = useMemo(() => {
+    const income = transacoesDoMesSelecionado
+      .filter(tx => tx.type === 'receita')
+      .reduce((acc, tx) => acc + tx.amount, 0);
+
+    const expense = transacoesDoMesSelecionado
+      .filter(tx => tx.type === 'despesa')
+      .reduce((acc, tx) => acc + tx.amount, 0);
+
+    return { income, expense };
+  }, [transacoesDoMesSelecionado]);
+
+  // 3. LÓGICA DE NAVEGAÇÃO TEMPORAL (TIME TRAVEL)
+  const temporalState = useMemo(() => {
+    const hoje = new Date();
+    const anoAtual = hoje.getFullYear();
+    const mesAtual = hoje.getMonth();
+    const selectedYear = currentDate.getFullYear();
+    const selectedMonth = currentDate.getMonth();
+
+    const isPassado = selectedYear < anoAtual || (selectedYear === anoAtual && selectedMonth < mesAtual);
+    const isPresente = selectedYear === anoAtual && selectedMonth === mesAtual;
+    const isFuturo = selectedYear > anoAtual || (selectedYear === anoAtual && selectedMonth > mesAtual);
+
+    let titulo = '';
+    let valor = 0;
+
+    if (isPassado) {
+      titulo = 'Balanço do Mês';
+      valor = monthlyStats.income - monthlyStats.expense;
+    } else if (isPresente) {
+      titulo = 'Saldo Atual';
+      valor = totalBalance;
+    } else {
+      titulo = 'Saldo Projetado';
+      valor = totalBalance + monthlyStats.income - monthlyStats.expense;
+    }
+
+    return { titulo, valor, isPassado, isPresente, isFuturo };
+  }, [currentDate, totalBalance, monthlyStats]);
+
+  // 4. FILTRO LOCAL PARA CARDS DE CONTA (ATÉ HOJE)
+  const transacoesAteHoje = useMemo(() => {
+    const hojeFinalDoDia = new Date();
+    hojeFinalDoDia.setHours(23, 59, 59, 999);
+    const timestampHoje = hojeFinalDoDia.getTime();
+
+    return transactions.filter(tx => {
+      const txTime = new Date(tx.date).getTime();
+      return txTime <= timestampHoje;
+    });
+  }, [transactions]);
+
+  // 5. MOTOR DE BUSCA (LISTA PRINCIPAL)
+  const displayedTransactions = useMemo(() => {
+    return transactions
+      .filter((tx) => {
+        if (tx.isAdjustment) return false;
+        const txDate = new Date(tx.date);
+        if (txDate.getMonth() !== currentDate.getMonth() || txDate.getFullYear() !== currentDate.getFullYear()) {
+          return false;
+        }
+        if (filterType !== 'todas' && tx.type !== filterType) return false;
+        if (filterAccountId !== 'todas') {
+          if (tx.accountId !== filterAccountId && tx.targetAccountId !== filterAccountId) return false;
+        }
+        return true;
+      })
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [transactions, currentDate, filterType, filterAccountId]);
+
+  // 6. PAGINAÇÃO
+  const paginatedTransactions = useMemo(() => {
+    return displayedTransactions.slice(0, displayLimit);
+  }, [displayedTransactions, displayLimit]);
+
+  // --- AUXILIARES ---
+
+  const activeFiltersCount = (filterType !== 'todas' ? 1 : 0) + (filterAccountId !== 'todas' ? 1 : 0);
 
   const closeCurrentlyOpenRow = () => {
     if (currentlyOpenRowId && rowRefs.get(currentlyOpenRowId)) {
@@ -80,115 +172,34 @@ export function SaldosScreen() {
     setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + offset, 1));
   };
 
-  // CÁLCULO PROJETOS ATIVOS
-  const activeProjectStats = useMemo(() => {
-    const activeProjects = projects.filter(p => p.active !== false);
-    
-    return activeProjects.map((project) => {
-      const projectTxs = transactions.filter(tx => tx.projectId === project.id);
-      
-      const totalSpent = projectTxs.reduce((sum, tx) => {
-        return sum + (tx.type === 'despesa' ? tx.amount : (tx.type === 'receita' ? -tx.amount : 0));
-      }, 0);
-
-      const progress = project.targetBudget > 0 ? Math.min(totalSpent / project.targetBudget, 1) : 0;
-      const isOverBudget = totalSpent > project.targetBudget;
-
-      return {
-        ...project,
-        totalSpent,
-        progress,
-        isOverBudget,
-      };
-    });
-  }, [projects, transactions]);
-
-  // CÁLCULO DE ENTRADAS E SAÍDAS DO MÊS (Apenas movimentações de "caixa")
-  const currentMonthStats = useMemo(() => {
-    let income = 0;
-    let expense = 0;
-
-    const targetMonth = currentDate.getMonth();
-    const targetYear = currentDate.getFullYear();
-
-    transactions.forEach((tx) => {
-      const txDate = new Date(tx.date);
-      
-      // Filtra pelo mês selecionado
-      if (
-        txDate.getMonth() === targetMonth &&
-        txDate.getFullYear() === targetYear
-      ) {
-        // Ignora transferências para não inflar os totais
-        if (tx.type === 'transferencia') return;
-
-        const account = accounts.find(a => a.id === tx.accountId);
-        
-        // Ignora transações de cartão de crédito e faturas
-        // Só conta se for de uma conta corrente, poupança, etc.
-        if (!account || account.type === 'cartao_credito') return;
-
-        // Ignora ajustes de saldo
-        if (tx.isAdjustment) return;
-
-        if (tx.type === 'receita') {
-          income += tx.amount;
-        } else if (tx.type === 'despesa') {
-          expense += tx.amount;
-        }
-      }
-    });
-
-    return { income, expense };
-  }, [transactions, currentDate, accounts]);
-
-  // MOTOR DE BUSCA ATUALIZADO (Filtro por Mês)
-  const displayedTransactions = useMemo(() => {
-    return transactions
-      .filter((tx) => {
-        if (tx.isAdjustment) return false; // 👉 Ocultar ajustes da lista de transações
-
-        const txDate = new Date(tx.date);
-
-        // Regra 1: Filtro de Mês e Ano
-        if (txDate.getMonth() !== currentDate.getMonth() || txDate.getFullYear() !== currentDate.getFullYear()) {
-          return false;
-        }
-
-        // Regra 2: Filtro de Tipo
-        if (filterType !== 'todas' && tx.type !== filterType) return false;
-
-        // Regra 3: Filtro de Conta
-        if (filterAccountId !== 'todas') {
-          if (tx.accountId !== filterAccountId && tx.targetAccountId !== filterAccountId) {
-            return false;
-          }
-        }
-
-        return true;
-      })
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [transactions, currentDate, filterType, filterAccountId]);
-
-  const paginatedTransactions = useMemo(() => {
-    return displayedTransactions.slice(0, displayLimit);
-  }, [displayedTransactions, displayLimit]);
-
   const handleLoadMore = () => {
     if (displayLimit < displayedTransactions.length) {
       setDisplayLimit((prev) => prev + 20);
     }
   };
 
+  const clearFilters = () => {
+    setFilterType('todas');
+    setFilterAccountId('todas');
+  };
+
+  // CÁLCULO PROJETOS ATIVOS
+  const activeProjectStats = useMemo(() => {
+    const activeProjects = projects.filter(p => p.active !== false);
+    return activeProjects.map((project) => {
+      const totalSpent = getProjectSpent(project.id);
+      const progress = project.targetBudget > 0 ? Math.min(totalSpent / project.targetBudget, 1) : 0;
+      const isOverBudget = totalSpent > project.targetBudget;
+      return { ...project, totalSpent, progress, isOverBudget };
+    });
+  }, [projects, getProjectSpent]);
+
   React.useEffect(() => {
     setDisplayLimit(20);
     closeCurrentlyOpenRow();
   }, [currentDate, filterType, filterAccountId]);
 
-  const clearFilters = () => {
-    setFilterType('todas');
-    setFilterAccountId('todas');
-  };
+  // --- HANDLERS ---
 
   const handleDeletePrompt = (txId: string) => {
     const tx = transactions.find((t) => t.id === txId);
@@ -205,6 +216,8 @@ export function SaldosScreen() {
     }
   };
 
+  // --- RENDERIZAÇÃO ---
+
   const renderRightActions = (txId: string) => (
     <TouchableOpacity
       style={[styles.hiddenAction, styles.hiddenActionRight, { backgroundColor: colors.destructive }]}
@@ -217,19 +230,26 @@ export function SaldosScreen() {
 
   const renderHeader = () => (
     <View style={{ gap: 16, paddingBottom: 8 }}>
-      {/* 1. CARD DE SALDO TOTAL */}
+      {/* 1. CARD DE SALDO DINÂMICO (TIME TRAVEL) */}
       <View style={[styles.balanceCard, { backgroundColor: colors.primary }]}>
-        <Text style={styles.balanceLabel}>Saldo Total</Text>
-        <Text style={styles.balanceValue}>{formatCurrency(totalBalance)}</Text>
+        <Text style={styles.balanceLabel}>{temporalState.titulo}</Text>
+        <Text 
+          style={[
+            styles.balanceValue, 
+            temporalState.isPassado && temporalState.valor < 0 && { color: '#FFD7D7' } // Destaque leve para negativo no passado
+          ]}
+        >
+          {formatCurrency(temporalState.valor)}
+        </Text>
         <View style={styles.balanceRow}>
           <View style={styles.balanceStat}>
             <Ionicons name='arrow-up-circle' size={16} color='rgba(255,255,255,0.8)' />
-            <Text style={styles.balanceStatText}>{formatCurrency(currentMonthStats.income)}</Text>
+            <Text style={styles.balanceStatText}>{formatCurrency(monthlyStats.income)}</Text>
           </View>
           <View style={styles.balanceDivider} />
           <View style={styles.balanceStat}>
             <Ionicons name='arrow-down-circle' size={16} color='rgba(255,255,255,0.8)' />
-            <Text style={styles.balanceStatText}>{formatCurrency(currentMonthStats.expense)}</Text>
+            <Text style={styles.balanceStatText}>{formatCurrency(monthlyStats.expense)}</Text>
           </View>
         </View>
       </View>
@@ -240,67 +260,30 @@ export function SaldosScreen() {
         <View style={styles.accountsRow}>
           {accounts.map((acc: Account) => {
             const isCreditCard = acc.type === 'cartao_credito';
-
-            // Calcula a fatura atual se for cartão
-            const currentInvoice = isCreditCard
-              ? calculateCreditCardInvoice(acc, transactions)
-              : 0;
-
-            // Define o valor principal: 
-            // Se for cartão -> valor da fatura
-            // Se for conta -> saldo em conta
-            const mainDisplayValue = isCreditCard ? currentInvoice : acc.balance;
+            const currentInvoice = isCreditCard ? getCurrentOpenInvoiceTotal(acc, transacoesAteHoje) : 0;
+            let localAccBalance = 0;
+            if (!isCreditCard) {
+              transacoesAteHoje.forEach(tx => {
+                if (!tx.paid) return;
+                if (tx.accountId === acc.id) {
+                  if (tx.type === 'receita') localAccBalance += tx.amount;
+                  else if (tx.type === 'despesa') localAccBalance -= tx.amount;
+                  else if (tx.type === 'transferencia') localAccBalance -= tx.amount;
+                }
+                if (tx.type === 'transferencia' && tx.targetAccountId === acc.id) localAccBalance += tx.amount;
+              });
+            }
+            const mainDisplayValue = isCreditCard ? currentInvoice : localAccBalance;
 
             return (
-              <View
-                key={acc.id}
-                style={[
-                  styles.accountCard,
-                  { backgroundColor: colors.card, borderColor: colors.border },
-                ]}
-              >
-                <View
-                  style={[
-                    styles.accountIcon,
-                    { backgroundColor: acc.color + '15' },
-                  ]}
-                >
-                  <Ionicons
-                    name={acc.icon as any}
-                    size={18}
-                    color={acc.color}
-                  />
+              <View key={acc.id} style={[styles.accountCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <View style={[styles.accountIcon, { backgroundColor: acc.color + '15' }]}>
+                  <Ionicons name={acc.icon as any} size={18} color={acc.color} />
                 </View>
                 <View style={styles.accountTextContainer}>
-                  <Text
-                    style={[
-                      styles.accountName,
-                      { color: colors.mutedForeground },
-                    ]}
-                    numberOfLines={1}
-                  >
-                    {acc.name}
-                  </Text>
-                  <Text
-                    style={[
-                      styles.accountBalance,
-                      { color: colors.foreground },
-                    ]}
-                  >
-                    {formatCurrency(mainDisplayValue)}
-                  </Text>
-
-                  {/* Adiciona um identificador visual discreto apenas para cartões */}
-                  {isCreditCard && (
-                    <Text
-                      style={[
-                        styles.secondaryText,
-                        { color: colors.mutedForeground, fontSize: 10 }
-                      ]}
-                    >
-                      Fatura atual
-                    </Text>
-                  )}
+                  <Text style={[styles.accountName, { color: colors.mutedForeground }]} numberOfLines={1}>{acc.name}</Text>
+                  <Text style={[styles.accountBalance, { color: colors.foreground }]}>{formatCurrency(mainDisplayValue)}</Text>
+                  {isCreditCard && <Text style={[styles.secondaryText, { color: colors.mutedForeground, fontSize: 10 }]}>Fatura atual</Text>}
                 </View>
               </View>
             );
@@ -321,60 +304,38 @@ export function SaldosScreen() {
           >
             <View style={styles.accountsRow}>
               {activeProjectStats.map((project) => (
-                <View
+                <TouchableOpacity
                   key={project.id}
-                  style={[
-                    styles.projectCard,
-                    { 
-                      backgroundColor: colors.card, 
-                      borderColor: colors.border,
-                      width: windowWidth * 0.85,
-                    },
-                  ]}
+                  activeOpacity={0.8}
+                  onPress={() => setSelectedProjectForDetails(project)}
+                  style={[styles.projectCard, { backgroundColor: colors.card, borderColor: colors.border, width: windowWidth * 0.85 }]}
                 >
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 }}>
                     <View style={[styles.accountIcon, { backgroundColor: project.color + '15', width: 40, height: 40, borderRadius: 12, marginBottom: 0 }]}>
                       <Ionicons name="briefcase-outline" size={20} color={project.color} />
                     </View>
-                    <Text style={[styles.accountName, { color: colors.foreground, flex: 1, fontSize: 16, fontWeight: '700' }]} numberOfLines={1}>
-                      {project.name}
-                    </Text>
+                    <Text style={[styles.accountName, { color: colors.foreground, flex: 1, fontSize: 16, fontWeight: '700' }]} numberOfLines={1}>{project.name}</Text>
                   </View>
-                  
                   <View>
                     <View style={[styles.progressBarBg, { backgroundColor: colors.border, marginVertical: 16 }]}>
-                      <View
-                        style={[
-                          styles.progressBarFill,
-                          { 
-                            backgroundColor: project.isOverBudget ? colors.destructive : project.color,
-                            width: `${project.progress * 100}%` 
-                          }
-                        ]}
-                      />
+                      <View style={[styles.progressBarFill, { backgroundColor: project.isOverBudget ? colors.destructive : project.color, width: `${project.progress * 100}%` }]} />
                     </View>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Text style={[styles.secondaryText, { color: project.isOverBudget ? colors.destructive : colors.foreground, fontWeight: '800', fontSize: 14 }]}>
-                        {formatCurrency(project.totalSpent)}
-                      </Text>
+                      <Text style={[styles.secondaryText, { color: project.isOverBudget ? colors.destructive : colors.foreground, fontWeight: '800', fontSize: 14 }]}>{formatCurrency(project.totalSpent)}</Text>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                        <Text style={[styles.secondaryText, { color: colors.mutedForeground, fontSize: 12 }]}>
-                          Meta:
-                        </Text>
-                        <Text style={[styles.secondaryText, { color: colors.foreground, fontSize: 12, fontWeight: '600' }]}>
-                          {formatCurrency(project.targetBudget)}
-                        </Text>
+                        <Text style={[styles.secondaryText, { color: colors.mutedForeground, fontSize: 12 }]}>Meta:</Text>
+                        <Text style={[styles.secondaryText, { color: colors.foreground, fontSize: 12, fontWeight: '600' }]}>{formatCurrency(project.targetBudget)}</Text>
                       </View>
                     </View>
                   </View>
-                </View>
+                </TouchableOpacity>
               ))}
             </View>
           </ScrollView>
         </>
       )}
 
-      {/* 3. CABEÇALHO DE LANÇAMENTOS COM O BOTÃO DE FILTRO */}
+      {/* 3. LANÇAMENTOS E FILTRO */}
       <View style={[styles.sectionHeader, { marginTop: 8 }]}>
         <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Lançamentos</Text>
         <TouchableOpacity
@@ -390,24 +351,14 @@ export function SaldosScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* 4. BARRA DE NAVEGAÇÃO DOS MESES (Agora abaixo do botão de filtros) */}
+      {/* 4. BARRA DE NAVEGAÇÃO DOS MESES */}
       <View style={[styles.dateNavigator, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <TouchableOpacity onPress={() => changeMonth(-1)} style={styles.navArrow}>
-          <Ionicons name="chevron-back" size={20} color={colors.primary} />
-        </TouchableOpacity>
-
+        <TouchableOpacity onPress={() => changeMonth(-1)} style={styles.navArrow}><Ionicons name="chevron-back" size={20} color={colors.primary} /></TouchableOpacity>
         <View style={styles.dateLabelContainer}>
-          <Text style={[styles.monthLabel, { color: colors.foreground }]}>
-            {MONTHS[currentDate.getMonth()]}
-          </Text>
-          <Text style={[styles.yearLabel, { color: colors.mutedForeground }]}>
-            {currentDate.getFullYear()}
-          </Text>
+          <Text style={[styles.monthLabel, { color: colors.foreground }]}>{MONTHS[currentDate.getMonth()]}</Text>
+          <Text style={[styles.yearLabel, { color: colors.mutedForeground }]}>{currentDate.getFullYear()}</Text>
         </View>
-
-        <TouchableOpacity onPress={() => changeMonth(1)} style={styles.navArrow}>
-          <Ionicons name="chevron-forward" size={20} color={colors.primary} />
-        </TouchableOpacity>
+        <TouchableOpacity onPress={() => changeMonth(1)} style={styles.navArrow}><Ionicons name="chevron-forward" size={20} color={colors.primary} /></TouchableOpacity>
       </View>
     </View>
   );
@@ -418,46 +369,49 @@ export function SaldosScreen() {
     const isReceita = tx.type === 'receita';
     const account = accounts.find((a) => a.id === tx.accountId);
     
-    // Busca a tag correspondente
+    // 👉 Busca a tag correspondente (pelo label salvo na transação)
     const tagInfo = tags.find(t => t.label === tx.tag) || tags.find(t => t.label === 'Outros');
+    const tagColor = tagInfo?.color || colors.primary;
 
     return (
-      <Swipeable
-        ref={(ref) => { if (ref) rowRefs.set(tx.id, ref); }}
-        renderRightActions={() => renderRightActions(tx.id)}
-        onSwipeableWillOpen={() => {
-          if (currentlyOpenRowId && currentlyOpenRowId !== tx.id) closeCurrentlyOpenRow();
-          currentlyOpenRowId = tx.id;
-        }}
-      >
-        <TouchableOpacity
-          style={[styles.txItem, { backgroundColor: colors.card, borderColor: colors.border }, isFirst && styles.txItemFirst, isLast && styles.txItemLast]}
-          onPress={() => setSelectedTx(tx)}
-          activeOpacity={1}
+      <GestureHandlerRootView>
+        <Swipeable
+          ref={(ref) => { if (ref) rowRefs.set(tx.id, ref); }}
+          renderRightActions={() => renderRightActions(tx.id)}
+          onSwipeableWillOpen={() => {
+            if (currentlyOpenRowId && currentlyOpenRowId !== tx.id) closeCurrentlyOpenRow();
+            currentlyOpenRowId = tx.id;
+          }}
         >
-          <View style={[styles.txIcon, { backgroundColor: (tagInfo?.color || colors.primary) + '15' }]}>
-            <Ionicons 
-              name={(tagInfo?.icon as any) || (isReceita ? 'arrow-up' : 'receipt')} 
-              size={18} 
-              color={tagInfo?.color || colors.primary} 
-            />
-          </View>
-          <View style={styles.txInfo}>
-            <Text style={[styles.txDesc, { color: colors.foreground }]} numberOfLines={1}>{tx.description}</Text>
-            <Text style={[styles.txMetaText, { color: colors.mutedForeground }]}>{formatDateShort(tx.date)} • {account?.name}</Text>
-          </View>
-          <Text style={[styles.txAmount, { color: isReceita ? colors.success : colors.destructive }]}>
-            {isReceita ? '+' : '-'}{formatCurrency(tx.amount)}
-          </Text>
-        </TouchableOpacity>
-      </Swipeable>
+          <TouchableOpacity
+            style={[styles.txItem, { backgroundColor: colors.card, borderColor: colors.border }, isFirst && styles.txItemFirst, isLast && styles.txItemLast]}
+            onPress={() => setSelectedTx(tx)}
+            activeOpacity={1}
+          >
+            <View style={[styles.txIcon, { backgroundColor: tagColor + '15' }]}>
+              <Ionicons 
+                name={(tagInfo?.icon as any) || (isReceita ? 'arrow-up' : 'receipt')} 
+                size={18} 
+                color={tagColor} 
+              />
+            </View>
+            <View style={styles.txInfo}>
+              <Text style={[styles.txDesc, { color: colors.foreground }]} numberOfLines={1}>{tx.description}</Text>
+              <Text style={[styles.txMetaText, { color: colors.mutedForeground }]}>{formatDateShort(tx.date)} • {account?.name}</Text>
+            </View>
+            <Text style={[styles.txAmount, { color: isReceita ? colors.success : colors.destructive }]}>
+              {isReceita ? '+' : '-'}{formatCurrency(tx.amount)}
+            </Text>
+          </TouchableOpacity>
+        </Swipeable>
+      </GestureHandlerRootView>
     );
   };
 
   if (loading) return <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}><ActivityIndicator size='large' color={colors.primary} /></View>;
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
+    <View style={{ flex: 1 }}>
       <FlatList
         data={paginatedTransactions}
         keyExtractor={(item) => item.id}
@@ -479,119 +433,47 @@ export function SaldosScreen() {
         <AddTransactionModal visible={isEditing} onClose={() => { setIsEditing(false); setSelectedTx(null); }} onAdd={addTransaction} onUpdate={updateTransaction} accounts={accounts} transactionToEdit={selectedTx} />
       )}
 
-      {/* Modal de Filtros (Simplificado sem o switch de previstos) */}
-      <Modal
-        visible={isFilterModalOpen}
-        transparent
-        animationType='slide'
-        onRequestClose={() => setIsFilterModalOpen(false)}
-      >
+      <Modal visible={isFilterModalOpen} transparent animationType='slide' onRequestClose={() => setIsFilterModalOpen(false)}>
         <View style={styles.modalOverlayBottom}>
-          <View
-            style={[
-              styles.filterModalContent,
-              { backgroundColor: colors.card, borderColor: colors.border },
-            ]}
-          >
+          <View style={[styles.filterModalContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <View style={styles.filterModalHeader}>
-              <Text style={[styles.modalTitle, { color: colors.foreground }]}>
-                Filtros
-              </Text>
-              <TouchableOpacity
-                onPress={() => setIsFilterModalOpen(false)}
-                style={[styles.closeBtn, { backgroundColor: colors.background }]}
-              >
-                <Ionicons name='close' size={20} color={colors.foreground} />
-              </TouchableOpacity>
+              <Text style={[styles.modalTitle, { color: colors.foreground }]}>Filtros</Text>
+              <TouchableOpacity onPress={() => setIsFilterModalOpen(false)} style={[styles.closeBtn, { backgroundColor: colors.background }]}><Ionicons name='close' size={20} color={colors.foreground} /></TouchableOpacity>
             </View>
-
             <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: '80%' }}>
-
-              {/* FILTRO POR TIPO */}
-              <Text style={[styles.filterGroupLabel, { color: colors.mutedForeground }]}>
-                Tipo
-              </Text>
+              <Text style={[styles.filterGroupLabel, { color: colors.mutedForeground }]}>Tipo</Text>
               <View style={styles.chipRow}>
                 {(['todas', 'receita', 'despesa', 'transferencia'] as const).map((t) => (
-                  <TouchableOpacity
-                    key={t}
-                    style={[
-                      styles.chip,
-                      {
-                        borderColor: colors.border,
-                        backgroundColor: filterType === t ? colors.primary : 'transparent',
-                      },
-                    ]}
-                    onPress={() => setFilterType(t)}
-                  >
-                    <Text style={[styles.chipText, { color: filterType === t ? '#FFF' : colors.foreground }]}>
-                      {t.charAt(0).toUpperCase() + t.slice(1)}
-                    </Text>
+                  <TouchableOpacity key={t} style={[styles.chip, { borderColor: colors.border, backgroundColor: filterType === t ? colors.primary : 'transparent' }]} onPress={() => setFilterType(t)}>
+                    <Text style={[styles.chipText, { color: filterType === t ? '#FFF' : colors.foreground }]}>{t.charAt(0).toUpperCase() + t.slice(1)}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
-
-              {/* FILTRO POR CONTA (O que estava faltando) */}
-              <Text style={[styles.filterGroupLabel, { color: colors.mutedForeground, marginTop: 20 }]}>
-                Contas
-              </Text>
+              <Text style={[styles.filterGroupLabel, { color: colors.mutedForeground, marginTop: 20 }]}>Contas</Text>
               <View style={styles.chipRow}>
-                <TouchableOpacity
-                  style={[
-                    styles.chip,
-                    {
-                      borderColor: colors.border,
-                      backgroundColor: filterAccountId === 'todas' ? colors.primary : 'transparent',
-                    },
-                  ]}
-                  onPress={() => setFilterAccountId('todas')}
-                >
-                  <Text style={[styles.chipText, { color: filterAccountId === 'todas' ? '#FFF' : colors.foreground }]}>
-                    Todas
-                  </Text>
-                </TouchableOpacity>
+                <TouchableOpacity style={[styles.chip, { borderColor: colors.border, backgroundColor: filterAccountId === 'todas' ? colors.primary : 'transparent' }]} onPress={() => setFilterAccountId('todas')}><Text style={[styles.chipText, { color: filterAccountId === 'todas' ? '#FFF' : colors.foreground }]}>Todas</Text></TouchableOpacity>
                 {accounts.map((acc) => (
-                  <TouchableOpacity
-                    key={acc.id}
-                    style={[
-                      styles.chip,
-                      {
-                        borderColor: acc.color,
-                        backgroundColor: filterAccountId === acc.id ? acc.color : 'transparent',
-                      },
-                    ]}
-                    onPress={() => setFilterAccountId(acc.id)}
-                  >
-                    <Text style={[styles.chipText, { color: filterAccountId === acc.id ? '#FFF' : acc.color }]}>
-                      {acc.name}
-                    </Text>
+                  <TouchableOpacity key={acc.id} style={[styles.chip, { borderColor: acc.color, backgroundColor: filterAccountId === acc.id ? acc.color : 'transparent' }]} onPress={() => setFilterAccountId(acc.id)}>
+                    <Text style={[styles.chipText, { color: filterAccountId === acc.id ? '#FFF' : acc.color }]}>{acc.name}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
-
               <View style={{ height: 30 }} />
             </ScrollView>
-
-            <TouchableOpacity
-              style={[styles.applyBtn, { backgroundColor: colors.foreground }]}
-              onPress={() => setIsFilterModalOpen(false)}
-            >
-              <Text style={[styles.applyBtnText, { color: colors.background }]}>
-                Aplicar Filtros
-              </Text>
-            </TouchableOpacity>
-
+            <TouchableOpacity style={[styles.applyBtn, { backgroundColor: colors.foreground }]} onPress={() => setIsFilterModalOpen(false)}><Text style={[styles.applyBtnText, { color: colors.background }]}>Aplicar Filtros</Text></TouchableOpacity>
             {activeFiltersCount > 0 && (
-              <TouchableOpacity onPress={clearFilters} style={{ marginTop: 15, alignItems: 'center' }}>
-                <Text style={{ color: colors.destructive, fontWeight: '600' }}>Limpar Filtros</Text>
-              </TouchableOpacity>
+              <TouchableOpacity onPress={clearFilters} style={{ marginTop: 15, alignItems: 'center' }}><Text style={{ color: colors.destructive, fontWeight: '600' }}>Limpar Filtros</Text></TouchableOpacity>
             )}
           </View>
         </View>
       </Modal>
 
       <RecurrenceActionModal visible={!!recurrenceDeleteData} actionType='delete' onClose={() => setRecurrenceDeleteData(null)} onSelect={(mode) => { if (recurrenceDeleteData) deleteTransaction(recurrenceDeleteData, mode); setRecurrenceDeleteData(null); }} />
-    </GestureHandlerRootView>
+
+      {selectedProjectForDetails && (
+        <ProjectTransactionsModal project={selectedProjectForDetails} onClose={() => setSelectedProjectForDetails(null)} />
+      )}
+    </View>
   );
 }
 
@@ -605,21 +487,11 @@ const styles = StyleSheet.create({
   balanceStat: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   balanceStatText: { color: 'rgba(255,255,255,0.85)', fontSize: 13, fontWeight: '500' },
   balanceDivider: { width: 1, height: 14, backgroundColor: 'rgba(255,255,255,0.3)' },
-
-  // Estilo do Navegador de Data
-  dateNavigator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 12,
-    borderRadius: 15,
-    borderWidth: StyleSheet.hairlineWidth,
-  },
+  dateNavigator: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 12, borderRadius: 15, borderWidth: StyleSheet.hairlineWidth },
   navArrow: { padding: 8 },
   dateLabelContainer: { alignItems: 'center' },
   monthLabel: { fontSize: 16, fontWeight: '700' },
   yearLabel: { fontSize: 12, fontWeight: '500' },
-
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 8 },
   filterBtn: { padding: 8, borderRadius: 12, borderWidth: 1, position: 'relative' },
   filterBadge: { position: 'absolute', top: -6, right: -6, width: 18, height: 18, borderRadius: 9, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#FFF' },
@@ -643,68 +515,17 @@ const styles = StyleSheet.create({
   txAmount: { fontSize: 14, fontWeight: '700' },
   emptyState: { alignItems: 'center', padding: 40, gap: 8, borderRadius: 20, borderWidth: StyleSheet.hairlineWidth, marginTop: 20 },
   emptyText: { fontSize: 14, textAlign: 'center' },
-  modalOverlayBottom: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'flex-end',
-  },
-  filterModalContent: {
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    borderWidth: 1,
-    padding: 24,
-    paddingBottom: 40,
-    maxHeight: '90%',
-  },
-  filterModalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '700'
-  },
-  closeBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  filterGroupLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 12,
-  },
-  chipRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10
-  },
-  chip: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-  },
-  chipText: {
-    fontSize: 14,
-    fontWeight: '600'
-  },
-  applyBtn: {
-    padding: 16,
-    borderRadius: 16,
-    alignItems: 'center',
-    marginTop: 10
-  },
-  applyBtnText: {
-    fontSize: 16,
-    fontWeight: '700'
-  },
+  modalOverlayBottom: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
+  filterModalContent: { borderTopLeftRadius: 28, borderTopRightRadius: 28, borderWidth: 1, padding: 24, paddingBottom: 40, maxHeight: '90%' },
+  filterModalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  modalTitle: { fontSize: 20, fontWeight: '700' },
+  closeBtn: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  filterGroupLabel: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12 },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1 },
+  chipText: { fontSize: 14, fontWeight: '600' },
+  applyBtn: { padding: 16, borderRadius: 16, alignItems: 'center', marginTop: 10 },
+  applyBtnText: { fontSize: 16, fontWeight: '700' },
   hiddenAction: { justifyContent: 'center', alignItems: 'center', width: 80 },
   hiddenActionRight: { borderTopRightRadius: 20, borderBottomRightRadius: 20 },
   hiddenActionText: { color: '#FFF', fontSize: 10, fontWeight: '700', marginTop: 4 },

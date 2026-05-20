@@ -34,13 +34,14 @@ const RECURRENCE_LABELS: Record<string, string> = {
 
 export function TransactionDetailModal({ transaction, onClose, onEdit }: TransactionDetailModalProps) {
   const { colors } = useTheme()
-  const { accounts, deleteTransaction } = useStoreContext()
+  const { accounts, projects, deleteTransaction } = useStoreContext()
   const insets = useSafeAreaInsets()
   const [recurrenceModalVisible, setRecurrenceModalVisible] = useState(false)
 
   if (!transaction) return null
 
   const account = accounts.find(a => a.id === transaction.accountId)
+  const project = projects.find(p => p.id === transaction.projectId)
   const isReceita = transaction.type === 'receita'
   const isTransf = transaction.type === 'transferencia'
   const amountColor = isReceita ? colors.success : isTransf ? colors.primary : colors.destructive
@@ -164,6 +165,9 @@ export function TransactionDetailModal({ transaction, onClose, onEdit }: Transac
                   transaction.type === 'despesa' ? 'Despesa' : 'Transferência'
               } colors={colors} />
               <DetailRow label="Conta" value={account?.name ?? '—'} colors={colors} />
+              {project && (
+                <DetailRow label="Projeto" value={project.name} colors={colors} />
+              )}
               <DetailRow label="Recorrência" value={RECURRENCE_LABELS[transaction.recurrence] ?? '—'} colors={colors} />
               {transaction.notes && (
                 <DetailRow label="Notas" value={transaction.notes} colors={colors} />

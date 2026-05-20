@@ -22,7 +22,10 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "backgroundColor": "#FF7043"
       },
-      "package": "com.horizonte.financas"
+      "package": "com.horizonte.financas",
+      "permissions": [
+        "android.permission.POST_NOTIFICATIONS"
+      ]
     },
     "plugins": ["expo-router"],
     "experiments": {

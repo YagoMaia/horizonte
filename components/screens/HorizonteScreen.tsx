@@ -10,6 +10,8 @@ import {
   Platform,
   Modal,
   TextInput,
+  InteractionManager,
+  ActivityIndicator,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "@/hooks/useTheme";
@@ -77,10 +79,10 @@ function formatCompactK(value: number): string {
 
 export function HorizonteScreen() {
   const { colors } = useTheme();
-  const { transactions, accounts, getEffectiveBudget, saveMonthlyBudget } =
+  const { transactions, accounts, getEffectiveBudget, saveMonthlyBudget, getInvoiceTotalForMonth } =
     useStoreContext();
 
-  const today = new Date();
+  const today = useMemo(() => new Date(), []);
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth());
   const [selectedDay, setSelectedDay] = useState<any | null>(null);
@@ -88,10 +90,37 @@ export function HorizonteScreen() {
   const [activeAccountIds, setActiveAccountIds] = useState<string[]>([]);
   const [budgetInput, setBudgetInput] = useState<string>("");
 
+  const scrollRef = React.useRef<ScrollView>(null);
+  const ROW_HEIGHT = 90; // Fixed height defined in styles.row
+
   // 👉 NOVO ESTADO: Alternar entre Lista e Mapa de Calor
   const [viewMode, setViewMode] = useState<"list" | "grid">("list");
+  const [isReady, setIsReady] = useState(false);
 
   const currentBudget = getEffectiveBudget(year, month);
+
+  useEffect(() => {
+    const task = InteractionManager.runAfterInteractions(() => {
+      setIsReady(true);
+    });
+    return () => task.cancel();
+  }, []);
+
+  // Auto-scroll inteligente: hoje (se mês atual) ou dia 1º (outros meses)
+  useEffect(() => {
+    if (isReady && viewMode === "list") {
+      const isMesAtual = month === today.getMonth() && year === today.getFullYear();
+      const diaAlvo = isMesAtual ? today.getDate() : 1;
+      const dayIndex = diaAlvo - 1;
+
+      setTimeout(() => {
+        scrollRef.current?.scrollTo({
+          y: dayIndex * ROW_HEIGHT,
+          animated: true,
+        });
+      }, 100);
+    }
+  }, [viewMode, year, month, today, isReady]);
 
   useEffect(() => {
     const loadConfig = async () => {
@@ -175,8 +204,15 @@ export function HorizonteScreen() {
     const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
 
     const getEffectiveDate = (tx: any) => {
-      const d = new Date(tx.date);
-      const txDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+      // 👉 Extração Robusta (Sênior): "2026-06-01T..." -> [2026, 6, 1]
+      // Ignora o shift de timezone do ISO e extrai o "Dia do Calendário" pretendido
+      const dateStr = typeof tx.date === 'string' ? tx.date : (tx.date as Date).toISOString();
+      const parts = dateStr.split('T')[0].split('-').map(Number);
+      const y = parts[0];
+      const m = parts[1] - 1; // Ajuste para 0-indexed para o objeto Date
+      const d = parts[2];
+      
+      const txDay = new Date(y, m, d);
       
       // 👉 Correção Crítica 1: Se foi pago antecipadamente (data futura), o impacto no caixa é HOJE
       if (tx.paid && txDay > startOfToday) return startOfToday;
@@ -225,65 +261,61 @@ export function HorizonteScreen() {
       endYear++;
     }
 
-    // 👉 PRÉ-CÁLCULO DE FATURAS DE CARTÃO DE CRÉDITO (NÃO PAGAS)
-    const virtualInvoiceTxs: Record<string, any[]> = {};
-    accounts.filter(a => a.type === 'cartao_credito' && activeAccountIds.includes(a.id)).forEach(card => {
-      const closingDay = card.closingDay || 25;
-      const dueDay = card.dueDay || 5;
-      
-      const cardUnpaidTxs = transactions.filter(tx => 
-        tx.accountId === card.id && tx.paymentMethod === 'credito' && !tx.paid
-      );
-      
-      const invoiceTotals: Record<string, number> = {};
-      
-      cardUnpaidTxs.forEach(tx => {
-        const d = new Date(tx.date);
-        let m = d.getMonth() + 1;
-        let y = d.getFullYear();
-        if (d.getDate() >= closingDay) m += 1;
-        if (dueDay < closingDay) m += 1;
-        while (m > 12) { m -= 12; y += 1; }
-        
-        const invoiceMonth = m - 1;
-        const invoiceYear = y;
-        const dateKey = `${invoiceYear}-${invoiceMonth}-${dueDay}`;
-        
-        invoiceTotals[dateKey] = (invoiceTotals[dateKey] || 0) + (tx.type === 'receita' ? -tx.amount : tx.amount);
-      });
-      
-      Object.entries(invoiceTotals).forEach(([dateKey, amount]) => {
-        if (amount > 0) {
-          const [y, m, d] = dateKey.split('-').map(Number);
-          const rawDate = new Date(y, m, d);
-          const effectiveDate = rawDate < startOfToday ? startOfToday : rawDate;
-          const effKey = `${effectiveDate.getFullYear()}-${effectiveDate.getMonth()}-${effectiveDate.getDate()}`;
-
-          if (!virtualInvoiceTxs[effKey]) virtualInvoiceTxs[effKey] = [];
-          virtualInvoiceTxs[effKey].push({
-            id: `virtual-invoice-${card.id}-${dateKey}`,
-            description: `Fatura ${card.name}`,
-            amount: amount,
-            type: 'despesa',
-            date: effectiveDate.toISOString(),
-            accountId: card.id,
-            paymentMethod: 'debito', 
-            paid: false,
-            isVirtual: true, 
-          });
-        }
-      });
-    });
-
     // 2. Roda a fita do tempo
+    const virtualInvoiceTxs: Record<string, any[]> = {};
+
     while (simYear < endYear || (simYear === endYear && simMonth <= endMonth)) {
       const simDaysCount = getDaysInMonth(simYear, simMonth);
       const simBudget = getEffectiveBudget(simYear, simMonth);
       const monthKey = `${simYear}-${simMonth}`;
       resultsMap[monthKey] = [];
 
+      // 👉 INJEÇÃO DE FATURA FUTURA (Substitui o pré-cálculo antigo)
+      const isFuturoEstrito = simYear > today.getFullYear() || (simYear === today.getFullYear() && simMonth > today.getMonth());
+      
+      if (isFuturoEstrito) {
+        // Removido o activeAccountIds.includes(card.id) pois faturas devem furar o bloqueio
+        accounts.filter(a => a.type === 'cartao_credito').forEach(card => {
+          const valorCalculado = getInvoiceTotalForMonth(card.id, simMonth, simYear);
+          if (valorCalculado > 0) {
+            const effKey = `${simYear}-${simMonth}-1`; // Sempre dia 1º
+            if (!virtualInvoiceTxs[effKey]) virtualInvoiceTxs[effKey] = [];
+            
+            // Impede duplicação caso o loop passe mais de uma vez (safety check)
+            const exists = virtualInvoiceTxs[effKey].find(v => v.id === `virtual-invoice-${card.id}-${simMonth}`);
+            if (!exists) {
+              virtualInvoiceTxs[effKey].push({
+                id: `virtual-invoice-${card.id}-${simMonth}`,
+                description: `Fatura do cartão de crédito ${card.name}`,
+                amount: valorCalculado,
+                type: 'despesa',
+                date: new Date(simYear, simMonth, 1, 12, 0, 0).toISOString(),
+                accountId: card.id,
+                paymentMethod: 'debito', 
+                paid: false,
+                isVirtual: true 
+              });
+            }
+          }
+        });
+      }
+
       const monthTxs = transactions.filter((tx) => {
         const d = getEffectiveDate(tx);
+
+        // 👉 Validação de Data Inicial (Comparação de String ISO YYYY-MM) - REESCRITA SÊNIOR
+        // Ignora fuso horário e índices 0-11, tratando a data como texto puro de calendário.
+        const dataString = typeof tx.date === 'string' ? tx.date : (tx.date as Date).toISOString();
+        const startYearMonth = dataString.substring(0, 7); // Ex: '2026-06'
+
+        const mesFormatado = String(simMonth + 1).padStart(2, '0');
+        const projYearMonth = `${simYear}-${mesFormatado}`; // Ex: '2026-05'
+
+        // Bloqueio: Se o mês simulado for ANTES do mês de início da despesa, ignore.
+        if (projYearMonth < startYearMonth) {
+            return false;
+        }
+
         return d.getFullYear() === simYear && d.getMonth() === simMonth;
       });
 
@@ -297,10 +329,15 @@ export function HorizonteScreen() {
       // NOVO ALGORITMO: Calcula despesas fixas do mês para obter um "Daily Plan" base estático.
       let monthFixedExpenses = 0;
       const monthVirtualInvoices = Object.keys(virtualInvoiceTxs)
-        .filter(k => k.startsWith(`${simYear}-${simMonth}-`))
+        .filter(k => {
+          // 👉 Match Robusto: Evita que '2026-1-' pegue '2026-11-'
+          const [y, m] = k.split('-').map(Number);
+          return y === simYear && m === simMonth;
+        })
         .flatMap(k => virtualInvoiceTxs[k]);
         
       const allMonthActiveTxs = [...monthTxs, ...monthVirtualInvoices].filter(tx => {
+        if (tx.isVirtual) return true; // Fatura furando o bloqueio
         const isFromActive = activeAccountIds.includes(tx.accountId);
         const isToActive = tx.type === 'transferencia' && tx.targetAccountId && activeAccountIds.includes(tx.targetAccountId);
         return isFromActive || isToActive;
@@ -310,7 +347,7 @@ export function HorizonteScreen() {
         if (tx.paymentMethod === 'credito') return;
         if (tx.isAdjustment) return; // 👉 Ignore adjustments for budget math
 
-        const isFromActive = activeAccountIds.includes(tx.accountId);
+        const isFromActive = activeAccountIds.includes(tx.accountId) || tx.isVirtual; // Fatura furando o bloqueio
         const isToActive = tx.type === 'transferencia' && tx.targetAccountId && activeAccountIds.includes(tx.targetAccountId);
 
         if (tx.type === 'despesa' && isFromActive) {
@@ -335,6 +372,7 @@ export function HorizonteScreen() {
         // Filtramos transações para exibição no Modal apenas de contas ativas e omitimos os ajustes
         const dayTxs = rawDayTxs.filter(tx => {
            if (tx.isAdjustment) return false;
+           if (tx.isVirtual) return true; // Fatura furando o bloqueio
            const isFromActive = activeAccountIds.includes(tx.accountId);
            const isToActive = tx.type === 'transferencia' && tx.targetAccountId && activeAccountIds.includes(tx.targetAccountId);
            return isFromActive || isToActive;
@@ -342,6 +380,7 @@ export function HorizonteScreen() {
 
         // Para os cálculos financeiros do dia precisamos manter os ajustes (mas eles não irão para o display dayTxs)
         const mathDayTxs = rawDayTxs.filter(tx => {
+           if (tx.isVirtual) return true; // Fatura furando o bloqueio
            const isFromActive = activeAccountIds.includes(tx.accountId);
            const isToActive = tx.type === 'transferencia' && tx.targetAccountId && activeAccountIds.includes(tx.targetAccountId);
            return isFromActive || isToActive;
@@ -355,7 +394,7 @@ export function HorizonteScreen() {
         let dayAdjustmentNet = 0;
 
         effectiveMathDayTxs.forEach(tx => {
-           const isFromActive = activeAccountIds.includes(tx.accountId);
+           const isFromActive = activeAccountIds.includes(tx.accountId) || tx.isVirtual; // Fatura furando o bloqueio
            const isToActive = tx.type === 'transferencia' && tx.targetAccountId && activeAccountIds.includes(tx.targetAccountId);
 
            if (tx.isAdjustment) {
@@ -509,10 +548,19 @@ export function HorizonteScreen() {
                 return (
                   <TouchableOpacity
                     key={`${col.key}-${dayNum}`}
-                    style={[styles.gridCell, { backgroundColor: bgColor }]}
+                    style={[
+                      styles.gridCell,
+                      { backgroundColor: bgColor },
+                      dayData.isToday && { borderWidth: 2, borderColor: colors.primary },
+                    ]}
                     onPress={() => setSelectedDay(dayData)}
                   >
-                    <Text style={[styles.gridCellText, { color: textColor }]}>
+                    <Text
+                      style={[
+                        styles.gridCellText,
+                        { color: textColor, fontWeight: dayData.isToday ? "900" : "700" },
+                      ]}
+                    >
                       {formatCompactK(dayData.balance)}
                     </Text>
                   </TouchableOpacity>
@@ -526,12 +574,20 @@ export function HorizonteScreen() {
     );
   };
 
+  if (!isReady) {
+    return (
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: colors.background }}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
+
   return (
     <KeyboardAvoidingView
       style={{ flex: 1, backgroundColor: colors.background }}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
-      {/* HEADER E NAVEGAÇÃO DE MESES */}
+      {/* ... (header remains same) */}
       <View
         style={[
           styles.monthNav,
@@ -700,7 +756,7 @@ export function HorizonteScreen() {
       {viewMode === "grid" ? (
         renderHeatmapGrid()
       ) : (
-        <ScrollView showsVerticalScrollIndicator={false}>
+        <ScrollView ref={scrollRef} showsVerticalScrollIndicator={false}>
           {days.map((d, idx) => {
             const rowBg = d.isToday
               ? colors.primary + "10"
@@ -727,6 +783,7 @@ export function HorizonteScreen() {
                 style={[
                   styles.row,
                   { backgroundColor: rowBg, borderBottomColor: colors.border },
+                  d.isToday && { borderLeftWidth: 4, borderLeftColor: colors.primary },
                 ]}
               >
                 <View
@@ -740,12 +797,18 @@ export function HorizonteScreen() {
                   ]}
                 >
                   <Text
-                    style={[styles.dayNumber, { color: colors.foreground }]}
+                    style={[
+                      styles.dayNumber,
+                      { color: d.isToday ? colors.primary : colors.foreground },
+                    ]}
                   >
                     {d.day}
                   </Text>
                   <Text
-                    style={[styles.weekDay, { color: colors.mutedForeground }]}
+                    style={[
+                      styles.weekDay,
+                      { color: d.isToday ? colors.primary : colors.mutedForeground },
+                    ]}
                   >
                     {d.weekDay}
                   </Text>

@@ -52,6 +52,7 @@ export interface Transaction {
   isAdjustment?: boolean;
   notificationId?: string;
   projectId?: string; // 👉 Novo: ID do projeto vinculado
+  notifyRecurrence?: boolean; // 👉 Novo: Preferência individual de notificação para a recorrência
 }
 
 export interface Tag {
@@ -59,6 +60,15 @@ export interface Tag {
   label: string;
   icon: string;
   color: string;
+}
+
+export interface NotificationPreferences {
+  dailyReminders: boolean;
+  dailyReminderTime: { hour: number; minute: number };
+  expenseReminders: boolean;
+  expenseReminderTime: { hour: number; minute: number };
+  creditCardAlerts: boolean;
+  creditCardAlertTime: { hour: number; minute: number };
 }
 
 export const DEFAULT_TAGS: Tag[] = [
