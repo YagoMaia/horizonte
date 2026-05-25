@@ -668,8 +668,83 @@ export function useStore() {
         const targetDateStr = oldTx.date.split('T')[0];
         const txsToMutate = mode === 'all' ? familyTxs : familyTxs.filter(t => t.date.split('T')[0] >= targetDateStr);
 
+        const targetAccount = accounts.find(a => a.id === updatedTx.accountId);
+        const isCreditCard = targetAccount?.type === 'cartao_credito';
+        const closingDay = targetAccount?.closingDay || 25;
+        const dueDay = targetAccount?.dueDay || 5;
+
+        const parts = updatedTx.date.split('T')[0].split('-').map(Number);
+        const newBaseDate = new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0);
+        const refIndex = oldTx.groupIndex || 0;
+
+        let baseM = newBaseDate.getMonth() + 1;
+        let baseY = newBaseDate.getFullYear();
+        if (isCreditCard) {
+            if (newBaseDate.getDate() >= closingDay) baseM += 1;
+            if (dueDay < closingDay) baseM += 1;
+        }
+
         for (const mutantOld of txsToMutate) {
-          const mutantNew = { ...updatedTx, id: mutantOld.id, groupId: mutantOld.groupId, groupIndex: mutantOld.groupIndex, paid: mutantOld.paid };
+          const indexDiff = (mutantOld.groupIndex || 0) - refIndex;
+          let currentDate = new Date(newBaseDate);
+
+          if (isCreditCard && updatedTx.totalInstallments && updatedTx.totalInstallments > 1) {
+             if (indexDiff === 0) {
+                 currentDate = new Date(newBaseDate);
+             } else {
+                 let targetInvM = baseM + indexDiff;
+                 let monthForDay1 = targetInvM - (dueDay < closingDay ? 1 : 0);
+                 currentDate = new Date(baseY, monthForDay1 - 1, 1, 12, 0, 0);
+             }
+          } else {
+             switch (updatedTx.recurrence) {
+                case 'mensal':
+                  currentDate = addMonths(newBaseDate, indexDiff);
+                  break;
+                case 'anual':
+                  currentDate = addYears(newBaseDate, indexDiff);
+                  break;
+                case 'semanal':
+                  currentDate = addWeeks(newBaseDate, indexDiff);
+                  break;
+                case 'diaria':
+                  currentDate = addDays(newBaseDate, indexDiff);
+                  break;
+                case 'quinto_dia_util': {
+                  const targetMonthDate = addMonths(newBaseDate, indexDiff);
+                  const targetMonth = targetMonthDate.getMonth();
+                  const targetYear = targetMonthDate.getFullYear();
+                  let businessDaysCount = 0;
+                  let day = 1;
+                  while (businessDaysCount < 5) {
+                    const d = new Date(targetYear, targetMonth, day);
+                    const dayOfWeek = d.getDay();
+                    if (dayOfWeek !== 0 && dayOfWeek !== 6) businessDaysCount++;
+                    if (businessDaysCount < 5) day++;
+                  }
+                  currentDate = new Date(targetYear, targetMonth, day, 12, 0, 0);
+                  break;
+                }
+                default:
+                  currentDate = addMonths(newBaseDate, indexDiff);
+             }
+          }
+
+          let finalDescription = updatedTx.description;
+          if (updatedTx.totalInstallments && updatedTx.totalInstallments > 1) {
+             const cleanDesc = updatedTx.description.replace(/\s\(\d+\/\d+\)$/, "");
+             finalDescription = `${cleanDesc} (${(mutantOld.groupIndex || 0) + 1}/${updatedTx.totalInstallments})`;
+          }
+
+          const mutantNew = { 
+            ...updatedTx, 
+            id: mutantOld.id, 
+            groupId: mutantOld.groupId, 
+            groupIndex: mutantOld.groupIndex, 
+            paid: mutantOld.paid,
+            date: currentDate.toISOString(),
+            description: finalDescription
+          };
           finalTransactions = finalTransactions.map(t => t.id === mutantNew.id ? mutantNew : t);
         }
       } else {
