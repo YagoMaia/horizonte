@@ -468,56 +468,6 @@ export function SaldosScreen() {
   );
 }
 
-
-      <TransactionDetailModal transaction={isEditing ? null : selectedTx} onClose={() => setSelectedTx(null)} onEdit={() => setIsEditing(true)} />
-      {isEditing && selectedTx && (
-        <AddTransactionModal visible={isEditing} onClose={() => { setIsEditing(false); setSelectedTx(null); }} onAdd={addTransaction} onUpdate={updateTransaction} accounts={accounts} transactionToEdit={selectedTx} />
-      )}
-
-      <Modal visible={isFilterModalOpen} transparent animationType='slide' onRequestClose={() => setIsFilterModalOpen(false)}>
-        <View style={styles.modalOverlayBottom}>
-          <View style={[styles.filterModalContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <View style={styles.filterModalHeader}>
-              <Text style={[styles.modalTitle, { color: colors.foreground }]}>Filtros</Text>
-              <TouchableOpacity onPress={() => setIsFilterModalOpen(false)} style={[styles.closeBtn, { backgroundColor: colors.background }]}><Ionicons name='close' size={20} color={colors.foreground} /></TouchableOpacity>
-            </View>
-            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: '80%' }}>
-              <Text style={[styles.filterGroupLabel, { color: colors.mutedForeground }]}>Tipo</Text>
-              <View style={styles.chipRow}>
-                {(['todas', 'receita', 'despesa', 'transferencia'] as const).map((t) => (
-                  <TouchableOpacity key={t} style={[styles.chip, { borderColor: colors.border, backgroundColor: filterType === t ? colors.primary : 'transparent' }]} onPress={() => setFilterType(t)}>
-                    <Text style={[styles.chipText, { color: filterType === t ? '#FFF' : colors.foreground }]}>{t.charAt(0).toUpperCase() + t.slice(1)}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-              <Text style={[styles.filterGroupLabel, { color: colors.mutedForeground, marginTop: 20 }]}>Contas</Text>
-              <View style={styles.chipRow}>
-                <TouchableOpacity style={[styles.chip, { borderColor: colors.border, backgroundColor: filterAccountId === 'todas' ? colors.primary : 'transparent' }]} onPress={() => setFilterAccountId('todas')}><Text style={[styles.chipText, { color: filterAccountId === 'todas' ? '#FFF' : colors.foreground }]}>Todas</Text></TouchableOpacity>
-                {accounts.map((acc) => (
-                  <TouchableOpacity key={acc.id} style={[styles.chip, { borderColor: acc.color, backgroundColor: filterAccountId === acc.id ? acc.color : 'transparent' }]} onPress={() => setFilterAccountId(acc.id)}>
-                    <Text style={[styles.chipText, { color: filterAccountId === acc.id ? '#FFF' : acc.color }]}>{acc.name}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-              <View style={{ height: 30 }} />
-            </ScrollView>
-            <TouchableOpacity style={[styles.applyBtn, { backgroundColor: colors.foreground }]} onPress={() => setIsFilterModalOpen(false)}><Text style={[styles.applyBtnText, { color: colors.background }]}>Aplicar Filtros</Text></TouchableOpacity>
-            {activeFiltersCount > 0 && (
-              <TouchableOpacity onPress={clearFilters} style={{ marginTop: 15, alignItems: 'center' }}><Text style={{ color: colors.destructive, fontWeight: '600' }}>Limpar Filtros</Text></TouchableOpacity>
-            )}
-          </View>
-        </View>
-      </Modal>
-
-      <RecurrenceActionModal visible={!!recurrenceDeleteData} actionType='delete' onClose={() => setRecurrenceDeleteData(null)} onSelect={(mode) => { if (recurrenceDeleteData) deleteTransaction(recurrenceDeleteData, mode); setRecurrenceDeleteData(null); }} />
-
-      {selectedProjectForDetails && (
-        <ProjectTransactionsModal project={selectedProjectForDetails} onClose={() => setSelectedProjectForDetails(null)} />
-      )}
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   content: { padding: 16, paddingBottom: 32 },

@@ -1,5 +1,5 @@
 // components/screens/ContasScreen.tsx
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   Modal,
   Alert,
   Platform,
+  InteractionManager,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -17,6 +18,7 @@ import { useTheme } from '@/hooks/useTheme';
 import { useStoreContext } from '@/context/StoreContext';
 import { formatCurrency } from '@/lib/utils';
 import { Account } from '@/constants/types';
+import { AccountItem } from '../AccountItem';
 
 const ACCOUNT_COLORS = [
   '#FF6D00', // Laranja Escuro
@@ -77,7 +79,7 @@ export function ContasScreen() {
   const [closingDay, setClosingDay] = useState('');
   const [dueDay, setDueDay] = useState('');
 
-  const openAdd = () => {
+  const openAdd = useCallback(() => {
     setEditAccount(null);
     setName('');
     setBalance('');
@@ -87,24 +89,27 @@ export function ContasScreen() {
     setClosingDay('');
     setDueDay('');
     setModalVisible(true);
-  };
+  }, []);
 
-  const openEdit = (acc: Account) => {
-    setEditAccount(acc);
-    setName(acc.name);
-    // Se for cartão, o balance não é usado na mesma forma (saldo é sempre derivado da fatura)
-    setBalance(
-      acc.type === 'cartao_credito'
-        ? ''
-        : acc.balance.toString(),
-    );
-    setType(acc.type);
-    setSelectedColor(acc.color);
-    setSelectedIcon(acc.icon);
-    setClosingDay(acc.closingDay ? acc.closingDay.toString() : '');
-    setDueDay(acc.dueDay ? acc.dueDay.toString() : '');
-    setModalVisible(true);
-  };
+  const openEdit = useCallback((acc: Account) => {
+    // 👉 DESBLOQUEIO DA UI: Espera a animação do touch terminar
+    InteractionManager.runAfterInteractions(() => {
+      setEditAccount(acc);
+      setName(acc.name);
+      // Se for cartão, o balance não é usado na mesma forma (saldo é sempre derivado da fatura)
+      setBalance(
+        acc.type === 'cartao_credito'
+          ? ''
+          : acc.balance.toString(),
+      );
+      setType(acc.type);
+      setSelectedColor(acc.color);
+      setSelectedIcon(acc.icon);
+      setClosingDay(acc.closingDay ? acc.closingDay.toString() : '');
+      setDueDay(acc.dueDay ? acc.dueDay.toString() : '');
+      setModalVisible(true);
+    });
+  }, []);
 
   const handleSave = async () => {
     if (!name.trim()) return;
@@ -203,7 +208,7 @@ export function ContasScreen() {
     setModalVisible(false);
   };
 
-  const handleDelete = (acc: Account) => {
+  const handleDelete = useCallback((acc: Account) => {
     if (accounts.length <= 1) {
       Alert.alert('Atenção', 'Você precisa ter pelo menos uma conta.');
       return;
@@ -235,7 +240,11 @@ export function ContasScreen() {
         ],
       );
     }
-  };
+  }, [accounts.length, deleteAccount]);
+
+  const handleSetPrimary = useCallback((id: string) => {
+    setPrimaryAccount(id);
+  }, [setPrimaryAccount]);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
@@ -273,110 +282,16 @@ export function ContasScreen() {
               ACCOUNT_TYPES.find((t) => t.value === acc.type)?.label ??
               acc.type;
             return (
-              <View
+              <AccountItem
                 key={acc.id}
-                style={[
-                  styles.accountCard,
-                  { backgroundColor: colors.card, borderColor: colors.border },
-                ]}
-              >
-                <View style={[styles.accent, { backgroundColor: acc.color }]} />
-                <View
-                  style={[
-                    styles.iconWrap,
-                    { backgroundColor: acc.color + '20' },
-                  ]}
-                >
-                  <Ionicons
-                    name={acc.icon as any}
-                    size={22}
-                    color={acc.color}
-                  />
-                </View>
-                <View style={styles.accountInfo}>
-                  <Text
-                    style={[styles.accountName, { color: colors.foreground }]}
-                  >
-                    {acc.name}
-                  </Text>
-                  <Text
-                    style={[
-                      styles.accountType,
-                      { color: colors.mutedForeground },
-                    ]}
-                  >
-                    {typeLabel}
-                  </Text>
-                </View>
-                <View style={styles.accountRight}>
-                  {acc.type === 'cartao_credito' ? (
-                    <Text
-                      style={[
-                        styles.accountBalance,
-                        { color: colors.mutedForeground },
-                      ]}
-                    >
-                      Cartão
-                    </Text>
-                  ) : (
-                    <Text
-                      style={[
-                        styles.accountBalance,
-                        {
-                          color:
-                            acc.balance < 0
-                              ? colors.destructive
-                              : colors.foreground,
-                        },
-                      ]}
-                    >
-                      {formatCurrency(acc.balance)}
-                    </Text>
-                  )}
-
-                  <View style={styles.accountActions}>
-                    {acc.id !== accounts[0]?.id && (
-                      <TouchableOpacity
-                        onPress={() => setPrimaryAccount(acc.id)}
-                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                      >
-                        <Ionicons
-                          name='star-outline'
-                          size={16}
-                          color={colors.primary}
-                        />
-                      </TouchableOpacity>
-                    )}
-                    {acc.id === accounts[0]?.id && (
-                      <Ionicons
-                        name='star'
-                        size={16}
-                        color={colors.primary}
-                      />
-                    )}
-                    <TouchableOpacity
-                      onPress={() => openEdit(acc)}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    >
-                      <Ionicons
-                        name='pencil-outline'
-                        size={16}
-                        color={colors.mutedForeground}
-                      />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={() => handleDelete(acc)}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    >
-                      <Ionicons
-                        name='trash-outline'
-                        size={16}
-                        color={colors.destructive}
-                      />
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              </View>
+                account={acc}
+                colors={colors}
+                typeLabel={typeLabel}
+                isPrimary={acc.id === accounts[0]?.id}
+                onEdit={openEdit}
+                onDelete={handleDelete}
+                onSetPrimary={handleSetPrimary}
+              />
             );
           })}
         </View>
@@ -415,6 +330,8 @@ export function ContasScreen() {
           <ScrollView
             contentContainerStyle={styles.modalContent}
             showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            nestedScrollEnabled={true}
           >
             <Text
               style={[styles.fieldLabel, { color: colors.mutedForeground }]}
@@ -666,30 +583,6 @@ const styles = StyleSheet.create({
   },
   addBtnText: { color: '#FFF', fontSize: 14, fontWeight: '600' },
   accountsList: { gap: 10 },
-  accountCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 16,
-    borderWidth: 1,
-    overflow: 'hidden',
-    paddingRight: 14,
-    gap: 12,
-  },
-  accent: { width: 4, alignSelf: 'stretch' },
-  iconWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginVertical: 14,
-  },
-  accountInfo: { flex: 1, gap: 3 },
-  accountName: { fontSize: 15, fontWeight: '600' },
-  accountType: { fontSize: 12 },
-  accountRight: { alignItems: 'flex-end', gap: 6 },
-  accountBalance: { fontSize: 16, fontWeight: '700' },
-  accountActions: { flexDirection: 'row', gap: 14 },
   modal: { flex: 1 },
   modalHeader: {
     flexDirection: 'row',

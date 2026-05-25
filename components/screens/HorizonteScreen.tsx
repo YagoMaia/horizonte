@@ -12,6 +12,7 @@ import {
   TextInput,
   InteractionManager,
   ActivityIndicator,
+  FlatList,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "@/hooks/useTheme";

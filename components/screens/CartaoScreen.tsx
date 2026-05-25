@@ -524,8 +524,170 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
         }
       />
 
-      {/* MODALS remain same ... */}
+      {/* MODAL DE SELEÇÃO DE TIPO DE PAGAMENTO (Para Web e suporte Mobile) */}
+      <Modal visible={isPaymentTypeModalOpen} transparent animationType='slide'>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[styles.modalTitle, { color: colors.foreground }]}>Pagar Fatura</Text>
+            <Text style={[styles.modalSubtitle, { color: colors.mutedForeground }]}>
+              Como deseja registrar este pagamento?
+            </Text>
 
+            <View style={{ gap: 12, marginBottom: 24 }}>
+              <TouchableOpacity
+                style={[styles.paymentTypeOption, { borderColor: colors.border }]}
+                onPress={() => handleSelectPaymentType('full')}
+              >
+                <View style={[styles.typeIconContainer, { backgroundColor: colors.primary + '20' }]}>
+                  <Ionicons name="wallet-outline" size={24} color={colors.primary} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.typeOptionTitle, { color: colors.foreground }]}>Pagar e abater do saldo</Text>
+                  <Text style={[styles.typeOptionDesc, { color: colors.mutedForeground }]}>Altera o status para paga e cria um lançamento de despesa.</Text>
+                </View>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.paymentTypeOption, { borderColor: colors.border }]}
+                onPress={() => handleSelectPaymentType('markOnly')}
+              >
+                <View style={[styles.typeIconContainer, { backgroundColor: colors.success + '20' }]}>
+                  <Ionicons name="checkmark-done-outline" size={24} color={colors.success} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.typeOptionTitle, { color: colors.foreground }]}>Apenas marcar como paga</Text>
+                  <Text style={[styles.typeOptionDesc, { color: colors.mutedForeground }]}>Altera o status estritamente para fins visuais.</Text>
+                </View>
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity style={[styles.cancelBtn, { width: '100%' }]} onPress={() => setIsPaymentTypeModalOpen(false)}>
+              <Text style={[styles.cancelBtnText, { color: colors.mutedForeground }]}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODALS DE PAGAMENTO, ANTECIPAÇÃO E OPÇÕES */}
+      <Modal visible={isPaymentModalOpen} transparent animationType='slide'>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[styles.modalTitle, { color: colors.foreground }]}>Pagar Fatura</Text>
+            <Text style={[styles.modalSubtitle, { color: colors.mutedForeground }]}>
+              O valor de {formatCurrency(pendingInvoice)} será debitado da conta selecionada abaixo:
+            </Text>
+
+            <View style={styles.accountSelection}>
+              {debitAccounts.map((acc: Account) => (
+                <TouchableOpacity
+                  key={acc.id}
+                  style={[
+                    styles.accountOption,
+                    { borderColor: sourceAccountId === acc.id ? colors.primary : colors.border, backgroundColor: sourceAccountId === acc.id ? colors.primary + '10' : 'transparent' },
+                  ]}
+                  onPress={() => setSourceAccountId(acc.id)}
+                >
+                  <Ionicons name={acc.icon as any} size={20} color={acc.color} />
+                  <Text style={[styles.accountOptionName, { color: colors.foreground }]}>{acc.name}</Text>
+                  {sourceAccountId === acc.id && <Ionicons name='checkmark' size={18} color={colors.primary} style={{ marginLeft: 'auto' }} />}
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={styles.cancelBtn} onPress={() => setIsPaymentModalOpen(false)}>
+                <Text style={[styles.cancelBtnText, { color: colors.mutedForeground }]}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.confirmBtn, { backgroundColor: colors.primary }]} onPress={confirmPayment}>
+                <Text style={styles.confirmBtnText}>Confirmar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={isAnticipateModalOpen} transparent animationType='slide'>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[styles.modalTitle, { color: colors.foreground }]}>Antecipar Pagamento</Text>
+            <Text style={[styles.modalSubtitle, { color: colors.mutedForeground }]}>
+              Dívida total pendente: {formatCurrency(globalPendingDebt)}
+            </Text>
+
+            <View style={{ marginBottom: 24 }}>
+              <Text style={{ fontSize: 11, fontWeight: '700', textTransform: 'uppercase', color: colors.mutedForeground, marginBottom: 8 }}>
+                Valor a antecipar
+              </Text>
+              <TextInput
+                style={{ fontSize: 32, fontWeight: '700', borderBottomWidth: 1, borderBottomColor: colors.border, paddingBottom: 4, color: colors.foreground }}
+                value={anticipateAmountStr}
+                onChangeText={setAnticipateAmountStr}
+                placeholder="0,00"
+                keyboardType="decimal-pad"
+                placeholderTextColor={colors.mutedForeground}
+              />
+            </View>
+
+            <Text style={{ fontSize: 11, fontWeight: '700', textTransform: 'uppercase', color: colors.mutedForeground, marginBottom: 8 }}>
+              Debitar de:
+            </Text>
+            <View style={styles.accountSelection}>
+              {debitAccounts.map((acc: Account) => (
+                <TouchableOpacity
+                  key={acc.id}
+                  style={[
+                    styles.accountOption,
+                    { borderColor: anticipateSourceAccountId === acc.id ? colors.primary : colors.border, backgroundColor: anticipateSourceAccountId === acc.id ? colors.primary + '10' : 'transparent' },
+                  ]}
+                  onPress={() => setAnticipateSourceAccountId(acc.id)}
+                >
+                  <Ionicons name={acc.icon as any} size={20} color={acc.color} />
+                  <Text style={[styles.accountOptionName, { color: colors.foreground }]}>{acc.name}</Text>
+                  {anticipateSourceAccountId === acc.id && <Ionicons name='checkmark' size={18} color={colors.primary} style={{ marginLeft: 'auto' }} />}
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={styles.cancelBtn} onPress={() => setIsAnticipateModalOpen(false)}>
+                <Text style={[styles.cancelBtnText, { color: colors.mutedForeground }]}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.confirmBtn, { backgroundColor: colors.primary }]} onPress={confirmAnticipation}>
+                <Text style={styles.confirmBtnText}>Antecipar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={optionsModalVisible} transparent animationType="fade">
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setOptionsModalVisible(false)}>
+          <View style={[styles.optionsMenu, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[styles.optionsTitle, { color: colors.foreground }]}>{selectedTx?.description}</Text>
+            <TouchableOpacity style={styles.optionBtn} onPress={handleEdit}>
+              <Ionicons name="pencil-outline" size={20} color={colors.primary} /><Text style={[styles.optionText, { color: colors.foreground }]}>Editar Lançamento</Text>
+            </TouchableOpacity>
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
+            <TouchableOpacity style={styles.optionBtn} onPress={() => { if (selectedTx) deleteTransaction(selectedTx.id, 'all'); setOptionsModalVisible(false); }}>
+              <Ionicons name="trash-outline" size={20} color={colors.destructive} /><Text style={[styles.optionText, { color: colors.destructive }]}>Excluir Compra Inteira</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {isEditing && txToEdit && (
+        <AddTransactionModal
+          visible={isEditing}
+          onClose={() => { setIsEditing(false); setTxToEdit(null); }}
+          onAdd={addTransaction}
+          onUpdate={updateTransaction as any}
+          accounts={accounts}
+          transactionToEdit={txToEdit}
+        />
+      )}
+    </View>
+  );
+}
 
 const styles = StyleSheet.create({
   emptyContainer: { flex: 1, alignItems: 'center', justifyContent: 'center' },
