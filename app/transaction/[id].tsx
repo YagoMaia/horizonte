@@ -14,7 +14,6 @@ import { useTheme } from '@/hooks/useTheme';
 import { useStoreContext } from '@/context/StoreContext';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { RecurrenceActionModal } from '@/components/RecurrenceActionModal';
-import { AddTransactionModal } from '@/components/AddTransactionModal';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
 const RECURRENCE_LABELS: Record<string, string> = {
@@ -29,24 +28,22 @@ export default function TransactionDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { colors } = useTheme();
-  const { transactions, accounts, projects, deleteTransaction, updateTransaction, addTransaction } = useStoreContext();
+  const { transactions, accounts, projects, deleteTransaction } = useStoreContext();
   const insets = useSafeAreaInsets();
   
   const [recurrenceModalVisible, setRecurrenceModalVisible] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
 
   const transaction = transactions.find((t) => t.id === id);
 
   useEffect(() => {
-    if (!transaction && !isEditing) {
-      // If transaction is deleted or not found, go back
+    if (!transaction) {
       if (router.canGoBack()) {
         router.back();
       } else {
         router.replace('/');
       }
     }
-  }, [transaction, isEditing, router]);
+  }, [transaction, router]);
 
   if (!transaction) return <View style={{ flex: 1, backgroundColor: colors.background }} />;
 
@@ -93,7 +90,10 @@ export default function TransactionDetailScreen() {
   };
 
   const handleEdit = () => {
-    setIsEditing(true);
+    router.push({
+      pathname: '/add-transaction',
+      params: { txId: transaction.id }
+    });
   };
 
   return (
@@ -191,17 +191,6 @@ export default function TransactionDetailScreen() {
         onClose={() => setRecurrenceModalVisible(false)}
         onSelect={handleRecurrenceSelect}
       />
-
-      {isEditing && (
-        <AddTransactionModal 
-          visible={isEditing} 
-          onClose={() => setIsEditing(false)} 
-          onAdd={addTransaction} 
-          onUpdate={updateTransaction} 
-          accounts={accounts} 
-          transactionToEdit={transaction} 
-        />
-      )}
     </View>
   );
 }

@@ -22,7 +22,6 @@ import {
 } from '@/lib/utils';
 import { Account, Transaction } from '@/constants/types';
 
-import { AddTransactionModal } from '../AddTransactionModal';
 import { TransactionItem } from '../TransactionItem';
 
 const MONTH_NAMES = [
@@ -46,9 +45,6 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
     transactions,
     payCreditCardInvoice,
     anticipateCreditCardPayment,
-    addTransaction,
-    updateTransaction,
-    deleteTransaction,
     deleteMultipleTransactions,
   } = useStoreContext() as any;
 
@@ -90,11 +86,6 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
   const [isAnticipateModalOpen, setIsAnticipateModalOpen] = useState(false);
   const [anticipateAmountStr, setAnticipateAmountStr] = useState('');
   const [anticipateSourceAccountId, setAnticipateSourceAccountId] = useState<string>('');
-
-  const [optionsModalVisible, setOptionsModalVisible] = useState(false);
-  const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
-  const [isEditing, setIsEditing] = useState(false);
-  const [txToEdit, setTxToEdit] = useState<Transaction | null>(null);
 
   const {
     totalInvoice,
@@ -362,17 +353,6 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
       ]);
     }
   }, [invoiceTransactions, isAll, deleteMultipleTransactions]);
-
-  const handleEdit = useCallback(() => {
-    setOptionsModalVisible(false);
-    setTxToEdit(selectedTx);
-    setIsEditing(true);
-  }, [selectedTx]);
-
-  const handleSelectTx = useCallback((tx: Transaction) => {
-    setSelectedTx(tx);
-    setOptionsModalVisible(true);
-  }, []);
 
   const renderTransaction = useCallback(({ item: tx }: { item: Transaction }) => {
     const txCard = isAll ? accounts.find((a: Account) => a.id === tx.accountId) : null;
@@ -658,32 +638,6 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
           </View>
         </View>
       </Modal>
-
-      <Modal visible={optionsModalVisible} transparent animationType="fade">
-        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setOptionsModalVisible(false)}>
-          <View style={[styles.optionsMenu, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Text style={[styles.optionsTitle, { color: colors.foreground }]}>{selectedTx?.description}</Text>
-            <TouchableOpacity style={styles.optionBtn} onPress={handleEdit}>
-              <Ionicons name="pencil-outline" size={20} color={colors.primary} /><Text style={[styles.optionText, { color: colors.foreground }]}>Editar Lançamento</Text>
-            </TouchableOpacity>
-            <View style={[styles.divider, { backgroundColor: colors.border }]} />
-            <TouchableOpacity style={styles.optionBtn} onPress={() => { if (selectedTx) deleteTransaction(selectedTx.id, 'all'); setOptionsModalVisible(false); }}>
-              <Ionicons name="trash-outline" size={20} color={colors.destructive} /><Text style={[styles.optionText, { color: colors.destructive }]}>Excluir Compra Inteira</Text>
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
-      </Modal>
-
-      {isEditing && txToEdit && (
-        <AddTransactionModal
-          visible={isEditing}
-          onClose={() => { setIsEditing(false); setTxToEdit(null); }}
-          onAdd={addTransaction}
-          onUpdate={updateTransaction as any}
-          accounts={accounts}
-          transactionToEdit={txToEdit}
-        />
-      )}
     </View>
   );
 }

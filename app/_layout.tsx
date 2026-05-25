@@ -10,6 +10,8 @@ import { StoreProvider } from '@/context/StoreContext'
 import { ThemeProvider, useThemeContext } from '@/context/ThemeContext'
 import * as NotificationService from '../services/notificationService'
 
+import { TransitionSpecs, HeaderStyleInterpolators } from '@react-navigation/stack';
+
 function AppContent() {
   const { isDark, colors } = useThemeContext()
 
@@ -37,15 +39,47 @@ function AppContent() {
     },
   };
 
+  const fastTransitionSpec = {
+    open: {
+      animation: 'timing',
+      config: {
+        duration: 250, // 👈 Reduzido de 400-500ms (padrão) para 250ms
+      },
+    },
+    close: {
+      animation: 'timing',
+      config: {
+        duration: 200,
+      },
+    },
+  };
+
   return (
     <NavThemeProvider value={customNavTheme}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <Stack screenOptions={{ 
         headerShown: false,
         contentStyle: { backgroundColor: colors.background },
-        animation: 'fade',
       }}>
-        <Stack.Screen name="index" />
+        <Stack.Screen name="index" options={{ animation: 'fade' }} />
+        <Stack.Screen 
+          name="add-transaction" 
+          options={{ 
+            presentation: 'modal', 
+            animation: 'slide_from_bottom',
+            gestureEnabled: true,
+            transitionSpec: fastTransitionSpec as any,
+          }} 
+        />
+        <Stack.Screen 
+          name="transaction/[id]" 
+          options={{ 
+            presentation: 'modal', 
+            animation: 'slide_from_bottom',
+            gestureEnabled: true,
+            transitionSpec: fastTransitionSpec as any,
+          }} 
+        />
       </Stack>
     </NavThemeProvider>
   )

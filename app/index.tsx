@@ -13,7 +13,6 @@ import { useTheme } from '@/hooks/useTheme'
 import { useStoreContext } from '@/context/StoreContext'
 import { TabType, Account } from '@/constants/types'
 import { BottomNavigation } from '@/components/BottomNavigation'
-import { AddTransactionModal } from '@/components/AddTransactionModal'
 import { SaldosScreen } from '@/components/screens/SaldosScreen'
 import { TotaisScreen } from '@/components/screens/TotaisScreen'
 import { HorizonteScreen } from '@/components/screens/HorizonteScreen'
@@ -21,13 +20,13 @@ import { ContasScreen } from '@/components/screens/ContasScreen'
 import { MenuScreen } from '@/components/screens/MenuScreen'
 import { CartaoScreen } from '@/components/screens/CartaoScreen'
 import { ProjetosScreen } from '@/components/screens/ProjetosScreen'
-import { Redirect } from 'expo-router'
+import { Redirect, useRouter } from 'expo-router'
 
 export default function HomePage() {
+  const router = useRouter();
   const { colors } = useTheme()
   const store = useStoreContext()
   const [activeTab, setActiveTab] = useState<TabType>('saldos')
-  const [modalVisible, setModalVisible] = useState(false)
 
   // 👉 Estado para armazenar valores padrão dinâmicos para o modal
   const [defaultValues, setDefaultValues] = useState<{
@@ -135,17 +134,17 @@ export default function HomePage() {
           if (tab !== 'cartao') setDefaultValues({});
           setActiveTab(tab);
         }}
-        onAddClick={() => setModalVisible(true)}
-      />
-
-      {/* Modal */}
-      <AddTransactionModal
-        visible={modalVisible}
-        onClose={() => setModalVisible(false)}
-        onAdd={store.addTransaction}
-        accounts={store.accounts}
-        initialAccountId={defaultValues.accountId}
-        initialType={defaultValues.type}
+        onAddClick={() => {
+          try {
+            console.log("Navegando para tela de adição...");
+            router.push({
+              pathname: '/add-transaction',
+              params: defaultValues
+            });
+          } catch (error) {
+            console.error("Erro na navegação", error);
+          }
+        }}
       />
     </SafeAreaView>
   )

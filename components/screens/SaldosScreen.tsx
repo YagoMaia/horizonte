@@ -22,7 +22,6 @@ import {
 } from '@/lib/utils';
 import { useStoreContext } from '@/context/StoreContext';
 import { Transaction, Account, TransactionType, Project } from '@/constants/types';
-import { AddTransactionModal } from '../AddTransactionModal';
 import { ProjectTransactionsModal } from '../ProjectTransactionsModal';
 import { RecurrenceActionModal } from '../RecurrenceActionModal';
 import { TransactionItem } from '../TransactionItem';
@@ -51,7 +50,6 @@ export function SaldosScreen() {
   // --- ESTADOS ---
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
   const [selectedProjectForDetails, setSelectedProjectForDetails] = useState<Project | null>(null);
-  const [isEditing, setIsEditing] = useState(false);
   const [displayLimit, setDisplayLimit] = useState(20);
   const [recurrenceDeleteData, setRecurrenceDeleteData] = useState<string | null>(null);
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
@@ -417,10 +415,6 @@ export function SaldosScreen() {
           </View>
         }
       />
-
-      {isEditing && selectedTx && (
-        <AddTransactionModal visible={isEditing} onClose={() => { setIsEditing(false); setSelectedTx(null); }} onAdd={addTransaction} onUpdate={updateTransaction} accounts={accounts} transactionToEdit={selectedTx} />
-      )}
 
       <Modal visible={isFilterModalOpen} transparent animationType='slide' onRequestClose={() => setIsFilterModalOpen(false)}>
         <View style={styles.modalOverlayBottom}>
