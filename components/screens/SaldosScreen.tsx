@@ -383,6 +383,7 @@ export function SaldosScreen() {
         isFirst={isFirst}
         isLast={isLast}
         swipeable
+        hideIcon={true}
         rowRefs={rowRefs}
         onSwipeableWillOpen={handleSwipeOpen}
         renderRightActions={renderRightActions}

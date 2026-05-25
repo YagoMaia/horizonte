@@ -24,6 +24,7 @@ interface TransactionItemProps {
   isLast?: boolean;
   showAccount?: boolean;
   swipeable?: boolean;
+  hideIcon?: boolean;
   rowRefs?: Map<string, any>;
   onSwipeableWillOpen?: (txId: string) => void;
   renderRightActions?: (txId: string) => React.ReactNode;
@@ -40,6 +41,7 @@ export const TransactionItem = React.memo(({
   isLast,
   showAccount = true,
   swipeable = false,
+  hideIcon = false,
   rowRefs,
   onSwipeableWillOpen,
   renderRightActions,
@@ -67,20 +69,22 @@ export const TransactionItem = React.memo(({
       onPress={handlePress}
       activeOpacity={0.7}
     >
-      <View style={[styles.txIcon, { backgroundColor: tagColor + '15' }]}>
-        <Ionicons 
-          name={(tag?.icon as any) || (isReceita ? 'arrow-up' : 'receipt')} 
-          size={18} 
-          color={tagColor} 
-        />
-      </View>
-      <View style={styles.txInfo}>
+      {!hideIcon && (
+        <View style={[styles.txIcon, { backgroundColor: tagColor + '15' }]}>
+          <Ionicons 
+            name={(tag?.icon as any) || (isReceita ? 'arrow-up' : 'receipt')} 
+            size={18} 
+            color={tagColor} 
+          />
+        </View>
+      )}
+      <View style={[styles.txInfo, hideIcon && { paddingLeft: 4 }]}>
         <View style={styles.descriptionRow}>
           <MarqueeText 
             text={transaction.description}
             style={[styles.txDesc, { color: colors.foreground }]}
           />
-          {transaction.paid && (
+          {!hideIcon && transaction.paid && (
             <Ionicons 
               name='checkmark-circle' 
               size={14} 
