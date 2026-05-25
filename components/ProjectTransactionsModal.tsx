@@ -47,11 +47,10 @@ export function ProjectTransactionsModal({ project, onClose }: Props) {
       <TransactionItem
         transaction={tx}
         colors={colors}
-        onPress={handlePressTx}
         showAccount={false}
       />
     );
-  }, [colors, handlePressTx]);
+  }, [colors]);
 
   const keyExtractor = useCallback((item: Transaction) => item.id, []);
 

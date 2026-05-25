@@ -19,6 +19,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useStoreContext } from "@/context/StoreContext";
 import { formatCurrency, formatDateShort } from "@/lib/utils";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { MarqueeText } from "../MarqueeText";
 
 const MONTH_NAMES = [
   "Janeiro",
@@ -1205,15 +1206,13 @@ export function HorizonteScreen() {
                       />
                     </View>
                     <View style={styles.modalTxInfo}>
-                      <Text
+                      <MarqueeText
+                        text={tx.description}
                         style={[
                           styles.modalTxDesc,
                           { color: colors.foreground },
                         ]}
-                        numberOfLines={1}
-                      >
-                        {tx.description}
-                      </Text>
+                      />
                       {isCredito && (
                         <View
                           style={[
@@ -1449,7 +1448,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  modalTxInfo: { flex: 1, gap: 4, alignItems: "flex-start" },
+  modalTxInfo: { flex: 1, gap: 4, alignItems: "flex-start", overflow: "hidden" },
   modalTxDesc: { fontSize: 15, fontWeight: "600" },
   modalTxAmount: { fontSize: 15, fontWeight: "700" },
   modalCreditBadge: {

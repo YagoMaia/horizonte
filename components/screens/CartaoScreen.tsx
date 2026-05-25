@@ -381,11 +381,10 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
         transaction={tx}
         account={txCard || undefined}
         colors={colors}
-        onPress={handleSelectTx}
         showAccount={isAll}
       />
     );
-  }, [isAll, accounts, colors, handleSelectTx]);
+  }, [isAll, accounts, colors]);
 
   const renderHeader = useCallback(() => {
     if (!selectedCard) return null;
@@ -730,7 +729,7 @@ const styles = StyleSheet.create({
   txDesc: { fontSize: 15, fontWeight: '500' },
   txDate: { fontSize: 12 },
   txAmount: { fontSize: 15, fontWeight: '700' },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end', alignItems: 'center', paddingBottom: 40 },
   modalContent: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40, borderWidth: 1 },
   modalTitle: { fontSize: 20, fontWeight: '700', marginBottom: 8 },
   modalSubtitle: { fontSize: 14, lineHeight: 20, marginBottom: 24 },

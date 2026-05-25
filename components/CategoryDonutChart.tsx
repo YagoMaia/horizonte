@@ -23,7 +23,7 @@ export function CategoryDonutChart({ transactions, title = 'Divisão por Categor
     const tagMap = new Map<string, number>();
 
     expenses.forEach((t) => {
-      const tagName = t.tag || 'Outros';
+      const tagName = (t as any).tag || 'Outros';
       tagMap.set(tagName, (tagMap.get(tagName) || 0) + t.amount);
     });
 

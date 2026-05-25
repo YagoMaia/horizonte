@@ -10,13 +10,15 @@ import { Transaction, Account, Tag } from '@/constants/types';
 import { formatCurrency, formatDateShort } from '@/lib/utils';
 import { ThemeColors } from '@/constants/theme';
 import { GestureHandlerRootView, Swipeable } from 'react-native-gesture-handler';
+import { MarqueeText } from './MarqueeText';
+import { useRouter } from 'expo-router';
 
 interface TransactionItemProps {
   transaction: Transaction;
   account?: Account;
   tag?: Tag;
   colors: ThemeColors;
-  onPress: (transaction: Transaction) => void;
+  onPress?: (transaction: Transaction) => void;
   onDelete?: (txId: string) => void;
   isFirst?: boolean;
   isLast?: boolean;
@@ -42,10 +44,17 @@ export const TransactionItem = React.memo(({
   onSwipeableWillOpen,
   renderRightActions,
 }: TransactionItemProps) => {
+  const router = useRouter();
   const isReceita = transaction.type === 'receita';
   const tagColor = tag?.color || colors.primary;
   
-  const handlePress = () => onPress(transaction);
+  const handlePress = () => {
+    if (onPress) {
+      onPress(transaction);
+    } else {
+      router.push(`/transaction/${transaction.id}` as any);
+    }
+  };
 
   const content = (
     <TouchableOpacity
@@ -66,20 +75,30 @@ export const TransactionItem = React.memo(({
         />
       </View>
       <View style={styles.txInfo}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <Text style={[styles.txDesc, { color: colors.foreground }]} numberOfLines={1}>
-            {transaction.description}
-          </Text>
-          {transaction.paid && <Ionicons name='checkmark-circle' size={14} color={colors.success} />}
+        <View style={styles.descriptionRow}>
+          <MarqueeText 
+            text={transaction.description}
+            style={[styles.txDesc, { color: colors.foreground }]}
+          />
+          {transaction.paid && (
+            <Ionicons 
+              name='checkmark-circle' 
+              size={14} 
+              color={colors.success} 
+              style={styles.paidIcon}
+            />
+          )}
         </View>
         <Text style={[styles.txMetaText, { color: colors.mutedForeground }]}>
           {formatDateShort(transaction.date)}
           {showAccount && account ? ` • ${account.name}` : ''}
         </Text>
       </View>
-      <Text style={[styles.txAmount, { color: isReceita ? colors.success : colors.destructive }]}>
-        {isReceita ? '+' : '-'}{formatCurrency(transaction.amount)}
-      </Text>
+      <View style={styles.amountContainer}>
+        <Text style={[styles.txAmount, { color: isReceita ? colors.success : colors.destructive }]}>
+          {isReceita ? '+' : '-'}{formatCurrency(transaction.amount)}
+        </Text>
+      </View>
     </TouchableOpacity>
   );
 
@@ -126,13 +145,27 @@ const styles = StyleSheet.create({
   },
   txInfo: {
     flex: 1,
+    flexShrink: 1,
+  },
+  descriptionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   txDesc: {
     fontSize: 14,
     fontWeight: '600',
   },
+  paidIcon: {
+    flexShrink: 0,
+  },
   txMetaText: {
     fontSize: 12,
+  },
+  amountContainer: {
+    flexShrink: 0,
+    alignItems: 'flex-end',
+    marginLeft: 8,
   },
   txAmount: {
     fontSize: 14,

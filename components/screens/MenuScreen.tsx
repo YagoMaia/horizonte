@@ -217,7 +217,7 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects }: MenuS
         const type = tx.type === 'receita' ? 'Receita' : 'Despesa'
         const amount = tx.amount.toFixed(2).replace('.', ',')
         const account = accounts.find((a) => a.id === tx.accountId)?.name || 'N/A'
-        const tag = tx.tag || 'N/A'
+        const tag = (tx as any).tag || 'N/A'
         const status = tx.paid ? 'Pago' : 'Pendente'
 
         const cleanDescription = tx.description.replace(/;/g, ',')

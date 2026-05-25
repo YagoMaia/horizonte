@@ -373,7 +373,7 @@ export function SaldosScreen() {
     const isFirst = index === 0;
     const isLast = index === paginatedTransactions.length - 1;
     const account = accounts.find((a) => a.id === tx.accountId);
-    const tagInfo = tags.find(t => t.label === tx.tag) || tags.find(t => t.label === 'Outros');
+    const tagInfo = tags.find(t => t.label === (tx as any).tag) || tags.find(t => t.label === 'Outros');
 
     return (
       <TransactionItem
@@ -381,7 +381,6 @@ export function SaldosScreen() {
         account={account}
         tag={tagInfo}
         colors={colors}
-        onPress={handleSelectTx}
         isFirst={isFirst}
         isLast={isLast}
         swipeable
@@ -390,7 +389,7 @@ export function SaldosScreen() {
         renderRightActions={renderRightActions}
       />
     );
-  }, [paginatedTransactions.length, accounts, tags, colors, handleSelectTx, rowRefs, handleSwipeOpen, renderRightActions]);
+  }, [paginatedTransactions.length, accounts, tags, colors, rowRefs, handleSwipeOpen, renderRightActions]);
 
   const keyExtractor = useCallback((item: Transaction) => item.id, []);
 
@@ -419,7 +418,6 @@ export function SaldosScreen() {
         }
       />
 
-      <TransactionDetailModal transaction={isEditing ? null : selectedTx} onClose={() => setSelectedTx(null)} onEdit={() => setIsEditing(true)} />
       {isEditing && selectedTx && (
         <AddTransactionModal visible={isEditing} onClose={() => { setIsEditing(false); setSelectedTx(null); }} onAdd={addTransaction} onUpdate={updateTransaction} accounts={accounts} transactionToEdit={selectedTx} />
       )}

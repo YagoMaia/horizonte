@@ -179,7 +179,7 @@ export function AddTransactionModal({
         setAccountId(transactionToEdit.accountId);
         setRecurrence(transactionToEdit.recurrence);
         setPaid(transactionToEdit.paid);
-        setTag(transactionToEdit.tag || (tags[0]?.label || 'Outros'));
+        setTag((transactionToEdit as any).tag || (tags[0]?.label || 'Outros'));
         setProjectId(transactionToEdit.projectId);
         setInstallments(transactionToEdit.totalInstallments || 1);
         const d = new Date(transactionToEdit.date);
