@@ -4,12 +4,14 @@ import { StatusBar } from 'expo-status-bar'
 import { useEffect } from 'react'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
+import { ThemeProvider as NavThemeProvider, DefaultTheme, DarkTheme } from '@react-navigation/native'
+import * as SystemUI from 'expo-system-ui'
 import { StoreProvider } from '@/context/StoreContext'
 import { ThemeProvider, useThemeContext } from '@/context/ThemeContext'
 import * as NotificationService from '../services/notificationService'
 
 function AppContent() {
-  const { isDark } = useThemeContext()
+  const { isDark, colors } = useThemeContext()
 
   useEffect(() => {
     async function setupNotifications() {
@@ -21,13 +23,31 @@ function AppContent() {
     setupNotifications()
   }, [])
 
+  useEffect(() => {
+    // Set the root view background color natively to prevent white flashes
+    SystemUI.setBackgroundColorAsync(colors.background);
+  }, [colors.background]);
+
+  const navTheme = isDark ? DarkTheme : DefaultTheme;
+  const customNavTheme = {
+    ...navTheme,
+    colors: {
+      ...navTheme.colors,
+      background: colors.background,
+    },
+  };
+
   return (
-    <>
+    <NavThemeProvider value={customNavTheme}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
-      <Stack screenOptions={{ headerShown: false }}>
+      <Stack screenOptions={{ 
+        headerShown: false,
+        contentStyle: { backgroundColor: colors.background },
+        animation: 'fade',
+      }}>
         <Stack.Screen name="index" />
       </Stack>
-    </>
+    </NavThemeProvider>
   )
 }
 

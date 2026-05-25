@@ -22,7 +22,6 @@ import {
 } from '@/lib/utils';
 import { useStoreContext } from '@/context/StoreContext';
 import { Transaction, Account, TransactionType, Project } from '@/constants/types';
-import { TransactionDetailModal } from '../TransactionDetailModal';
 import { AddTransactionModal } from '../AddTransactionModal';
 import { ProjectTransactionsModal } from '../ProjectTransactionsModal';
 import { RecurrenceActionModal } from '../RecurrenceActionModal';
