@@ -1,5 +1,5 @@
 // components/screens/SaldosScreen.tsx
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -25,11 +25,8 @@ import { Transaction, Account, TransactionType, Project } from '@/constants/type
 import { TransactionDetailModal } from '../TransactionDetailModal';
 import { AddTransactionModal } from '../AddTransactionModal';
 import { ProjectTransactionsModal } from '../ProjectTransactionsModal';
-import {
-  GestureHandlerRootView,
-  Swipeable,
-} from 'react-native-gesture-handler';
 import { RecurrenceActionModal } from '../RecurrenceActionModal';
+import { TransactionItem } from '../TransactionItem';
 
 const MONTHS = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -65,7 +62,15 @@ export function SaldosScreen() {
 
   // --- REFS ---
   const rowRefs = React.useRef(new Map()).current;
-  let currentlyOpenRowId: string | null = null;
+  const currentlyOpenRowId = React.useRef<string | null>(null);
+
+  // --- AUXILIARES ---
+
+  const closeCurrentlyOpenRow = useCallback(() => {
+    if (currentlyOpenRowId.current && rowRefs.get(currentlyOpenRowId.current)) {
+      rowRefs.get(currentlyOpenRowId.current).close();
+    }
+  }, [rowRefs]);
 
   // --- CALCULOS PROJETADOS E REATIVOS (CABEÇALHO) ---
 
@@ -158,30 +163,22 @@ export function SaldosScreen() {
     return displayedTransactions.slice(0, displayLimit);
   }, [displayedTransactions, displayLimit]);
 
-  // --- AUXILIARES ---
-
   const activeFiltersCount = (filterType !== 'todas' ? 1 : 0) + (filterAccountId !== 'todas' ? 1 : 0);
 
-  const closeCurrentlyOpenRow = () => {
-    if (currentlyOpenRowId && rowRefs.get(currentlyOpenRowId)) {
-      rowRefs.get(currentlyOpenRowId).close();
-    }
-  };
-
-  const changeMonth = (offset: number) => {
+  const changeMonth = useCallback((offset: number) => {
     setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + offset, 1));
-  };
+  }, [currentDate]);
 
-  const handleLoadMore = () => {
+  const handleLoadMore = useCallback(() => {
     if (displayLimit < displayedTransactions.length) {
       setDisplayLimit((prev) => prev + 20);
     }
-  };
+  }, [displayLimit, displayedTransactions.length]);
 
-  const clearFilters = () => {
+  const clearFilters = useCallback(() => {
     setFilterType('todas');
     setFilterAccountId('todas');
-  };
+  }, []);
 
   // CÁLCULO PROJETOS ATIVOS
   const activeProjectStats = useMemo(() => {
@@ -197,11 +194,11 @@ export function SaldosScreen() {
   React.useEffect(() => {
     setDisplayLimit(20);
     closeCurrentlyOpenRow();
-  }, [currentDate, filterType, filterAccountId]);
+  }, [currentDate, filterType, filterAccountId, closeCurrentlyOpenRow]);
 
   // --- HANDLERS ---
 
-  const handleDeletePrompt = (txId: string) => {
+  const handleDeletePrompt = useCallback((txId: string) => {
     const tx = transactions.find((t) => t.id === txId);
     if (!tx) return;
     const isFamily = tx.groupId || tx.id.includes('-');
@@ -214,11 +211,20 @@ export function SaldosScreen() {
         { text: 'Apagar', style: 'destructive', onPress: () => { closeCurrentlyOpenRow(); deleteTransaction(txId, 'single'); } },
       ]);
     }
-  };
+  }, [transactions, closeCurrentlyOpenRow, deleteTransaction]);
+
+  const handleSelectTx = useCallback((tx: Transaction) => {
+    setSelectedTx(tx);
+  }, []);
+
+  const handleSwipeOpen = useCallback((txId: string) => {
+    if (currentlyOpenRowId.current && currentlyOpenRowId.current !== txId) closeCurrentlyOpenRow();
+    currentlyOpenRowId.current = txId;
+  }, [closeCurrentlyOpenRow]);
 
   // --- RENDERIZAÇÃO ---
 
-  const renderRightActions = (txId: string) => (
+  const renderRightActions = useCallback((txId: string) => (
     <TouchableOpacity
       style={[styles.hiddenAction, styles.hiddenActionRight, { backgroundColor: colors.destructive }]}
       onPress={() => handleDeletePrompt(txId)}
@@ -226,9 +232,9 @@ export function SaldosScreen() {
       <Ionicons name='trash-outline' size={24} color='#FFF' />
       <Text style={styles.hiddenActionText}>Apagar</Text>
     </TouchableOpacity>
-  );
+  ), [colors.destructive, handleDeletePrompt]);
 
-  const renderHeader = () => (
+  const renderHeader = useCallback(() => (
     <View style={{ gap: 16, paddingBottom: 8 }}>
       {/* 1. CARD DE SALDO DINÂMICO (TIME TRAVEL) */}
       <View style={[styles.balanceCard, { backgroundColor: colors.primary }]}>
@@ -361,52 +367,32 @@ export function SaldosScreen() {
         <TouchableOpacity onPress={() => changeMonth(1)} style={styles.navArrow}><Ionicons name="chevron-forward" size={20} color={colors.primary} /></TouchableOpacity>
       </View>
     </View>
-  );
+  ), [colors, temporalState, monthlyStats, accounts, transacoesAteHoje, activeProjectStats, windowWidth, activeFiltersCount, currentDate, changeMonth]);
 
-  const renderItem = ({ item: tx, index }: { item: Transaction; index: number }) => {
+  const renderItem = useCallback(({ item: tx, index }: { item: Transaction; index: number }) => {
     const isFirst = index === 0;
     const isLast = index === paginatedTransactions.length - 1;
-    const isReceita = tx.type === 'receita';
     const account = accounts.find((a) => a.id === tx.accountId);
-    
-    // 👉 Busca a tag correspondente (pelo label salvo na transação)
     const tagInfo = tags.find(t => t.label === tx.tag) || tags.find(t => t.label === 'Outros');
-    const tagColor = tagInfo?.color || colors.primary;
 
     return (
-      <GestureHandlerRootView>
-        <Swipeable
-          ref={(ref) => { if (ref) rowRefs.set(tx.id, ref); }}
-          renderRightActions={() => renderRightActions(tx.id)}
-          onSwipeableWillOpen={() => {
-            if (currentlyOpenRowId && currentlyOpenRowId !== tx.id) closeCurrentlyOpenRow();
-            currentlyOpenRowId = tx.id;
-          }}
-        >
-          <TouchableOpacity
-            style={[styles.txItem, { backgroundColor: colors.card, borderColor: colors.border }, isFirst && styles.txItemFirst, isLast && styles.txItemLast]}
-            onPress={() => setSelectedTx(tx)}
-            activeOpacity={1}
-          >
-            <View style={[styles.txIcon, { backgroundColor: tagColor + '15' }]}>
-              <Ionicons 
-                name={(tagInfo?.icon as any) || (isReceita ? 'arrow-up' : 'receipt')} 
-                size={18} 
-                color={tagColor} 
-              />
-            </View>
-            <View style={styles.txInfo}>
-              <Text style={[styles.txDesc, { color: colors.foreground }]} numberOfLines={1}>{tx.description}</Text>
-              <Text style={[styles.txMetaText, { color: colors.mutedForeground }]}>{formatDateShort(tx.date)} • {account?.name}</Text>
-            </View>
-            <Text style={[styles.txAmount, { color: isReceita ? colors.success : colors.destructive }]}>
-              {isReceita ? '+' : '-'}{formatCurrency(tx.amount)}
-            </Text>
-          </TouchableOpacity>
-        </Swipeable>
-      </GestureHandlerRootView>
+      <TransactionItem
+        transaction={tx}
+        account={account}
+        tag={tagInfo}
+        colors={colors}
+        onPress={handleSelectTx}
+        isFirst={isFirst}
+        isLast={isLast}
+        swipeable
+        rowRefs={rowRefs}
+        onSwipeableWillOpen={handleSwipeOpen}
+        renderRightActions={renderRightActions}
+      />
     );
-  };
+  }, [paginatedTransactions.length, accounts, tags, colors, handleSelectTx, rowRefs, handleSwipeOpen, renderRightActions]);
+
+  const keyExtractor = useCallback((item: Transaction) => item.id, []);
 
   if (loading) return <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}><ActivityIndicator size='large' color={colors.primary} /></View>;
 
@@ -414,10 +400,15 @@ export function SaldosScreen() {
     <View style={{ flex: 1 }}>
       <FlatList
         data={paginatedTransactions}
-        keyExtractor={(item) => item.id}
+        keyExtractor={keyExtractor}
         renderItem={renderItem}
         ListHeaderComponent={renderHeader}
         onEndReached={handleLoadMore}
+        onEndReachedThreshold={0.5}
+        initialNumToRender={8}
+        maxToRenderPerBatch={5}
+        windowSize={5}
+        removeClippedSubviews={true}
         style={{ flex: 1, backgroundColor: colors.background }}
         contentContainerStyle={styles.content}
         ListEmptyComponent={
@@ -427,6 +418,56 @@ export function SaldosScreen() {
           </View>
         }
       />
+
+      <TransactionDetailModal transaction={isEditing ? null : selectedTx} onClose={() => setSelectedTx(null)} onEdit={() => setIsEditing(true)} />
+      {isEditing && selectedTx && (
+        <AddTransactionModal visible={isEditing} onClose={() => { setIsEditing(false); setSelectedTx(null); }} onAdd={addTransaction} onUpdate={updateTransaction} accounts={accounts} transactionToEdit={selectedTx} />
+      )}
+
+      <Modal visible={isFilterModalOpen} transparent animationType='slide' onRequestClose={() => setIsFilterModalOpen(false)}>
+        <View style={styles.modalOverlayBottom}>
+          <View style={[styles.filterModalContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={styles.filterModalHeader}>
+              <Text style={[styles.modalTitle, { color: colors.foreground }]}>Filtros</Text>
+              <TouchableOpacity onPress={() => setIsFilterModalOpen(false)} style={[styles.closeBtn, { backgroundColor: colors.background }]}><Ionicons name='close' size={20} color={colors.foreground} /></TouchableOpacity>
+            </View>
+            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: '80%' }}>
+              <Text style={[styles.filterGroupLabel, { color: colors.mutedForeground }]}>Tipo</Text>
+              <View style={styles.chipRow}>
+                {(['todas', 'receita', 'despesa', 'transferencia'] as const).map((t) => (
+                  <TouchableOpacity key={t} style={[styles.chip, { borderColor: colors.border, backgroundColor: filterType === t ? colors.primary : 'transparent' }]} onPress={() => setFilterType(t)}>
+                    <Text style={[styles.chipText, { color: filterType === t ? '#FFF' : colors.foreground }]}>{t.charAt(0).toUpperCase() + t.slice(1)}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <Text style={[styles.filterGroupLabel, { color: colors.mutedForeground, marginTop: 20 }]}>Contas</Text>
+              <View style={styles.chipRow}>
+                <TouchableOpacity style={[styles.chip, { borderColor: colors.border, backgroundColor: filterAccountId === 'todas' ? colors.primary : 'transparent' }]} onPress={() => setFilterAccountId('todas')}><Text style={[styles.chipText, { color: filterAccountId === 'todas' ? '#FFF' : colors.foreground }]}>Todas</Text></TouchableOpacity>
+                {accounts.map((acc) => (
+                  <TouchableOpacity key={acc.id} style={[styles.chip, { borderColor: acc.color, backgroundColor: filterAccountId === acc.id ? acc.color : 'transparent' }]} onPress={() => setFilterAccountId(acc.id)}>
+                    <Text style={[styles.chipText, { color: filterAccountId === acc.id ? '#FFF' : acc.color }]}>{acc.name}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <View style={{ height: 30 }} />
+            </ScrollView>
+            <TouchableOpacity style={[styles.applyBtn, { backgroundColor: colors.foreground }]} onPress={() => setIsFilterModalOpen(false)}><Text style={[styles.applyBtnText, { color: colors.background }]}>Aplicar Filtros</Text></TouchableOpacity>
+            {activeFiltersCount > 0 && (
+              <TouchableOpacity onPress={clearFilters} style={{ marginTop: 15, alignItems: 'center' }}><Text style={{ color: colors.destructive, fontWeight: '600' }}>Limpar Filtros</Text></TouchableOpacity>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      <RecurrenceActionModal visible={!!recurrenceDeleteData} actionType='delete' onClose={() => setRecurrenceDeleteData(null)} onSelect={(mode) => { if (recurrenceDeleteData) deleteTransaction(recurrenceDeleteData, mode); setRecurrenceDeleteData(null); }} />
+
+      {selectedProjectForDetails && (
+        <ProjectTransactionsModal project={selectedProjectForDetails} onClose={() => setSelectedProjectForDetails(null)} />
+      )}
+    </View>
+  );
+}
+
 
       <TransactionDetailModal transaction={isEditing ? null : selectedTx} onClose={() => setSelectedTx(null)} onEdit={() => setIsEditing(true)} />
       {isEditing && selectedTx && (

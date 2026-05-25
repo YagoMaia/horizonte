@@ -1153,12 +1153,100 @@ export function HorizonteScreen() {
               </TouchableOpacity>
             </View>
 
-            <ScrollView
+            <FlatList
+              data={selectedDay?.transactions || []}
+              keyExtractor={(item) => item.id}
+              initialNumToRender={10}
+              maxToRenderPerBatch={5}
+              windowSize={5}
+              removeClippedSubviews={true}
+              renderItem={({ item: tx, index }) => {
+                const isReceita = tx.type === "receita";
+                const isCredito = tx.paymentMethod === "credito";
+                const amountColor = isReceita
+                  ? colors.success
+                  : tx.type === "transferencia"
+                    ? colors.primary
+                    : colors.destructive;
+                const bgColor = isReceita
+                  ? colors.successLight
+                  : tx.type === "transferencia"
+                    ? colors.primary + "15"
+                    : colors.dangerLight;
+
+                return (
+                  <View
+                    key={tx.id}
+                    style={[
+                      styles.modalTxItem,
+                      index !== selectedDay.transactions.length - 1 && {
+                        borderBottomColor: colors.border,
+                        borderBottomWidth: StyleSheet.hairlineWidth,
+                      },
+                    ]}
+                  >
+                    <View
+                      style={[
+                        styles.modalTxIcon,
+                        { backgroundColor: bgColor },
+                      ]}
+                    >
+                      <Ionicons
+                        name={
+                          isReceita
+                            ? "arrow-up"
+                            : tx.type === "transferencia"
+                              ? "swap-horizontal"
+                              : "arrow-down"
+                        }
+                        size={16}
+                        color={amountColor}
+                      />
+                    </View>
+                    <View style={styles.modalTxInfo}>
+                      <Text
+                        style={[
+                          styles.modalTxDesc,
+                          { color: colors.foreground },
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {tx.description}
+                      </Text>
+                      {isCredito && (
+                        <View
+                          style={[
+                            styles.modalCreditBadge,
+                            { backgroundColor: colors.secondary },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.modalCreditText,
+                              { color: colors.mutedForeground },
+                            ]}
+                          >
+                            CRÉDITO
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text
+                      style={[styles.modalTxAmount, { color: amountColor }]}
+                    >
+                      {isReceita
+                        ? "+"
+                        : tx.type === "transferencia"
+                          ? ""
+                          : "-"}
+                      {formatCurrency(tx.amount)}
+                    </Text>
+                  </View>
+                );
+              }}
               style={styles.modalScroll}
               showsVerticalScrollIndicator={false}
-            >
-              {!selectedDay?.transactions ||
-              selectedDay.transactions.length === 0 ? (
+              ListEmptyComponent={
                 <View style={styles.emptyModal}>
                   <Ionicons
                     name="calendar-clear-outline"
@@ -1174,93 +1262,8 @@ export function HorizonteScreen() {
                     Nenhuma movimentação neste dia.
                   </Text>
                 </View>
-              ) : (
-                selectedDay.transactions.map((tx: any, idx: number) => {
-                  const isReceita = tx.type === "receita";
-                  const isCredito = tx.paymentMethod === "credito";
-                  const amountColor = isReceita
-                    ? colors.success
-                    : tx.type === "transferencia"
-                      ? colors.primary
-                      : colors.destructive;
-                  const bgColor = isReceita
-                    ? colors.successLight
-                    : tx.type === "transferencia"
-                      ? colors.primary + "15"
-                      : colors.dangerLight;
-
-                  return (
-                    <View
-                      key={tx.id}
-                      style={[
-                        styles.modalTxItem,
-                        idx !== selectedDay.transactions.length - 1 && {
-                          borderBottomColor: colors.border,
-                          borderBottomWidth: StyleSheet.hairlineWidth,
-                        },
-                      ]}
-                    >
-                      <View
-                        style={[
-                          styles.modalTxIcon,
-                          { backgroundColor: bgColor },
-                        ]}
-                      >
-                        <Ionicons
-                          name={
-                            isReceita
-                              ? "arrow-up"
-                              : tx.type === "transferencia"
-                                ? "swap-horizontal"
-                                : "arrow-down"
-                          }
-                          size={16}
-                          color={amountColor}
-                        />
-                      </View>
-                      <View style={styles.modalTxInfo}>
-                        <Text
-                          style={[
-                            styles.modalTxDesc,
-                            { color: colors.foreground },
-                          ]}
-                          numberOfLines={1}
-                        >
-                          {tx.description}
-                        </Text>
-                        {isCredito && (
-                          <View
-                            style={[
-                              styles.modalCreditBadge,
-                              { backgroundColor: colors.secondary },
-                            ]}
-                          >
-                            <Text
-                              style={[
-                                styles.modalCreditText,
-                                { color: colors.mutedForeground },
-                              ]}
-                            >
-                              CRÉDITO
-                            </Text>
-                          </View>
-                        )}
-                      </View>
-                      <Text
-                        style={[styles.modalTxAmount, { color: amountColor }]}
-                      >
-                        {isReceita
-                          ? "+"
-                          : tx.type === "transferencia"
-                            ? ""
-                            : "-"}
-                        {formatCurrency(tx.amount)}
-                      </Text>
-                    </View>
-                  );
-                })
-              )}
-            </ScrollView>
+              }
+            />
           </View>
         </View>
       </Modal>

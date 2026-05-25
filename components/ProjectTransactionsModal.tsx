@@ -1,10 +1,11 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useCallback } from 'react';
 import { View, Text, StyleSheet, Modal, TouchableOpacity, FlatList } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/hooks/useTheme';
 import { Project, Transaction } from '@/constants/types';
 import { useStoreContext } from '@/context/StoreContext';
-import { formatCurrency, formatDateShort } from '@/lib/utils';
+import { formatCurrency } from '@/lib/utils';
+import { TransactionItem } from './TransactionItem';
 
 interface Props {
   project: Project | null;
@@ -22,29 +23,39 @@ export function ProjectTransactionsModal({ project, onClose }: Props) {
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [project, transactions]);
 
-  if (!project) return null;
+  const totalSpent = useMemo(() => {
+    if (!project) return 0;
+    return getProjectSpent(project.id);
+  }, [project, getProjectSpent]);
 
-  const totalSpent = getProjectSpent(project.id);
+  const progress = useMemo(() => {
+    if (!project) return 0;
+    return project.targetBudget > 0 ? Math.min(totalSpent / project.targetBudget, 1) : 0;
+  }, [project, totalSpent]);
 
-  const progress = project.targetBudget > 0 ? Math.min(totalSpent / project.targetBudget, 1) : 0;
-  const isOverBudget = totalSpent > project.targetBudget;
+  const isOverBudget = useMemo(() => {
+    if (!project) return false;
+    return totalSpent > project.targetBudget;
+  }, [project, totalSpent]);
 
-  const renderItem = ({ item: tx }: { item: Transaction }) => {
-    const isReceita = tx.type === 'receita';
-    const amountColor = isReceita ? colors.success : colors.destructive;
-    
+  const handlePressTx = useCallback((tx: Transaction) => {
+    // Aqui você pode adicionar lógica para abrir detalhes se necessário
+  }, []);
+
+  const renderItem = useCallback(({ item: tx }: { item: Transaction }) => {
     return (
-      <View style={[styles.txItem, { borderBottomColor: colors.border }]}>
-        <View style={styles.txInfo}>
-          <Text style={[styles.txDesc, { color: colors.foreground }]} numberOfLines={1}>{tx.description}</Text>
-          <Text style={[styles.txMetaText, { color: colors.mutedForeground }]}>{formatDateShort(tx.date)}</Text>
-        </View>
-        <Text style={[styles.txAmount, { color: amountColor }]}>
-          {isReceita ? '+' : '-'}{formatCurrency(tx.amount)}
-        </Text>
-      </View>
+      <TransactionItem
+        transaction={tx}
+        colors={colors}
+        onPress={handlePressTx}
+        showAccount={false}
+      />
     );
-  };
+  }, [colors, handlePressTx]);
+
+  const keyExtractor = useCallback((item: Transaction) => item.id, []);
+
+  if (!project) return null;
 
   return (
     <Modal
@@ -88,7 +99,7 @@ export function ProjectTransactionsModal({ project, onClose }: Props) {
 
           <FlatList
             data={projectTransactions}
-            keyExtractor={(item) => item.id}
+            keyExtractor={keyExtractor}
             renderItem={renderItem}
             contentContainerStyle={styles.listContent}
             showsVerticalScrollIndicator={false}
@@ -108,6 +119,7 @@ export function ProjectTransactionsModal({ project, onClose }: Props) {
     </Modal>
   );
 }
+
 
 const styles = StyleSheet.create({
   modalOverlayBottom: {
