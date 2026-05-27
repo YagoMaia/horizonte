@@ -9,8 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Transaction, Account, Tag } from '@/constants/types';
 import { formatCurrency, formatDateShort } from '@/lib/utils';
 import { ThemeColors } from '@/constants/theme';
-import { GestureHandlerRootView, Swipeable } from 'react-native-gesture-handler';
-import { MarqueeText } from './MarqueeText';
+import { Swipeable } from 'react-native-gesture-handler';
 import { useRouter } from 'expo-router';
 
 interface TransactionItemProps {
@@ -80,10 +79,13 @@ export const TransactionItem = React.memo(({
       )}
       <View style={[styles.txInfo, hideIcon && { paddingLeft: 4 }]}>
         <View style={styles.descriptionRow}>
-          <MarqueeText 
-            text={transaction.description}
-            style={[styles.txDesc, { color: colors.foreground }]}
-          />
+          <Text 
+            numberOfLines={1}
+            ellipsizeMode="tail"
+            style={[styles.txDesc, { color: colors.foreground, flexShrink: 1 }]}
+          >
+            {transaction.description}
+          </Text>
           {!hideIcon && transaction.paid && (
             <Ionicons 
               name='checkmark-circle' 
@@ -108,15 +110,13 @@ export const TransactionItem = React.memo(({
 
   if (swipeable && renderRightActions) {
     return (
-      <GestureHandlerRootView>
-        <Swipeable
-          ref={(ref) => { if (ref && rowRefs) rowRefs.set(transaction.id, ref); }}
-          renderRightActions={() => renderRightActions(transaction.id)}
-          onSwipeableWillOpen={() => onSwipeableWillOpen?.(transaction.id)}
-        >
-          {content}
-        </Swipeable>
-      </GestureHandlerRootView>
+      <Swipeable
+        ref={(ref) => { if (ref && rowRefs) rowRefs.set(transaction.id, ref); }}
+        renderRightActions={() => renderRightActions(transaction.id)}
+        onSwipeableWillOpen={() => onSwipeableWillOpen?.(transaction.id)}
+      >
+        {content}
+      </Swipeable>
     );
   }
 

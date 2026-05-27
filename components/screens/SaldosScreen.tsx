@@ -11,6 +11,7 @@ import {
   ScrollView,
   Alert,
   Modal,
+  Dimensions,
   useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -405,7 +406,7 @@ export function SaldosScreen() {
         initialNumToRender={8}
         maxToRenderPerBatch={5}
         windowSize={5}
-        removeClippedSubviews={true}
+        removeClippedSubviews={false}
         style={{ flex: 1, backgroundColor: colors.background }}
         contentContainerStyle={styles.content}
         ListEmptyComponent={
@@ -418,6 +419,7 @@ export function SaldosScreen() {
 
       <Modal visible={isFilterModalOpen} transparent animationType='slide' onRequestClose={() => setIsFilterModalOpen(false)}>
         <View style={styles.modalOverlayBottom}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setIsFilterModalOpen(false)} />
           <View style={[styles.filterModalContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <View style={styles.filterModalHeader}>
               <Text style={[styles.modalTitle, { color: colors.foreground }]}>Filtros</Text>
@@ -498,8 +500,8 @@ const styles = StyleSheet.create({
   txAmount: { fontSize: 14, fontWeight: '700' },
   emptyState: { alignItems: 'center', padding: 40, gap: 8, borderRadius: 20, borderWidth: StyleSheet.hairlineWidth, marginTop: 20 },
   emptyText: { fontSize: 14, textAlign: 'center' },
-  modalOverlayBottom: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
-  filterModalContent: { borderTopLeftRadius: 28, borderTopRightRadius: 28, borderWidth: 1, padding: 24, paddingBottom: 40, maxHeight: '90%' },
+  modalOverlayBottom: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end', zIndex: 999, elevation: 999 },
+  filterModalContent: { width: '100%', borderTopLeftRadius: 28, borderTopRightRadius: 28, borderWidth: 1, padding: 24, paddingBottom: 40, maxHeight: '90%' },
   filterModalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
   modalTitle: { fontSize: 20, fontWeight: '700' },
   closeBtn: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
