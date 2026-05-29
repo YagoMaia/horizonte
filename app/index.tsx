@@ -21,6 +21,7 @@ import { MenuScreen } from '@/components/screens/MenuScreen'
 import { CartaoScreen } from '@/components/screens/CartaoScreen'
 import { ProjetosScreen } from '@/components/screens/ProjetosScreen'
 import { MetasScreen } from '@/components/screens/MetasScreen'
+import { HomeLayoutScreen } from '@/components/screens/HomeLayoutScreen'
 import { Redirect, useRouter } from 'expo-router'
 
 export default function HomePage() {
@@ -69,6 +70,7 @@ export default function HomePage() {
       case 'contas': return <ContasScreen />
       case 'projetos': return <ProjetosScreen />
       case 'metas': return <MetasScreen />
+      case 'home_layout': return <HomeLayoutScreen />
       case 'cartao': 
         return (
           <CartaoScreen 
@@ -81,6 +83,7 @@ export default function HomePage() {
             onNavigateToAccounts={() => setActiveTab('contas')} 
             onNavigateToProjects={() => setActiveTab('projetos')}
             onNavigateToMetas={() => setActiveTab('metas')}
+            onNavigateToHomeLayout={() => setActiveTab('home_layout')}
           />
         )
       default: return <SaldosScreen />

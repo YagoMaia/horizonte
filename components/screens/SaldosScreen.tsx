@@ -48,6 +48,7 @@ export function SaldosScreen() {
     updateTransaction,
     deleteTransaction,
     loading,
+    homeLayout,
   } = useStoreContext();
 
   // --- ESTADOS ---
@@ -213,6 +214,20 @@ export function SaldosScreen() {
     });
   }, [goals, getGoalSavedAmount]);
 
+  const layoutBeforeTransactions = useMemo(() => {
+    const txIndex = homeLayout.findIndex(h => h.id === 'transactions');
+    return homeLayout.slice(0, txIndex === -1 ? homeLayout.length : txIndex);
+  }, [homeLayout]);
+
+  const layoutAfterTransactions = useMemo(() => {
+    const txIndex = homeLayout.findIndex(h => h.id === 'transactions');
+    return txIndex === -1 ? [] : homeLayout.slice(txIndex + 1);
+  }, [homeLayout]);
+
+  const isTransactionsVisible = useMemo(() => {
+    return homeLayout.find(h => h.id === 'transactions')?.visible ?? true;
+  }, [homeLayout]);
+
   React.useEffect(() => {
     setDisplayLimit(20);
     closeCurrentlyOpenRow();
@@ -256,161 +271,175 @@ export function SaldosScreen() {
     </TouchableOpacity>
   ), [colors.destructive, handleDeletePrompt]);
 
-  const renderHeader = useCallback(() => (
-    <View style={{ gap: 16, paddingBottom: 8 }}>
-      {/* 1. CARD DE SALDO DINÂMICO (TIME TRAVEL) */}
-      <View style={[styles.balanceCard, { backgroundColor: colors.primary }]}>
-        <Text style={styles.balanceLabel}>{temporalState.titulo}</Text>
-        <Text 
-          style={[
-            styles.balanceValue, 
-            temporalState.isPassado && temporalState.valor < 0 && { color: '#FFD7D7' } // Destaque leve para negativo no passado
-          ]}
-        >
-          {formatCurrency(temporalState.valor)}
-        </Text>
-        <View style={styles.balanceRow}>
-          <View style={styles.balanceStat}>
-            <Ionicons name='arrow-up-circle' size={16} color='rgba(255,255,255,0.8)' />
-            <Text style={styles.balanceStatText}>{formatCurrency(monthlyStats.income)}</Text>
-          </View>
-          <View style={styles.balanceDivider} />
-          <View style={styles.balanceStat}>
-            <Ionicons name='arrow-down-circle' size={16} color='rgba(255,255,255,0.8)' />
-            <Text style={styles.balanceStatText}>{formatCurrency(monthlyStats.expense)}</Text>
-          </View>
-        </View>
-      </View>
-
-      {/* 2. SEÇÃO DE CONTAS E CARTÕES */}
-      <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Contas e Cartões</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-        <View style={styles.accountsRow}>
-          {accounts.map((acc: Account) => {
-            const isCreditCard = acc.type === 'cartao_credito';
-            const currentInvoice = isCreditCard ? getCurrentOpenInvoiceTotal(acc, transacoesAteHoje) : 0;
-            let localAccBalance = 0;
-            if (!isCreditCard) {
-              transacoesAteHoje.forEach(tx => {
-                if (!tx.paid) return;
-                if (tx.accountId === acc.id) {
-                  if (tx.type === 'receita') localAccBalance += tx.amount;
-                  else if (tx.type === 'despesa') localAccBalance -= tx.amount;
-                  else if (tx.type === 'transferencia') localAccBalance -= tx.amount;
-                }
-                if (tx.type === 'transferencia' && tx.targetAccountId === acc.id) localAccBalance += tx.amount;
-              });
-            }
-            const mainDisplayValue = isCreditCard ? currentInvoice : localAccBalance;
-
-            return (
-              <View key={acc.id} style={[styles.accountCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                <View style={[styles.accountIcon, { backgroundColor: acc.color + '15' }]}>
-                  <Ionicons name={acc.icon as any} size={18} color={acc.color} />
-                </View>
-                <View style={styles.accountTextContainer}>
-                  <Text style={[styles.accountName, { color: colors.mutedForeground }]} numberOfLines={1}>{acc.name}</Text>
-                  <Text style={[styles.accountBalance, { color: colors.foreground }]}>{formatCurrency(mainDisplayValue)}</Text>
-                  {isCreditCard && <Text style={[styles.secondaryText, { color: colors.mutedForeground, fontSize: 10 }]}>Fatura atual</Text>}
-                </View>
+  const renderSection = useCallback((section: any) => {
+    if (!section.visible) return null;
+    
+    switch (section.id) {
+      case 'balance':
+        return (
+          <View style={[styles.balanceCard, { backgroundColor: colors.primary }]}>
+            <Text style={styles.balanceLabel}>{temporalState.titulo}</Text>
+            <Text 
+              style={[
+                styles.balanceValue, 
+                temporalState.isPassado && temporalState.valor < 0 && { color: '#FFD7D7' }
+              ]}
+            >
+              {formatCurrency(temporalState.valor)}
+            </Text>
+            <View style={styles.balanceRow}>
+              <View style={styles.balanceStat}>
+                <Ionicons name='arrow-up-circle' size={16} color='rgba(255,255,255,0.8)' />
+                <Text style={styles.balanceStatText}>{formatCurrency(monthlyStats.income)}</Text>
               </View>
-            );
-          })}
-        </View>
-      </ScrollView>
+              <View style={styles.balanceDivider} />
+              <View style={styles.balanceStat}>
+                <Ionicons name='arrow-down-circle' size={16} color='rgba(255,255,255,0.8)' />
+                <Text style={styles.balanceStatText}>{formatCurrency(monthlyStats.expense)}</Text>
+              </View>
+            </View>
+          </View>
+        );
 
-      {/* 2.5. SEÇÃO DE PROJETOS ATIVOS */}
-      {activeProjectStats.length > 0 && (
-        <>
-          <Text style={[styles.sectionTitle, { color: colors.foreground, marginTop: 8 }]}>Projetos Ativos</Text>
-          <ScrollView 
-            horizontal 
-            showsHorizontalScrollIndicator={false}
-            snapToInterval={windowWidth * 0.85 + 12}
-            decelerationRate="fast"
-            contentContainerStyle={{ paddingRight: 16 }}
-          >
-            <View style={styles.accountsRow}>
-              {activeProjectStats.map((project) => (
-                <TouchableOpacity
-                  key={project.id}
-                  activeOpacity={0.8}
-                  onPress={() => setSelectedProjectForDetails(project)}
-                  style={[styles.projectCard, { backgroundColor: colors.card, borderColor: colors.border, width: windowWidth * 0.85 }]}
-                >
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-                    <View style={[styles.accountIcon, { backgroundColor: project.color + '15', width: 40, height: 40, borderRadius: 12, marginBottom: 0 }]}>
-                      <Ionicons name="briefcase-outline" size={20} color={project.color} />
+      case 'accounts':
+        return (
+          <>
+            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Contas e Cartões</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View style={styles.accountsRow}>
+                {accounts.map((acc: Account) => {
+                  const isCreditCard = acc.type === 'cartao_credito';
+                  const currentInvoice = isCreditCard ? getCurrentOpenInvoiceTotal(acc, transacoesAteHoje) : 0;
+                  let localAccBalance = 0;
+                  if (!isCreditCard) {
+                    transacoesAteHoje.forEach(tx => {
+                      if (!tx.paid) return;
+                      if (tx.accountId === acc.id) {
+                        if (tx.type === 'receita') localAccBalance += tx.amount;
+                        else if (tx.type === 'despesa') localAccBalance -= tx.amount;
+                        else if (tx.type === 'transferencia') localAccBalance -= tx.amount;
+                      }
+                      if (tx.type === 'transferencia' && tx.targetAccountId === acc.id) localAccBalance += tx.amount;
+                    });
+                  }
+                  const mainDisplayValue = isCreditCard ? currentInvoice : localAccBalance;
+
+                  return (
+                    <View key={acc.id} style={[styles.accountCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                      <View style={[styles.accountIcon, { backgroundColor: acc.color + '15' }]}>
+                        <Ionicons name={acc.icon as any} size={18} color={acc.color} />
+                      </View>
+                      <View style={styles.accountTextContainer}>
+                        <Text style={[styles.accountName, { color: colors.mutedForeground }]} numberOfLines={1}>{acc.name}</Text>
+                        <Text style={[styles.accountBalance, { color: colors.foreground }]}>{formatCurrency(mainDisplayValue)}</Text>
+                        {isCreditCard && <Text style={[styles.secondaryText, { color: colors.mutedForeground, fontSize: 10 }]}>Fatura atual</Text>}
+                      </View>
                     </View>
-                    <Text style={[styles.accountName, { color: colors.foreground, flex: 1, fontSize: 16, fontWeight: '700' }]} numberOfLines={1}>{project.name}</Text>
-                  </View>
-                  <View>
-                    <View style={[styles.progressBarBg, { backgroundColor: colors.border, marginVertical: 16 }]}>
-                      <View style={[styles.progressBarFill, { backgroundColor: project.isOverBudget ? colors.destructive : project.color, width: `${project.progress * 100}%` }]} />
+                  );
+                })}
+              </View>
+            </ScrollView>
+          </>
+        );
+
+      case 'projects':
+        return activeProjectStats.length > 0 ? (
+          <>
+            <Text style={[styles.sectionTitle, { color: colors.foreground, marginTop: 8 }]}>Projetos Ativos</Text>
+            <ScrollView 
+              horizontal 
+              showsHorizontalScrollIndicator={false}
+              snapToInterval={windowWidth * 0.85 + 12}
+              decelerationRate="fast"
+              contentContainerStyle={{ paddingRight: 16 }}
+            >
+              <View style={styles.accountsRow}>
+                {activeProjectStats.map((project) => (
+                  <TouchableOpacity
+                    key={project.id}
+                    activeOpacity={0.8}
+                    onPress={() => setSelectedProjectForDetails(project)}
+                    style={[styles.projectCard, { backgroundColor: colors.card, borderColor: colors.border, width: windowWidth * 0.85 }]}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+                      <View style={[styles.accountIcon, { backgroundColor: project.color + '15', width: 40, height: 40, borderRadius: 12, marginBottom: 0 }]}>
+                        <Ionicons name="briefcase-outline" size={20} color={project.color} />
+                      </View>
+                      <Text style={[styles.accountName, { color: colors.foreground, flex: 1, fontSize: 16, fontWeight: '700' }]} numberOfLines={1}>{project.name}</Text>
                     </View>
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Text style={[styles.secondaryText, { color: project.isOverBudget ? colors.destructive : colors.foreground, fontWeight: '800', fontSize: 14 }]}>{formatCurrency(project.totalSpent)}</Text>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                        <Text style={[styles.secondaryText, { color: colors.mutedForeground, fontSize: 12 }]}>Meta:</Text>
-                        <Text style={[styles.secondaryText, { color: colors.foreground, fontSize: 12, fontWeight: '600' }]}>{formatCurrency(project.targetBudget)}</Text>
+                    <View>
+                      <View style={[styles.progressBarBg, { backgroundColor: colors.border, marginVertical: 16 }]}>
+                        <View style={[styles.progressBarFill, { backgroundColor: project.isOverBudget ? colors.destructive : project.color, width: `${project.progress * 100}%` }]} />
+                      </View>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Text style={[styles.secondaryText, { color: project.isOverBudget ? colors.destructive : colors.foreground, fontWeight: '800', fontSize: 14 }]}>{formatCurrency(project.totalSpent)}</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                          <Text style={[styles.secondaryText, { color: colors.mutedForeground, fontSize: 12 }]}>Meta:</Text>
+                          <Text style={[styles.secondaryText, { color: colors.foreground, fontSize: 12, fontWeight: '600' }]}>{formatCurrency(project.targetBudget)}</Text>
+                        </View>
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </ScrollView>
+          </>
+        ) : null;
+
+      case 'goals':
+        return activeGoalStats.length > 0 ? (
+          <>
+            <Text style={[styles.sectionTitle, { color: colors.foreground, marginTop: 8 }]}>Metas</Text>
+            <ScrollView 
+              horizontal 
+              showsHorizontalScrollIndicator={false}
+              snapToInterval={windowWidth * 0.85 + 12}
+              decelerationRate="fast"
+              contentContainerStyle={{ paddingRight: 16 }}
+            >
+              <View style={styles.accountsRow}>
+                {activeGoalStats.map((goal: any) => (
+                  <View
+                    key={goal.id}
+                    style={[styles.projectCard, { backgroundColor: colors.card, borderColor: colors.border, width: windowWidth * 0.85 }]}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+                      <View style={[styles.accountIcon, { backgroundColor: goal.color + '15', width: 40, height: 40, borderRadius: 12, marginBottom: 0 }]}>
+                        <Ionicons name="flag-outline" size={20} color={goal.color} />
+                      </View>
+                      <Text style={[styles.accountName, { color: colors.foreground, flex: 1, fontSize: 16, fontWeight: '700' }]} numberOfLines={1}>{goal.name}</Text>
+                    </View>
+                    <View>
+                      <View style={[styles.progressBarBg, { backgroundColor: colors.border, marginVertical: 12 }]}>
+                        <View style={[styles.progressBarFill, { backgroundColor: goal.color, width: `${goal.progress * 100}%` }]} />
+                      </View>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                        <Text style={[styles.secondaryText, { color: colors.success, fontWeight: '800', fontSize: 14 }]}>{formatCurrency(goal.savedAmount)}</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                          <Text style={[styles.secondaryText, { color: colors.mutedForeground, fontSize: 12 }]}>Alvo:</Text>
+                          <Text style={[styles.secondaryText, { color: colors.foreground, fontSize: 12, fontWeight: '600' }]}>{formatCurrency(goal.targetAmount)}</Text>
+                        </View>
+                      </View>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Text style={[styles.secondaryText, { color: colors.mutedForeground, fontSize: 12 }]}>
+                          Previsão: <Text style={{ color: colors.foreground, fontWeight: '600' }}>{goal.timeString}</Text>
+                        </Text>
                       </View>
                     </View>
                   </View>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </ScrollView>
-        </>
-      )}
+                ))}
+              </View>
+            </ScrollView>
+          </>
+        ) : null;
 
-      {/* 2.6. SEÇÃO DE METAS */}
-      {activeGoalStats.length > 0 && (
-        <>
-          <Text style={[styles.sectionTitle, { color: colors.foreground, marginTop: 8 }]}>Acompanhamento de Metas</Text>
-          <ScrollView 
-            horizontal 
-            showsHorizontalScrollIndicator={false}
-            snapToInterval={windowWidth * 0.85 + 12}
-            decelerationRate="fast"
-            contentContainerStyle={{ paddingRight: 16 }}
-          >
-            <View style={styles.accountsRow}>
-              {activeGoalStats.map((goal: any) => (
-                <View
-                  key={goal.id}
-                  style={[styles.projectCard, { backgroundColor: colors.card, borderColor: colors.border, width: windowWidth * 0.85 }]}
-                >
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-                    <View style={[styles.accountIcon, { backgroundColor: goal.color + '15', width: 40, height: 40, borderRadius: 12, marginBottom: 0 }]}>
-                      <Ionicons name="flag-outline" size={20} color={goal.color} />
-                    </View>
-                    <Text style={[styles.accountName, { color: colors.foreground, flex: 1, fontSize: 16, fontWeight: '700' }]} numberOfLines={1}>{goal.name}</Text>
-                  </View>
-                  <View>
-                    <View style={[styles.progressBarBg, { backgroundColor: colors.border, marginVertical: 12 }]}>
-                      <View style={[styles.progressBarFill, { backgroundColor: goal.color, width: `${goal.progress * 100}%` }]} />
-                    </View>
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                      <Text style={[styles.secondaryText, { color: colors.success, fontWeight: '800', fontSize: 14 }]}>{formatCurrency(goal.savedAmount)}</Text>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                        <Text style={[styles.secondaryText, { color: colors.mutedForeground, fontSize: 12 }]}>Alvo:</Text>
-                        <Text style={[styles.secondaryText, { color: colors.foreground, fontSize: 12, fontWeight: '600' }]}>{formatCurrency(goal.targetAmount)}</Text>
-                      </View>
-                    </View>
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Text style={[styles.secondaryText, { color: colors.mutedForeground, fontSize: 12 }]}>
-                        Previsão: <Text style={{ color: colors.foreground, fontWeight: '600' }}>{goal.timeString}</Text>
-                      </Text>
-                    </View>
-                  </View>
-                </View>
-              ))}
-            </View>
-          </ScrollView>
-        </>
-      )}
+      default:
+        return null;
+    }
+  }, [colors, temporalState, monthlyStats, accounts, transacoesAteHoje, activeProjectStats, activeGoalStats, windowWidth]);
 
-      {/* 3. LANÇAMENTOS E FILTRO */}
+  const renderTransactionsHeader = useCallback(() => (
+    <>
       <View style={[styles.sectionHeader, { marginTop: 8 }]}>
         <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Lançamentos</Text>
         <TouchableOpacity
@@ -426,7 +455,6 @@ export function SaldosScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* 4. BARRA DE NAVEGAÇÃO DOS MESES */}
       <View style={[styles.dateNavigator, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <TouchableOpacity onPress={() => changeMonth(-1)} style={styles.navArrow}><Ionicons name="chevron-back" size={20} color={colors.primary} /></TouchableOpacity>
         <View style={styles.dateLabelContainer}>
@@ -435,8 +463,26 @@ export function SaldosScreen() {
         </View>
         <TouchableOpacity onPress={() => changeMonth(1)} style={styles.navArrow}><Ionicons name="chevron-forward" size={20} color={colors.primary} /></TouchableOpacity>
       </View>
+    </>
+  ), [colors, activeFiltersCount, currentDate, changeMonth]);
+
+  const renderHeader = useCallback(() => (
+    <View style={{ gap: 16, paddingBottom: 8 }}>
+      {layoutBeforeTransactions.map((section: any) => (
+        <View key={section.id}>{renderSection(section)}</View>
+      ))}
+      
+      {isTransactionsVisible && renderTransactionsHeader()}
     </View>
-  ), [colors, temporalState, monthlyStats, accounts, transacoesAteHoje, activeProjectStats, windowWidth, activeFiltersCount, currentDate, changeMonth]);
+  ), [layoutBeforeTransactions, renderSection, isTransactionsVisible, renderTransactionsHeader]);
+
+  const renderFooter = useCallback(() => (
+    <View style={{ gap: 16, paddingTop: 16, paddingBottom: 32 }}>
+      {layoutAfterTransactions.map((section: any) => (
+        <View key={section.id}>{renderSection(section)}</View>
+      ))}
+    </View>
+  ), [layoutAfterTransactions, renderSection]);
 
   const renderItem = useCallback(({ item: tx, index }: { item: Transaction; index: number }) => {
     const isFirst = index === 0;
@@ -463,15 +509,17 @@ export function SaldosScreen() {
 
   const keyExtractor = useCallback((item: Transaction) => item.id, []);
 
-  if (loading) return <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}><ActivityIndicator size='large' color={colors.primary} /></View>;
+if (loading) return <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}><ActivityIndicator size='large' color={colors.primary} /></View>;
 
   return (
     <View style={{ flex: 1 }}>
       <FlatList
-        data={paginatedTransactions}
-        keyExtractor={keyExtractor}
+        data={isTransactionsVisible ? paginatedTransactions : []}
+        keyExtractor={(item) => item.id}
         renderItem={renderItem}
         ListHeaderComponent={renderHeader}
+        ListFooterComponent={renderFooter}
+        showsVerticalScrollIndicator={false}
         onEndReached={handleLoadMore}
         onEndReachedThreshold={0.5}
         initialNumToRender={8}
@@ -481,10 +529,12 @@ export function SaldosScreen() {
         style={{ flex: 1, backgroundColor: colors.background }}
         contentContainerStyle={styles.content}
         ListEmptyComponent={
-          <View style={[styles.emptyState, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Ionicons name='calendar-outline' size={40} color={colors.mutedForeground} />
-            <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>Nenhum lançamento em {MONTHS[currentDate.getMonth()]}</Text>
-          </View>
+          isTransactionsVisible ? (
+            <View style={[styles.emptyState, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Ionicons name='calendar-outline' size={40} color={colors.mutedForeground} />
+              <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>Nenhum lançamento em {MONTHS[currentDate.getMonth()]}</Text>
+            </View>
+          ) : null
         }
       />
 
@@ -529,11 +579,13 @@ export function SaldosScreen() {
       {selectedProjectForDetails && (
         <ProjectTransactionsModal project={selectedProjectForDetails} onClose={() => setSelectedProjectForDetails(null)} />
       )}
+
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  container: { flex: 1 },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   content: { padding: 16, paddingBottom: 32 },
   balanceCard: { borderRadius: 20, padding: 24, gap: 4 },

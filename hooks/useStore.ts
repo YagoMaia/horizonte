@@ -15,6 +15,7 @@ const STORAGE_KEYS = {
   PROJECTS: '@horizonte:projects',
   NOTIFICATION_PREFS: '@horizonte:notification_prefs',
   GOALS: '@horizonte:goals',
+  HOME_LAYOUT: '@horizonte:home_layout',
 };
 
 const DEFAULT_ACCOUNTS: Account[] = [];
@@ -38,6 +39,13 @@ export function useStore() {
   const [showPending, setShowPendingState] = useState<boolean>(true);
   const [hasSeenOnboarding, setHasSeenOnboarding] = useState<boolean>(false);
   const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferences>(DEFAULT_NOTIFICATION_PREFS);
+  const [homeLayout, setHomeLayout] = useState<any[]>([
+    { id: 'balance', visible: true },
+    { id: 'accounts', visible: true },
+    { id: 'projects', visible: true },
+    { id: 'goals', visible: true },
+    { id: 'transactions', visible: true },
+  ]);
   const [loading, setLoading] = useState(true);
 
   // --- MÉTODOS DE PROCESSAMENTO BASE (Sincronização) ---
@@ -279,6 +287,11 @@ export function useStore() {
     }
   }, [goals, transactions, saveGoals]);
 
+  const updateHomeLayout = useCallback(async (layout: any[]) => {
+    setHomeLayout(layout);
+    await AsyncStorage.setItem(STORAGE_KEYS.HOME_LAYOUT, JSON.stringify(layout));
+  }, []);
+
   // --- DEMAIS MÉTODOS ---
 
   const completeOnboarding = useCallback(async () => {
@@ -420,7 +433,8 @@ export function useStore() {
         onboardingRaw,
         projectsRaw,
         notifPrefsRaw,
-        goalsRaw
+        goalsRaw,
+        homeLayoutRaw
       ] = await AsyncStorage.multiGet([
           STORAGE_KEYS.TRANSACTIONS,
           STORAGE_KEYS.ACCOUNTS,
@@ -431,6 +445,7 @@ export function useStore() {
           STORAGE_KEYS.PROJECTS,
           STORAGE_KEYS.NOTIFICATION_PREFS,
           STORAGE_KEYS.GOALS,
+          STORAGE_KEYS.HOME_LAYOUT,
         ]);
 
       const loadedTransactions = txRaw[1] ? JSON.parse(txRaw[1]) : DEFAULT_TRANSACTIONS;
@@ -453,6 +468,10 @@ export function useStore() {
 
       if (notifPrefsRaw[1] !== null) {
         setNotificationPreferences(JSON.parse(notifPrefsRaw[1]));
+      }
+
+      if (homeLayoutRaw[1] !== null) {
+        setHomeLayout(JSON.parse(homeLayoutRaw[1]));
       }
 
       await autoProcessOverdueTransactions(loadedTransactions, loadedAccounts);
@@ -478,6 +497,7 @@ export function useStore() {
       STORAGE_KEYS.PROJECTS,
       STORAGE_KEYS.NOTIFICATION_PREFS,
       STORAGE_KEYS.GOALS,
+      STORAGE_KEYS.HOME_LAYOUT,
     ]);
     setTransactions(DEFAULT_TRANSACTIONS);
     setAccounts(DEFAULT_ACCOUNTS);
@@ -488,6 +508,13 @@ export function useStore() {
     setShowPendingState(true);
     setHasSeenOnboarding(false);
     setNotificationPreferences(DEFAULT_NOTIFICATION_PREFS);
+    setHomeLayout([
+      { id: 'balance', visible: true },
+      { id: 'accounts', visible: true },
+      { id: 'projects', visible: true },
+      { id: 'goals', visible: true },
+      { id: 'transactions', visible: true },
+    ]);
   }, []);
 
   const addTag = useCallback(async (tag: Omit<Tag, 'id'>) => {
@@ -1066,5 +1093,7 @@ export function useStore() {
     payCreditCardInvoice,
     anticipateCreditCardPayment,
     deleteMultipleTransactions,
+    homeLayout,
+    updateHomeLayout,
   };
 }

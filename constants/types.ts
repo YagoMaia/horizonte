@@ -1,6 +1,6 @@
 // constants/types.ts
 
-export type TabType = 'saldos' | 'totais' | 'horizonte' | 'contas' | 'menu' | 'cartao' | 'projetos' | 'metas'
+export type TabType = 'saldos' | 'totais' | 'horizonte' | 'menu' | 'cartao' | 'contas' | 'projetos' | 'metas' | 'home_layout'
 
 export type TransactionType = 'receita' | 'despesa' | 'transferencia'
 
@@ -63,6 +63,13 @@ export interface Transaction {
   projectId?: string; // 👉 Novo: ID do projeto vinculado
   goalId?: string; // 👉 Novo: ID da meta vinculada
   notifyRecurrence?: boolean; // 👉 Novo: Preferência individual de notificação para a recorrência
+}
+
+export type HomeSectionId = 'balance' | 'accounts' | 'projects' | 'goals' | 'transactions';
+
+export interface HomeSection {
+  id: HomeSectionId;
+  visible: boolean;
 }
 
 export interface Tag {

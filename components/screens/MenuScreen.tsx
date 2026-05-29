@@ -66,9 +66,10 @@ interface MenuScreenProps {
   onNavigateToAccounts: () => void
   onNavigateToProjects: () => void
   onNavigateToMetas: () => void
+  onNavigateToHomeLayout: () => void
 }
 
-export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavigateToMetas }: MenuScreenProps) {
+export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavigateToMetas, onNavigateToHomeLayout }: MenuScreenProps) {
   const { colors, themeMode, setThemeMode, primaryColor, setPrimaryColor } = useTheme()
   // Puxamos a função 'monthlyBudgets' caso você a tenha exportado no StoreContext
   const { 
@@ -436,8 +437,8 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavig
         </View>
       </View>
 
-      {/* Settings */}
-      <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>CONFIGURAÇÕES</Text>
+      {/* Settings - Gerenciamento */}
+      <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>GERENCIAMENTO</Text>
       <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <MenuItem 
           icon="wallet-outline" 
@@ -452,20 +453,13 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavig
             colors={colors}
             onPress={onNavigateToProjects}
           />
+        </View>
+        <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
           <MenuItem
             icon="flag-outline"
             label="Gerenciar Metas"
             colors={colors}
             onPress={onNavigateToMetas}
-          />
-        </View>
-        <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
-          <MenuItem 
-            icon="moon-outline" 
-            label="Tema escuro" 
-            value={themeModeLabel} 
-            onPress={() => setThemeModalVisible(true)}
-            colors={colors} 
           />
         </View>
         <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
@@ -481,6 +475,26 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavig
             icon="construct-outline" 
             label="Ajustes de Saldo" 
             onPress={() => setAdjustmentModalVisible(true)}
+            colors={colors} 
+          />
+        </View>
+      </View>
+
+      {/* Settings - Aparência */}
+      <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>APARÊNCIA</Text>
+      <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <MenuItem 
+          icon="options-outline" 
+          label="Personalizar Tela Inicial" 
+          onPress={onNavigateToHomeLayout}
+          colors={colors} 
+        />
+        <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
+          <MenuItem 
+            icon="moon-outline" 
+            label="Tema escuro" 
+            value={themeModeLabel} 
+            onPress={() => setThemeModalVisible(true)}
             colors={colors} 
           />
         </View>
@@ -796,6 +810,7 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavig
           </View>
         </View>
       </Modal>
+
     </ScrollView>
   )
 }
