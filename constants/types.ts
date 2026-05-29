@@ -1,6 +1,6 @@
 // constants/types.ts
 
-export type TabType = 'saldos' | 'totais' | 'horizonte' | 'contas' | 'menu' | 'cartao' | 'projetos'
+export type TabType = 'saldos' | 'totais' | 'horizonte' | 'contas' | 'menu' | 'cartao' | 'projetos' | 'metas'
 
 export type TransactionType = 'receita' | 'despesa' | 'transferencia'
 
@@ -12,6 +12,16 @@ export interface Project {
   targetBudget: number
   color: string
   active?: boolean
+}
+
+export interface Goal {
+  id: string;
+  name: string;
+  targetAmount: number;
+  monthlyContribution: number;
+  savedAmount: number;
+  color: string;
+  icon: string;
 }
 
 export interface Account {
@@ -51,6 +61,7 @@ export interface Transaction {
   isAdjustment?: boolean;
   notificationId?: string;
   projectId?: string; // 👉 Novo: ID do projeto vinculado
+  goalId?: string; // 👉 Novo: ID da meta vinculada
   notifyRecurrence?: boolean; // 👉 Novo: Preferência individual de notificação para a recorrência
 }
 

@@ -14,6 +14,7 @@ const STORAGE_KEYS = {
   ONBOARDING: '@horizonte:onboarding',
   PROJECTS: '@horizonte:projects',
   NOTIFICATION_PREFS: '@horizonte:notification_prefs',
+  GOALS: '@horizonte:goals',
 };
 
 const DEFAULT_ACCOUNTS: Account[] = [];
@@ -31,6 +32,7 @@ export function useStore() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [goals, setGoals] = useState<any[]>([]);
   const [tags, setTags] = useState<Tag[]>(DEFAULT_TAGS);
   const [monthlyBudgets, setMonthlyBudgets] = useState<Record<string, number>>({});
   const [showPending, setShowPendingState] = useState<boolean>(true);
@@ -170,11 +172,6 @@ export function useStore() {
         );
       }
     }
-    // Para despesas e cartões, se desativar, poderíamos cancelar tudo, 
-    // mas o sistema já lida com isso na hora de criar/editar.
-    // Se ativar, não reagendamos tudo automaticamente para não sobrecarregar,
-    // o usuário teria que editar ou criar novos. 
-    // Mas para o tempo, talvez precisemos de um "rescheduleAll".
   }, [notificationPreferences, saveNotificationPreferences]);
 
   const updateNotificationTime = useCallback(async (key: 'dailyReminderTime' | 'expenseReminderTime' | 'creditCardAlertTime', hour: number, minute: number) => {
@@ -186,7 +183,6 @@ export function useStore() {
     }
 
     if (key === 'expenseReminderTime' && notificationPreferences.expenseReminders) {
-      // Reschedule all expense reminders
       const updatedTransactions = [...transactions];
       for (let i = 0; i < updatedTransactions.length; i++) {
         const tx = updatedTransactions[i];
@@ -208,7 +204,6 @@ export function useStore() {
     }
 
     if (key === 'creditCardAlertTime' && notificationPreferences.creditCardAlerts) {
-      // Reschedule all credit card reminders
       const updatedAccounts = [...accounts];
       for (let i = 0; i < updatedAccounts.length; i++) {
         const acc = updatedAccounts[i];
@@ -241,16 +236,50 @@ export function useStore() {
   }, [projects, saveProjects]);
 
   const deleteProject = useCallback(async (id: string) => {
-    // 1. Remove o projeto
     const updatedProjects = projects.filter(p => p.id !== id);
     await saveProjects(updatedProjects);
 
-    // 2. Remove o vínculo das transações (mantém a transação, mas limpa o projectId)
     const updatedTxs = transactions.map(tx =>
       tx.projectId === id ? { ...tx, projectId: undefined } : tx
     );
     await saveTransactions(updatedTxs);
   }, [projects, transactions, saveProjects, saveTransactions]);
+
+  // --- MÉTODOS PARA METAS (GOALS) ---
+  const saveGoals = useCallback(async (newGoals: any[]) => {
+    try {
+      await AsyncStorage.setItem(STORAGE_KEYS.GOALS, JSON.stringify(newGoals));
+      setGoals(newGoals);
+    } catch (e) {
+      console.error('Failed to save goals', e);
+    }
+  }, []);
+
+  const addGoal = useCallback(async (goal: Omit<any, 'id'>) => {
+    const newGoal = { ...goal, id: Date.now().toString() };
+    const updated = [...goals, newGoal];
+    await saveGoals(updated);
+  }, [goals, saveGoals]);
+
+  const updateGoal = useCallback(async (updatedGoal: any) => {
+    const updated = goals.map(g => g.id === updatedGoal.id ? updatedGoal : g);
+    await saveGoals(updated);
+  }, [goals, saveGoals]);
+
+  const deleteGoal = useCallback(async (id: string) => {
+    const updated = goals.filter(g => g.id !== id);
+    await saveGoals(updated);
+
+    const updatedTxs = transactions.map(tx =>
+      tx.goalId === id ? { ...tx, goalId: undefined } : tx
+    );
+    if (updatedTxs.some(tx => tx.goalId !== transactions.find(t => t.id === tx.id)?.goalId)) {
+      setTransactions(updatedTxs);
+      await AsyncStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(updatedTxs));
+    }
+  }, [goals, transactions, saveGoals]);
+
+  // --- DEMAIS MÉTODOS ---
 
   const completeOnboarding = useCallback(async () => {
     await AsyncStorage.setItem(STORAGE_KEYS.ONBOARDING, JSON.stringify(true));
@@ -260,7 +289,6 @@ export function useStore() {
     async (acc: Account) => {
       let notificationId: string | undefined;
 
-      // Agenda lembrete se for cartão de crédito
       if (acc.type === 'cartao_credito' && acc.dueDay && notificationPreferences.creditCardAlerts) {
         notificationId = await NotificationService.scheduleCreditCardReminder(
           acc.name,
@@ -275,8 +303,6 @@ export function useStore() {
       await saveAccounts(updatedAccounts);
 
       if (acc.type !== "cartao_credito" && acc.balance !== 0) {
-        // Para Saldo Inicial, definimos a data como o início do mês atual
-        // Isso evita que a projeção do Horizonte "achate" o saldo dos dias anteriores
         const now = new Date();
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
@@ -294,7 +320,7 @@ export function useStore() {
         await saveTransactions([adjustmentTx, ...transactions]);
       }
     },
-    [accounts, transactions, saveAccounts, saveTransactions, notificationPreferences.expenseReminders],
+    [accounts, transactions, saveAccounts, saveTransactions, notificationPreferences],
   );
 
   const updateAccount = useCallback(
@@ -304,7 +330,6 @@ export function useStore() {
 
       let notificationId = oldAcc.notificationId;
 
-      // Reagenda lembrete se dia de vencimento ou nome mudou
       if (updatedAcc.type === "cartao_credito" &&
         (updatedAcc.dueDay !== oldAcc.dueDay || updatedAcc.name !== oldAcc.name)
       ) {
@@ -324,17 +349,17 @@ export function useStore() {
       let finalTransactions = transactions;
       if (
         !skipAdjustment &&
-        updatedAcc.type !== "cartao_credito" && // <--- MUDOU AQUI
-        updatedAcc.balance !== oldAcc.balance   // <--- MUDOU AQUI
+        updatedAcc.type !== "cartao_credito" &&
+        updatedAcc.balance !== oldAcc.balance
       ) {
-        const diff = updatedAcc.balance - oldAcc.balance; // <--- MUDOU AQUI
+        const diff = updatedAcc.balance - oldAcc.balance;
         const adjustmentTx: Transaction = {
           id: `adj-${Date.now()}`,
           description: "Ajuste de Saldo",
           amount: Math.abs(diff),
           type: diff > 0 ? "receita" : "despesa",
           date: new Date().toISOString(),
-          accountId: updatedAcc.id, // <--- MUDOU AQUI
+          accountId: updatedAcc.id,
           paid: true,
           recurrence: "unica",
           isAdjustment: true,
@@ -344,7 +369,7 @@ export function useStore() {
       }
 
       const updatedAccounts = accounts.map((a) =>
-        a.id === updatedAcc.id ? updatedAcc : a, // <--- MUDOU AQUI (nas duas vezes)
+        a.id === updatedAcc.id ? { ...updatedAcc, notificationId } : a,
       );
       await syncBalances(finalTransactions, updatedAccounts);
     },
@@ -386,36 +411,48 @@ export function useStore() {
 
   const loadData = useCallback(async () => {
     try {
-      const [txRaw, accRaw, budgetsRaw, showPendingRaw, tagsRaw, onboardingRaw, projectsRaw, notifPrefsRaw] =
-        await Promise.all([
-          AsyncStorage.getItem(STORAGE_KEYS.TRANSACTIONS),
-          AsyncStorage.getItem(STORAGE_KEYS.ACCOUNTS),
-          AsyncStorage.getItem(STORAGE_KEYS.MONTHLY_BUDGETS),
-          AsyncStorage.getItem(STORAGE_KEYS.SHOW_PENDING),
-          AsyncStorage.getItem(STORAGE_KEYS.TAGS),
-          AsyncStorage.getItem(STORAGE_KEYS.ONBOARDING),
-          AsyncStorage.getItem(STORAGE_KEYS.PROJECTS),
-          AsyncStorage.getItem(STORAGE_KEYS.NOTIFICATION_PREFS),
+      const [
+        txRaw,
+        accRaw,
+        budgetsRaw,
+        showPendingRaw,
+        tagsRaw,
+        onboardingRaw,
+        projectsRaw,
+        notifPrefsRaw,
+        goalsRaw
+      ] = await AsyncStorage.multiGet([
+          STORAGE_KEYS.TRANSACTIONS,
+          STORAGE_KEYS.ACCOUNTS,
+          STORAGE_KEYS.MONTHLY_BUDGETS,
+          STORAGE_KEYS.SHOW_PENDING,
+          STORAGE_KEYS.TAGS,
+          STORAGE_KEYS.ONBOARDING,
+          STORAGE_KEYS.PROJECTS,
+          STORAGE_KEYS.NOTIFICATION_PREFS,
+          STORAGE_KEYS.GOALS,
         ]);
 
-      const loadedTransactions = txRaw ? JSON.parse(txRaw) : DEFAULT_TRANSACTIONS;
-      const loadedAccounts = accRaw ? JSON.parse(accRaw) : DEFAULT_ACCOUNTS;
-      const loadedTags = tagsRaw ? JSON.parse(tagsRaw) : DEFAULT_TAGS;
-      const loadedProjects = projectsRaw ? JSON.parse(projectsRaw) : [];
+      const loadedTransactions = txRaw[1] ? JSON.parse(txRaw[1]) : DEFAULT_TRANSACTIONS;
+      const loadedAccounts = accRaw[1] ? JSON.parse(accRaw[1]) : DEFAULT_ACCOUNTS;
+      const loadedTags = tagsRaw[1] ? JSON.parse(tagsRaw[1]) : DEFAULT_TAGS;
+      const loadedProjects = projectsRaw[1] ? JSON.parse(projectsRaw[1]) : [];
+      const loadedGoals = goalsRaw[1] ? JSON.parse(goalsRaw[1]) : [];
 
       setTransactions(loadedTransactions);
       setAccounts(loadedAccounts);
       setTags(loadedTags);
       setProjects(loadedProjects);
-      setMonthlyBudgets(budgetsRaw ? JSON.parse(budgetsRaw) : {});
-      setHasSeenOnboarding(onboardingRaw ? JSON.parse(onboardingRaw) : false);
+      setGoals(loadedGoals);
+      setMonthlyBudgets(budgetsRaw[1] ? JSON.parse(budgetsRaw[1]) : {});
+      setHasSeenOnboarding(onboardingRaw[1] ? JSON.parse(onboardingRaw[1]) : false);
 
-      if (showPendingRaw !== null) {
-        setShowPendingState(JSON.parse(showPendingRaw));
+      if (showPendingRaw[1] !== null) {
+        setShowPendingState(JSON.parse(showPendingRaw[1]));
       }
 
-      if (notifPrefsRaw !== null) {
-        setNotificationPreferences(JSON.parse(notifPrefsRaw));
+      if (notifPrefsRaw[1] !== null) {
+        setNotificationPreferences(JSON.parse(notifPrefsRaw[1]));
       }
 
       await autoProcessOverdueTransactions(loadedTransactions, loadedAccounts);
@@ -430,10 +467,6 @@ export function useStore() {
     loadData();
   }, [loadData]);
 
-  // --- DEMAIS MÉTODOS ---
-
-
-
   const clearAllData = useCallback(async () => {
     await AsyncStorage.multiRemove([
       STORAGE_KEYS.TRANSACTIONS,
@@ -444,11 +477,13 @@ export function useStore() {
       STORAGE_KEYS.ONBOARDING,
       STORAGE_KEYS.PROJECTS,
       STORAGE_KEYS.NOTIFICATION_PREFS,
+      STORAGE_KEYS.GOALS,
     ]);
     setTransactions(DEFAULT_TRANSACTIONS);
     setAccounts(DEFAULT_ACCOUNTS);
     setTags(DEFAULT_TAGS);
     setProjects([]);
+    setGoals([]);
     setMonthlyBudgets({});
     setShowPendingState(true);
     setHasSeenOnboarding(false);
@@ -482,7 +517,6 @@ export function useStore() {
       const dueDay = targetAccount?.dueDay || 5;
 
       if (isCreditCard && tx.totalInstallments && tx.totalInstallments > 1) {
-        // Lógica de parcelamento
         const parts = tx.date.split('T')[0].split('-').map(Number);
         const baseDate = new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0);
         const installmentsCount = tx.totalInstallments;
@@ -521,7 +555,6 @@ export function useStore() {
       else if (tx.recurrence !== 'unica') {
         const baseId = Date.now().toString();
         const parts = tx.date.split('T')[0].split('-').map(Number);
-        // Usamos meio-dia para evitar problemas de fuso horário ao manipular datas
         let baseDate = new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0);
 
         if (tx.startNextMonth) {
@@ -565,8 +598,6 @@ export function useStore() {
               effectiveDate = addMonths(baseDate, i);
           }
 
-          // Trava de segurança: Se a data for no futuro, força o paid para false
-          // Isso impede que lançamentos futuros sumam da projeção do Horizonte
           const hojeFiltro = new Date();
           hojeFiltro.setHours(0, 0, 0, 0);
           const isFuture = effectiveDate > hojeFiltro;
@@ -601,8 +632,6 @@ export function useStore() {
           ...tx,
           id: Date.now().toString(),
           paymentMethod: finalizedTxMethod,
-          // Trava de segurança: Se for cartão de crédito, nasce como pendente (false). 
-          // Se for débito/dinheiro, respeita o toggle que veio da tela (tx.paid).
           paid: isCreditCard ? false : tx.paid,
         };
         newTransactions.push(newTx);
@@ -610,7 +639,7 @@ export function useStore() {
 
       const updated = [...newTransactions, ...transactions];
       await saveTransactions(updated);
-      await syncBalances(updated, accounts); // Recálculo global
+      await syncBalances(updated, accounts);
       return newTransactions[0];
     },
     [transactions, accounts, saveTransactions, syncBalances, notificationPreferences],
@@ -637,13 +666,12 @@ export function useStore() {
 
       const updated = transactions.filter((t) => !idsToDelete.includes(t.id));
 
-      // Limpeza de lembretes
       transactions.filter(t => idsToDelete.includes(t.id)).forEach(t => {
         if (t.notificationId) NotificationService.cancelReminder(t.notificationId);
       });
 
       await saveTransactions(updated);
-      await syncBalances(updated, accounts); // Recálculo global
+      await syncBalances(updated, accounts);
     },
     [transactions, accounts, saveTransactions, syncBalances],
   );
@@ -746,7 +774,7 @@ export function useStore() {
       }
 
       await saveTransactions(finalTransactions);
-      await syncBalances(finalTransactions, accounts); // Recálculo global
+      await syncBalances(finalTransactions, accounts);
     },
     [transactions, accounts, saveTransactions, syncBalances],
   );
@@ -828,7 +856,6 @@ export function useStore() {
       });
 
       let finalTransactions = updatedTransactions;
-      let updatedAccounts = [...accounts];
 
       if (gerarLancamento && sourceAccountId) {
         const paymentTx: Transaction = {
@@ -847,7 +874,7 @@ export function useStore() {
       }
 
       await saveTransactions(finalTransactions);
-      await syncBalances(finalTransactions, accounts); // 👉 Sincronização Sênior
+      await syncBalances(finalTransactions, accounts);
     },
     [transactions, accounts, saveTransactions, syncBalances],
   );
@@ -898,7 +925,7 @@ export function useStore() {
       const finalTransactions = [paymentTx, creditTx, ...transactions];
 
       await saveTransactions(finalTransactions);
-      await syncBalances(finalTransactions, accounts); // 👉 Sincronização Sênior
+      await syncBalances(finalTransactions, accounts);
     },
     [transactions, accounts, saveTransactions, syncBalances]
   );
@@ -927,13 +954,12 @@ export function useStore() {
 
       const updated = transactions.filter((t) => !finalIdsToRemove.includes(t.id));
 
-      // Limpeza de lembretes
       transactions.filter(t => finalIdsToRemove.includes(t.id)).forEach(t => {
         if (t.notificationId) NotificationService.cancelReminder(t.notificationId);
       });
 
       await saveTransactions(updated);
-      await syncBalances(updated, accounts); // 👉 Sincronização Sênior
+      await syncBalances(updated, accounts);
     },
     [transactions, accounts, saveTransactions, syncBalances],
   );
@@ -948,8 +974,6 @@ export function useStore() {
     const projectTxs = transactions.filter(tx => tx.projectId === projectId);
     return projectTxs.reduce((sum, tx) => {
       const amount = Number(tx.amount) || 0;
-      // Considera despesas e transferências como gasto positivo (saída).
-      // Receita no projeto subtrai do gasto (ex: reembolso).
       if (tx.type === 'despesa' || tx.type === 'transferencia') {
         return sum + amount;
       }
@@ -957,6 +981,15 @@ export function useStore() {
         return sum - amount;
       }
       return sum;
+    }, 0);
+  }, [transactions]);
+
+  const getGoalSavedAmount = useCallback((goalId: string) => {
+    if (!goalId) return 0;
+    const goalTxs = transactions.filter(tx => tx.goalId === goalId);
+    return goalTxs.reduce((sum, tx) => {
+      // Considera todas as transações atreladas à meta como aporte (geralmente transferências ou despesas voltadas pra meta)
+      return sum + (Number(tx.amount) || 0);
     }, 0);
   }, [transactions]);
 
@@ -969,11 +1002,8 @@ export function useStore() {
     let invoiceTotal = 0;
   
     transactions.forEach((tx) => {
-      // Ignora outras contas ou métodos.
-      // NÃO filtramos tx.paid aqui, pois a tela de faturas soma tudo (pago ou não).
       if (tx.accountId !== creditCardId || tx.paymentMethod !== 'credito') return;
   
-      // Como o app já desmembra parcelas e recorrências, avaliamos apenas a data salva
       const d = new Date(tx.date);
       let m = d.getMonth() + 1;
       let y = d.getFullYear();
@@ -993,20 +1023,26 @@ export function useStore() {
   
     return invoiceTotal;
   }, [transactions, accounts]);
+
   return {
     notificationPreferences,
     toggleNotificationPreference,
     updateNotificationTime,
     transactions,
     accounts,
-    projects, // 👉 Exportando projetos
+    projects,
     addProject,
     updateProject,
     deleteProject,
-    getProjectSpent, // 👉 Nova função de cálculo centralizada
-    getInvoiceTotalForMonth, // 👉 Nova função de projeção de fatura
-    tags, // 👉 Exportando tags
-    addTag, // 👉 Exportando métodos de tag
+    getProjectSpent,
+    getInvoiceTotalForMonth,
+    goals,
+    addGoal,
+    updateGoal,
+    deleteGoal,
+    getGoalSavedAmount,
+    tags,
+    addTag,
     updateTag,
     deleteTag,
     monthlyBudgets,

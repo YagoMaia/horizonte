@@ -28,7 +28,7 @@ export default function TransactionDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { colors } = useTheme();
-  const { transactions, accounts, projects, deleteTransaction } = useStoreContext();
+  const { transactions, accounts, projects, goals, deleteTransaction } = useStoreContext();
   const insets = useSafeAreaInsets();
   
   const [recurrenceModalVisible, setRecurrenceModalVisible] = useState(false);
@@ -49,6 +49,7 @@ export default function TransactionDetailScreen() {
 
   const account = accounts.find((a) => a.id === transaction.accountId);
   const project = projects.find((p) => p.id === transaction.projectId);
+  const goal = goals.find((g) => g.id === transaction.goalId);
   const isReceita = transaction.type === 'receita';
   const isTransf = transaction.type === 'transferencia';
   const amountColor = isReceita ? colors.success : isTransf ? colors.primary : colors.destructive;
@@ -156,6 +157,9 @@ export default function TransactionDetailScreen() {
           <DetailRow label="Conta de Origem" value={account?.name || 'Conta não encontrada'} colors={colors} />
           {project && (
             <DetailRow label="Projeto" value={project.name || 'Projeto'} colors={colors} />
+          )}
+          {goal && (
+            <DetailRow label="Meta Relacionada" value={goal.name || 'Meta'} colors={colors} />
           )}
           <DetailRow label="Recorrência" value={transaction.recurrence ? (RECURRENCE_LABELS[transaction.recurrence] || '—') : '—'} colors={colors} />
           {transaction.notes ? (

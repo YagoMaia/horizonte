@@ -64,10 +64,11 @@ function MenuItem({ icon, label, value, onPress, danger, colors }: MenuItemProps
 
 interface MenuScreenProps {
   onNavigateToAccounts: () => void
-  onNavigateToProjects: () => void // 👉 Adicionado
+  onNavigateToProjects: () => void
+  onNavigateToMetas: () => void
 }
 
-export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects }: MenuScreenProps) {
+export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavigateToMetas }: MenuScreenProps) {
   const { colors, themeMode, setThemeMode, primaryColor, setPrimaryColor } = useTheme()
   // Puxamos a função 'monthlyBudgets' caso você a tenha exportado no StoreContext
   const { 
@@ -445,11 +446,17 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects }: MenuS
           colors={colors} 
         />
         <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
-          <MenuItem 
-            icon="briefcase-outline" 
-            label="Projetos" 
+          <MenuItem
+            icon="folder-open-outline"
+            label="Gerenciar Projetos"
+            colors={colors}
             onPress={onNavigateToProjects}
-            colors={colors} 
+          />
+          <MenuItem
+            icon="flag-outline"
+            label="Gerenciar Metas"
+            colors={colors}
+            onPress={onNavigateToMetas}
           />
         </View>
         <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>

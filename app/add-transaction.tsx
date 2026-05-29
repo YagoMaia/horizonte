@@ -43,7 +43,7 @@ export default function AddTransactionScreen() {
   const initialType = initialTypeStr as TransactionType | undefined;
 
   const { colors } = useTheme();
-  const { tags, projects, accounts, transactions, addTransaction, updateTransaction } = useStoreContext();
+  const { tags, projects, goals, accounts, transactions, addTransaction, updateTransaction } = useStoreContext();
   const insets = useSafeAreaInsets();
   
   const transactionToEdit = useMemo(() => transactions.find(t => t.id === txId), [transactions, txId]);
@@ -61,6 +61,7 @@ export default function AddTransactionScreen() {
   const [amount, setAmount] = useState('');
   const [tag, setTag] = useState<string>('Outros');
   const [projectId, setProjectId] = useState<string | undefined>(undefined);
+  const [goalId, setGoalId] = useState<string | undefined>(undefined);
   
   const formatCurrencyMask = (value: string) => {
     const cleanValue = value.replace(/\D/g, '');
@@ -108,8 +109,9 @@ export default function AddTransactionScreen() {
       setAccountId(transactionToEdit.accountId);
       setRecurrence(transactionToEdit.recurrence);
       setPaid(transactionToEdit.paid);
-      setTag((transactionToEdit as any).tag || (tags && tags.length > 0 ? tags[0].label : 'Outros'));
+      setTag(transactionToEdit.tag || '');
       setProjectId(transactionToEdit.projectId);
+      setGoalId(transactionToEdit.goalId);
       setInstallments(transactionToEdit.totalInstallments || 1);
       const d = new Date(transactionToEdit.date);
       setDate(`${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`);
@@ -279,6 +281,7 @@ export default function AddTransactionScreen() {
       accountId,
       tag,
       projectId: projectId || undefined,
+      goalId: goalId || undefined,
       recurrence: finalRecurrence,
       paid,
       recurrenceStartDate: (!isInstallment && finalRecurrence !== 'unica') ? parseToISO(recurrenceStart) : undefined,
@@ -451,6 +454,30 @@ export default function AddTransactionScreen() {
                   >
                     <Ionicons name="briefcase-outline" size={14} color={projectId === p.id ? p.color : colors.mutedForeground} />
                     <Text style={[styles.tagChipText, { color: projectId === p.id ? p.color : colors.foreground }]}>{p.name}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          )}
+
+          {goals && goals.length > 0 && (
+            <View style={styles.field}>
+              <Text style={[styles.label, { color: colors.mutedForeground }]}>Meta Relacionada</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexDirection: 'row' }}>
+                <TouchableOpacity
+                  style={[styles.tagChip, { borderColor: colors.border, backgroundColor: !goalId ? colors.border + '50' : 'transparent', marginRight: 8 }, !goalId && { borderColor: colors.mutedForeground }]}
+                  onPress={() => setGoalId(undefined)}
+                >
+                  <Text style={[styles.tagChipText, { color: !goalId ? colors.foreground : colors.mutedForeground }]}>Nenhuma</Text>
+                </TouchableOpacity>
+                {goals.map((g: any) => (
+                  <TouchableOpacity
+                    key={g.id}
+                    style={[styles.tagChip, { borderColor: colors.border, backgroundColor: goalId === g.id ? g.color + '20' : 'transparent', marginRight: 8 }, goalId === g.id && { borderColor: g.color }]}
+                    onPress={() => setGoalId(g.id)}
+                  >
+                    <Ionicons name="flag-outline" size={14} color={goalId === g.id ? g.color : colors.mutedForeground} />
+                    <Text style={[styles.tagChipText, { color: goalId === g.id ? g.color : colors.foreground }]}>{g.name}</Text>
                   </TouchableOpacity>
                 ))}
               </ScrollView>

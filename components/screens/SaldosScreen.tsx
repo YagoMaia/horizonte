@@ -40,7 +40,9 @@ export function SaldosScreen() {
     transactions,
     tags,
     projects,
+    goals,
     getProjectSpent,
+    getGoalSavedAmount,
     totalBalance,
     addTransaction,
     updateTransaction,
@@ -189,6 +191,15 @@ export function SaldosScreen() {
     });
   }, [projects, getProjectSpent]);
 
+  // CÁLCULO METAS ATIVAS
+  const activeGoalStats = useMemo(() => {
+    return (goals || []).map((goal: any) => {
+      const savedAmount = getGoalSavedAmount(goal.id);
+      const progress = goal.targetAmount > 0 ? Math.min(savedAmount / goal.targetAmount, 1) : 0;
+      return { ...goal, savedAmount, progress };
+    });
+  }, [goals, getGoalSavedAmount]);
+
   React.useEffect(() => {
     setDisplayLimit(20);
     closeCurrentlyOpenRow();
@@ -333,6 +344,48 @@ export function SaldosScreen() {
                     </View>
                   </View>
                 </TouchableOpacity>
+              ))}
+            </View>
+          </ScrollView>
+        </>
+      )}
+
+      {/* 2.6. SEÇÃO DE METAS */}
+      {activeGoalStats.length > 0 && (
+        <>
+          <Text style={[styles.sectionTitle, { color: colors.foreground, marginTop: 8 }]}>Acompanhamento de Metas</Text>
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false}
+            snapToInterval={windowWidth * 0.85 + 12}
+            decelerationRate="fast"
+            contentContainerStyle={{ paddingRight: 16 }}
+          >
+            <View style={styles.accountsRow}>
+              {activeGoalStats.map((goal: any) => (
+                <View
+                  key={goal.id}
+                  style={[styles.projectCard, { backgroundColor: colors.card, borderColor: colors.border, width: windowWidth * 0.85 }]}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+                    <View style={[styles.accountIcon, { backgroundColor: goal.color + '15', width: 40, height: 40, borderRadius: 12, marginBottom: 0 }]}>
+                      <Ionicons name="flag-outline" size={20} color={goal.color} />
+                    </View>
+                    <Text style={[styles.accountName, { color: colors.foreground, flex: 1, fontSize: 16, fontWeight: '700' }]} numberOfLines={1}>{goal.name}</Text>
+                  </View>
+                  <View>
+                    <View style={[styles.progressBarBg, { backgroundColor: colors.border, marginVertical: 16 }]}>
+                      <View style={[styles.progressBarFill, { backgroundColor: goal.color, width: `${goal.progress * 100}%` }]} />
+                    </View>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Text style={[styles.secondaryText, { color: colors.success, fontWeight: '800', fontSize: 14 }]}>{formatCurrency(goal.savedAmount)}</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                        <Text style={[styles.secondaryText, { color: colors.mutedForeground, fontSize: 12 }]}>Alvo:</Text>
+                        <Text style={[styles.secondaryText, { color: colors.foreground, fontSize: 12, fontWeight: '600' }]}>{formatCurrency(goal.targetAmount)}</Text>
+                      </View>
+                    </View>
+                  </View>
+                </View>
               ))}
             </View>
           </ScrollView>
