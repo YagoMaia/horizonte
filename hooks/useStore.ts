@@ -432,13 +432,7 @@ export function useStore() {
 
   // --- DEMAIS MÉTODOS ---
 
-  const setShowPending = useCallback(async (value: boolean) => {
-    await AsyncStorage.setItem(
-      STORAGE_KEYS.SHOW_PENDING,
-      JSON.stringify(value),
-    );
-    setShowPendingState(value);
-  }, []);
+
 
   const clearAllData = useCallback(async () => {
     await AsyncStorage.multiRemove([
@@ -1019,7 +1013,6 @@ export function useStore() {
     getEffectiveBudget,
     saveMonthlyBudget,
     showPending,
-    setShowPending,
     hasSeenOnboarding,
     completeOnboarding,
     loading,
@@ -1031,7 +1024,6 @@ export function useStore() {
     updateAccount,
     deleteAccount,
     setPrimaryAccount,
-    saveAccounts,
     syncBalances,
     purgeAdjustments,
     clearAllData,

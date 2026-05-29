@@ -22,64 +22,6 @@ export function formatDateShort(dateString: string): string {
   }).format(new Date(dateString));
 }
 
-export function getDaysInMonth(year: number, month: number): number {
-  return new Date(year, month + 1, 0).getDate();
-}
-
-export function generateDailyProjection(
-  transactions: Transaction[],
-  accounts: Account[],
-  daysAhead = 30,
-) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  // Consideramos apenas contas que não são cartão de crédito para o "caixa" disponível
-  let runningBalance = accounts
-    .filter(a => a.type !== 'cartao_credito')
-    .reduce((sum, a) => sum + a.balance, 0);
-
-  const days = [];
-
-  for (let i = 0; i < daysAhead; i++) {
-    const date = new Date(today);
-    date.setDate(today.getDate() + i);
-    const dateStr = date.toISOString().split('T')[0];
-
-    // Filtramos transações do dia que afetam o caixa (não ignoramos transferências aqui)
-    const dayTxs = transactions.filter((t) => {
-      // 👉 Comparação Robusta: Ignora Timezone Shift usando string YYYY-MM-DD
-      const txDateStr = typeof t.date === 'string' ? t.date.split('T')[0] : (t.date as Date).toISOString().split('T')[0];
-      return txDateStr === dateStr && !t.paid; // Apenas as não pagas (futuras)
-    });
-
-    const income = dayTxs
-      .filter((t) => t.type === 'receita')
-      .reduce((s, t) => s + t.amount, 0);
-
-    const expense = dayTxs
-      .filter((t) => t.type === 'despesa')
-      .reduce((s, t) => s + t.amount, 0);
-
-    // Ajuste de transferências (se sair de conta corrente para algo fora do radar ou vice-versa)
-    // Simplificação: aqui assumimos que se está no array de transactions futuras, ela deve ser processada
-    
-    runningBalance += (income - expense);
-
-    days.push({
-      date: dateStr,
-      balance: runningBalance,
-      income,
-      expense,
-      transactions: dayTxs,
-    });
-  }
-
-  return days;
-}
-
-// lib/utils.ts
-
 // 👉 NOVA FUNÇÃO: Determina mês/ano da fatura de um lançamento específico baseado nas regras do cartão
 export function getInvoiceForTx(dateStr: string, account: any) {
   const closingDay = account?.closingDay || 25;
@@ -137,34 +79,3 @@ export function getCurrentOpenInvoiceTotal(
   return getInvoiceTotal(card, transactions, currentInvoice.viewMonth, currentInvoice.viewYear);
 }
 
-export function calculateCreditCardInvoice(
-  account: any,
-  transactions: any[],
-  baseDate: Date = new Date(),
-): number {
-  if (account.type !== 'cartao_credito') return 0;
-
-  // 1. Descobre qual é a fatura que estaria "Aberta" hoje (ou na baseDate)
-  const targetInvoice = getInvoiceForTx(baseDate.toISOString(), account);
-  const tValue = targetInvoice.value;
-
-  // 2. Soma todas as transações que pertencem a esse período de fatura
-  return transactions
-    .filter((tx) => {
-      if (
-        tx.accountId !== account.id ||
-        tx.paymentMethod !== 'credito' ||
-        tx.paid
-      ) {
-        return false;
-      }
-
-      // Calcula a fatura de cada transação individualmente
-      const txInvoice = getInvoiceForTx(tx.date, account);
-      return txInvoice.value === tValue;
-    })
-    .reduce(
-      (sum, tx) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount),
-      0,
-    );
-}

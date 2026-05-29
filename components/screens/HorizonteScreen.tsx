@@ -20,6 +20,7 @@ import { useStoreContext } from "@/context/StoreContext";
 import { formatCurrency, formatDateShort } from "@/lib/utils";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { MarqueeText } from "../MarqueeText";
+import { useRouter } from "expo-router";
 
 const MONTH_NAMES = [
   "Janeiro",
@@ -81,6 +82,7 @@ function formatCompactK(value: number): string {
 
 export function HorizonteScreen() {
   const { colors } = useTheme();
+  const router = useRouter();
   const { transactions, accounts, getEffectiveBudget, saveMonthlyBudget, getInvoiceTotalForMonth } =
     useStoreContext();
 
@@ -288,7 +290,7 @@ export function HorizonteScreen() {
             if (!exists) {
               virtualInvoiceTxs[effKey].push({
                 id: `virtual-invoice-${card.id}-${simMonth}`,
-                description: `Fatura do cartão de crédito ${card.name}`,
+                description: `Fatura ${card.name}`,
                 amount: valorCalculado,
                 type: 'despesa',
                 date: new Date(simYear, simMonth, 1, 12, 0, 0).toISOString(),
@@ -1177,7 +1179,15 @@ export function HorizonteScreen() {
                     : colors.dangerLight;
 
                 return (
-                  <View
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    onPress={() => {
+                      if (tx.isVirtual) {
+                        return; // Não faz nada para não quebrar a navegação
+                      }
+                      setSelectedDay(null);
+                      router.push(`/transaction/${tx.id}` as any);
+                    }}
                     key={tx.id}
                     style={[
                       styles.modalTxItem,
@@ -1241,7 +1251,7 @@ export function HorizonteScreen() {
                           : "-"}
                       {formatCurrency(tx.amount)}
                     </Text>
-                  </View>
+                  </TouchableOpacity>
                 );
               }}
               style={styles.modalScroll}

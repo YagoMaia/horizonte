@@ -80,10 +80,3 @@ export const DEFAULT_TAGS: Tag[] = [
   { id: '7', label: 'Outros', icon: 'ellipsis-horizontal', color: '#AFB1B6' },
 ];
 
-export interface DailyBalance {
-  date: string
-  balance: number
-  income: number
-  expense: number
-  transactions: Transaction[]
-}
