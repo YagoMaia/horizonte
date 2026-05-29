@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import Svg, { Circle, G } from 'react-native-svg';
 import { Transaction } from '@/constants/types';
 import { useTheme } from '@/hooks/useTheme';
@@ -10,9 +11,10 @@ interface CategoryDonutChartProps {
   transactions: Transaction[];
   title?: string;
   headerComponent?: React.ReactNode;
+  onCategoryPress?: (category: string) => void;
 }
 
-export function CategoryDonutChart({ transactions, title = 'Divisão por Categoria', headerComponent }: CategoryDonutChartProps) {
+export function CategoryDonutChart({ transactions, title = 'Divisão por Categoria', headerComponent, onCategoryPress }: CategoryDonutChartProps) {
   const { colors } = useTheme();
   const { tags } = useStoreContext();
 
@@ -116,7 +118,14 @@ export function CategoryDonutChart({ transactions, title = 'Divisão por Categor
           {/* Legenda */}
           <View style={styles.legend}>
             {data.tags.map((tag) => (
-              <View key={tag.name} style={styles.legendItem}>
+              <TouchableOpacity 
+                key={tag.name} 
+                style={styles.legendItemBtn}
+                onPress={() => {
+                  if (onCategoryPress) onCategoryPress(tag.name);
+                }}
+                activeOpacity={0.7}
+              >
                 <View style={styles.legendRow}>
                   <View style={[styles.dot, { backgroundColor: tag.color }]} />
                   <Text style={[styles.tagName, { color: colors.foreground }]}>{tag.name}</Text>
@@ -124,10 +133,15 @@ export function CategoryDonutChart({ transactions, title = 'Divisão por Categor
                     {tag.percent.toFixed(0)}%
                   </Text>
                 </View>
-                <Text style={[styles.tagValue, { color: colors.foreground }]}>
-                  {formatCurrency(tag.value)}
-                </Text>
-              </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={[styles.tagValue, { color: colors.foreground }]}>
+                    {formatCurrency(tag.value)}
+                  </Text>
+                  {onCategoryPress && (
+                    <Ionicons name="chevron-forward" size={16} color={colors.mutedForeground} />
+                  )}
+                </View>
+              </TouchableOpacity>
             ))}
           </View>
         </>
@@ -185,12 +199,18 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   legend: {
-    gap: 16,
+    gap: 8,
   },
-  legendItem: {
+  legendItemBtn: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: 'rgba(150, 150, 150, 0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(150, 150, 150, 0.1)',
   },
   legendRow: {
     flexDirection: 'row',

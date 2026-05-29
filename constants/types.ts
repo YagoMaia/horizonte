@@ -1,6 +1,6 @@
 // constants/types.ts
 
-export type TabType = 'saldos' | 'totais' | 'horizonte' | 'menu' | 'cartao' | 'contas' | 'projetos' | 'metas' | 'home_layout'
+export type TabType = 'saldos' | 'totais' | 'horizonte' | 'menu' | 'cartao' | 'contas' | 'projetos' | 'metas' | 'home_layout' | 'totais_layout'
 
 export type TransactionType = 'receita' | 'despesa' | 'transferencia'
 
@@ -69,6 +69,13 @@ export type HomeSectionId = 'balance' | 'accounts' | 'projects' | 'goals' | 'tra
 
 export interface HomeSection {
   id: HomeSectionId;
+  visible: boolean;
+}
+
+export type TotaisSectionId = 'stats' | 'category' | 'period';
+
+export interface TotaisSection {
+  id: TotaisSectionId;
   visible: boolean;
 }
 

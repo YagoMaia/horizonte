@@ -67,9 +67,10 @@ interface MenuScreenProps {
   onNavigateToProjects: () => void
   onNavigateToMetas: () => void
   onNavigateToHomeLayout: () => void
+  onNavigateToTotaisLayout: () => void
 }
 
-export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavigateToMetas, onNavigateToHomeLayout }: MenuScreenProps) {
+export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavigateToMetas, onNavigateToHomeLayout, onNavigateToTotaisLayout }: MenuScreenProps) {
   const { colors, themeMode, setThemeMode, primaryColor, setPrimaryColor } = useTheme()
   // Puxamos a função 'monthlyBudgets' caso você a tenha exportado no StoreContext
   const { 
@@ -412,19 +413,6 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavig
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
     >
-      {/* Profile */}
-      <View style={[styles.profileCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <View style={[styles.avatar, { backgroundColor: colors.primary }]}>
-          <Text style={styles.avatarText}>H</Text>
-        </View>
-        <View>
-          <Text style={[styles.profileName, { color: colors.foreground }]}>Horizonte</Text>
-          <Text style={[styles.profileSub, { color: colors.mutedForeground }]}>
-            Gestão Financeira Pessoal
-          </Text>
-        </View>
-      </View>
-
       {/* Stats */}
       <View style={styles.statsRow}>
         <View style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -489,6 +477,14 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavig
           onPress={onNavigateToHomeLayout}
           colors={colors} 
         />
+        <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
+          <MenuItem 
+            icon="bar-chart-outline" 
+            label="Personalizar Tela de Totais" 
+            onPress={onNavigateToTotaisLayout}
+            colors={colors} 
+          />
+        </View>
         <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
           <MenuItem 
             icon="moon-outline" 

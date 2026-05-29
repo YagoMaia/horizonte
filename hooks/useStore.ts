@@ -16,6 +16,7 @@ const STORAGE_KEYS = {
   NOTIFICATION_PREFS: '@horizonte:notification_prefs',
   GOALS: '@horizonte:goals',
   HOME_LAYOUT: '@horizonte:home_layout',
+  TOTAIS_LAYOUT: '@horizonte:totais_layout',
 };
 
 const DEFAULT_ACCOUNTS: Account[] = [];
@@ -45,6 +46,11 @@ export function useStore() {
     { id: 'projects', visible: true },
     { id: 'goals', visible: true },
     { id: 'transactions', visible: true },
+  ]);
+  const [totaisLayout, setTotaisLayout] = useState<any[]>([
+    { id: 'stats', visible: true },
+    { id: 'category', visible: true },
+    { id: 'period', visible: true },
   ]);
   const [loading, setLoading] = useState(true);
 
@@ -287,9 +293,14 @@ export function useStore() {
     }
   }, [goals, transactions, saveGoals]);
 
-  const updateHomeLayout = useCallback(async (layout: any[]) => {
-    setHomeLayout(layout);
-    await AsyncStorage.setItem(STORAGE_KEYS.HOME_LAYOUT, JSON.stringify(layout));
+  const updateHomeLayout = useCallback(async (newLayout: any[]) => {
+    setHomeLayout(newLayout);
+    await AsyncStorage.setItem(STORAGE_KEYS.HOME_LAYOUT, JSON.stringify(newLayout));
+  }, []);
+
+  const updateTotaisLayout = useCallback(async (newLayout: any[]) => {
+    setTotaisLayout(newLayout);
+    await AsyncStorage.setItem(STORAGE_KEYS.TOTAIS_LAYOUT, JSON.stringify(newLayout));
   }, []);
 
   // --- DEMAIS MÉTODOS ---
@@ -434,7 +445,8 @@ export function useStore() {
         projectsRaw,
         notifPrefsRaw,
         goalsRaw,
-        homeLayoutRaw
+        homeLayoutRaw,
+        totaisLayoutRaw
       ] = await AsyncStorage.multiGet([
           STORAGE_KEYS.TRANSACTIONS,
           STORAGE_KEYS.ACCOUNTS,
@@ -446,6 +458,7 @@ export function useStore() {
           STORAGE_KEYS.NOTIFICATION_PREFS,
           STORAGE_KEYS.GOALS,
           STORAGE_KEYS.HOME_LAYOUT,
+          STORAGE_KEYS.TOTAIS_LAYOUT,
         ]);
 
       const loadedTransactions = txRaw[1] ? JSON.parse(txRaw[1]) : DEFAULT_TRANSACTIONS;
@@ -474,6 +487,10 @@ export function useStore() {
         setHomeLayout(JSON.parse(homeLayoutRaw[1]));
       }
 
+      if (totaisLayoutRaw && totaisLayoutRaw[1] !== null) {
+        setTotaisLayout(JSON.parse(totaisLayoutRaw[1]));
+      }
+
       await autoProcessOverdueTransactions(loadedTransactions, loadedAccounts);
     } catch (e) {
       console.error("Erro ao carregar dados:", e);
@@ -498,6 +515,7 @@ export function useStore() {
       STORAGE_KEYS.NOTIFICATION_PREFS,
       STORAGE_KEYS.GOALS,
       STORAGE_KEYS.HOME_LAYOUT,
+      STORAGE_KEYS.TOTAIS_LAYOUT,
     ]);
     setTransactions(DEFAULT_TRANSACTIONS);
     setAccounts(DEFAULT_ACCOUNTS);
@@ -514,6 +532,11 @@ export function useStore() {
       { id: 'projects', visible: true },
       { id: 'goals', visible: true },
       { id: 'transactions', visible: true },
+    ]);
+    setTotaisLayout([
+      { id: 'stats', visible: true },
+      { id: 'category', visible: true },
+      { id: 'period', visible: true },
     ]);
   }, []);
 
@@ -954,7 +977,7 @@ export function useStore() {
       await saveTransactions(finalTransactions);
       await syncBalances(finalTransactions, accounts);
     },
-    [transactions, accounts, saveTransactions, syncBalances]
+    [transactions, accounts, saveTransactions, syncBalances],
   );
 
   const deleteMultipleTransactions = useCallback(
@@ -1095,5 +1118,8 @@ export function useStore() {
     deleteMultipleTransactions,
     homeLayout,
     updateHomeLayout,
+    totaisLayout,
+    updateTotaisLayout,
+    loading,
   };
 }

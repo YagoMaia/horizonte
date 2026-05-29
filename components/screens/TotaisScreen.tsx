@@ -15,6 +15,8 @@ import { startOfWeek, endOfWeek, addWeeks, subWeeks } from 'date-fns'
 
 // 👉 IMPORTANDO O GRÁFICO AQUI
 import { CategoryDonutChart } from '../CategoryDonutChart'
+import { CategoryTransactionsModal } from '../CategoryTransactionsModal'
+import { PeriodBarChart } from '../PeriodBarChart'
 
 type Period = 'semana' | 'mes' | 'ano'
 type ChartFilter = 'debito' | 'credito' | 'total'
@@ -26,10 +28,11 @@ const MONTH_NAMES = [
 
 export function TotaisScreen() {
   const { colors } = useTheme()
-  const { transactions, showPending } = useStoreContext()
+  const { transactions, showPending, totaisLayout } = useStoreContext()
 
   const [period, setPeriod] = useState<Period>('mes')
   const [selectedChart, setSelectedChart] = useState<ChartFilter>('total')
+  const [selectedCategoryForDetails, setSelectedCategoryForDetails] = useState<string | null>(null)
 
   const [refDate, setRefDate] = useState(new Date())
 
@@ -182,92 +185,126 @@ export function TotaisScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* INDICADORES DE PERFORMANCE */}
-      <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>Cálculos do período</Text>
-      <View style={[styles.statsContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      {totaisLayout.filter(s => s.visible).map(s => {
+        if (s.id === 'stats') {
+          return (
+            <View key="stats">
+              <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>Cálculos do período</Text>
+              <View style={[styles.statsContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
 
-        <View style={styles.statRow}>
-          <View>
-            <Text style={[styles.statLabel, { color: colors.foreground }]}>Performance</Text>
-            <View style={styles.iconRow}>
-              <Ionicons name="arrow-down-circle" size={14} color={colors.destructive} />
-              <Ionicons name="arrow-up-circle" size={14} color={colors.success} />
+                <View style={styles.statRow}>
+                  <View>
+                    <Text style={[styles.statLabel, { color: colors.foreground }]}>Performance</Text>
+                    <View style={styles.iconRow}>
+                      <Ionicons name="arrow-down-circle" size={14} color={colors.destructive} />
+                      <Ionicons name="arrow-up-circle" size={14} color={colors.success} />
+                    </View>
+                  </View>
+                  <View style={styles.statRight}>
+                    <Text style={[styles.statValue, { color: stats.performance >= 0 ? colors.success : colors.destructive }]}>
+                      {formatCurrency(stats.performance)}
+                    </Text>
+                    <Text style={[styles.statStatus, { color: colors.mutedForeground }]}>
+                      {stats.performance >= 0 ? 'Sobrou dinheiro' : 'Faltou dinheiro'}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={[styles.statRow, styles.borderTop, { borderTopColor: colors.border }]}>
+                  <View>
+                    <Text style={[styles.statLabel, { color: colors.foreground }]}>Economizado</Text>
+                    <View style={styles.iconRow}>
+                      <Ionicons name="leaf-outline" size={14} color={colors.success} />
+                    </View>
+                  </View>
+                  <View style={styles.statRight}>
+                    <Text style={[styles.statValue, { color: colors.foreground }]}>{stats.economizadoPercent.toFixed(0)}%</Text>
+                    <Text style={[styles.statStatus, { color: colors.mutedForeground }]}>
+                      {stats.economizadoPercent > 0 ? 'Guardado' : 'Nada guardado'}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={[styles.statRow, styles.borderTop, { borderTopColor: colors.border }]}>
+                  <View>
+                    <Text style={[styles.statLabel, { color: colors.foreground }]}>Custo de vida</Text>
+                    <View style={styles.iconRow}>
+                      <Ionicons name="cart-outline" size={14} color={colors.primary} />
+                    </View>
+                  </View>
+                  <View style={styles.statRight}>
+                    <Text style={[styles.statValue, { color: colors.foreground }]}>{formatCurrency(stats.expense)}</Text>
+                    <Text style={[styles.statStatus, { color: colors.mutedForeground }]}>
+                      {stats.expense > stats.income ? 'Acima da renda' : 'Dentro da renda'}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={[styles.statRow, styles.borderTop, { borderTopColor: colors.border }]}>
+                  <View>
+                    <Text style={[styles.statLabel, { color: colors.foreground }]}>Diário médio</Text>
+                    <View style={styles.iconRow}>
+                      <Ionicons name="calendar-outline" size={14} color={colors.mutedForeground} />
+                    </View>
+                  </View>
+                  <View style={styles.statRight}>
+                    <Text style={[styles.statValue, { color: colors.foreground }]}>{formatCurrency(stats.diarioMedio)}</Text>
+                    <Text style={[styles.statStatus, { color: colors.mutedForeground }]}>Média de gastos</Text>
+                  </View>
+                </View>
+              </View>
             </View>
-          </View>
-          <View style={styles.statRight}>
-            <Text style={[styles.statValue, { color: stats.performance >= 0 ? colors.success : colors.destructive }]}>
-              {formatCurrency(stats.performance)}
-            </Text>
-            <Text style={[styles.statStatus, { color: colors.mutedForeground }]}>
-              {stats.performance >= 0 ? 'Sobrou dinheiro' : 'Faltou dinheiro'}
-            </Text>
-          </View>
-        </View>
-
-        <View style={[styles.statRow, styles.borderTop, { borderTopColor: colors.border }]}>
-          <View>
-            <Text style={[styles.statLabel, { color: colors.foreground }]}>Economizado</Text>
-            <View style={styles.iconRow}>
-              <Ionicons name="leaf-outline" size={14} color={colors.success} />
-            </View>
-          </View>
-          <View style={styles.statRight}>
-            <Text style={[styles.statValue, { color: colors.foreground }]}>{stats.economizadoPercent.toFixed(0)}%</Text>
-            <Text style={[styles.statStatus, { color: colors.mutedForeground }]}>
-              {stats.economizadoPercent > 0 ? 'Guardado' : 'Nada guardado'}
-            </Text>
-          </View>
-        </View>
-
-        <View style={[styles.statRow, styles.borderTop, { borderTopColor: colors.border }]}>
-          <View>
-            <Text style={[styles.statLabel, { color: colors.foreground }]}>Custo de vida</Text>
-            <View style={styles.iconRow}>
-              <Ionicons name="cart-outline" size={14} color={colors.primary} />
-            </View>
-          </View>
-          <View style={styles.statRight}>
-            <Text style={[styles.statValue, { color: colors.foreground }]}>{formatCurrency(stats.expense)}</Text>
-            <Text style={[styles.statStatus, { color: colors.mutedForeground }]}>
-              {stats.expense > stats.income ? 'Acima da renda' : 'Dentro da renda'}
-            </Text>
-          </View>
-        </View>
-
-        <View style={[styles.statRow, styles.borderTop, { borderTopColor: colors.border }]}>
-          <View>
-            <Text style={[styles.statLabel, { color: colors.foreground }]}>Diário médio</Text>
-            <View style={styles.iconRow}>
-              <Ionicons name="calendar-outline" size={14} color={colors.mutedForeground} />
-            </View>
-          </View>
-          <View style={styles.statRight}>
-            <Text style={[styles.statValue, { color: colors.foreground }]}>{formatCurrency(stats.diarioMedio)}</Text>
-            <Text style={[styles.statStatus, { color: colors.mutedForeground }]}>Média de gastos</Text>
-          </View>
-        </View>
-      </View>
-
-      {/* 👉 GRÁFICO CONSOLIDADO COM SELETOR */}
-      <CategoryDonutChart
-        transactions={chartTransactions}
-        title="Gastos por Categoria"
-        headerComponent={
-          <View style={[styles.chartSelector, { backgroundColor: colors.secondary }]}>
-            {(['debito', 'credito', 'total'] as ChartFilter[]).map(cf => (
-              <TouchableOpacity
-                key={cf}
-                style={[styles.chartSelectorBtn, selectedChart === cf && { backgroundColor: colors.card }]}
-                onPress={() => setSelectedChart(cf)}
-              >
-                <Text style={[styles.chartSelectorText, { color: selectedChart === cf ? colors.foreground : colors.mutedForeground }]}>
-                  {cf === 'debito' ? 'Débito' : cf === 'credito' ? 'Crédito' : 'Total'}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+          );
         }
-      />
+
+        if (s.id === 'category') {
+          return (
+            <CategoryDonutChart
+              key="category"
+              transactions={chartTransactions}
+              title="Gastos por Categoria"
+              headerComponent={
+                <View style={[styles.chartSelector, { backgroundColor: colors.secondary }]}>
+                  {(['debito', 'credito', 'total'] as ChartFilter[]).map(cf => (
+                    <TouchableOpacity
+                      key={cf}
+                      style={[styles.chartSelectorBtn, selectedChart === cf && { backgroundColor: colors.card }]}
+                      onPress={() => setSelectedChart(cf)}
+                    >
+                      <Text style={[styles.chartSelectorText, { color: selectedChart === cf ? colors.foreground : colors.mutedForeground }]}>
+                        {cf === 'debito' ? 'Débito' : cf === 'credito' ? 'Crédito' : 'Total'}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              }
+              onCategoryPress={(cat) => setSelectedCategoryForDetails(cat)}
+            />
+          );
+        }
+
+        if (s.id === 'period') {
+          return (
+            <PeriodBarChart 
+              key="period"
+              transactions={chartTransactions}
+              period={period}
+              refDate={refDate}
+              title="Evolução dos Gastos"
+            />
+          );
+        }
+
+        return null;
+      })}
+
+      {selectedCategoryForDetails && (
+        <CategoryTransactionsModal 
+          category={selectedCategoryForDetails}
+          transactions={chartTransactions}
+          onClose={() => setSelectedCategoryForDetails(null)}
+        />
+      )}
     </ScrollView>
   )
 }
