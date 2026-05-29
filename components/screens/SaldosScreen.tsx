@@ -195,8 +195,21 @@ export function SaldosScreen() {
   const activeGoalStats = useMemo(() => {
     return (goals || []).map((goal: any) => {
       const savedAmount = getGoalSavedAmount(goal.id);
+      const remainingAmount = Math.max(0, goal.targetAmount - savedAmount);
       const progress = goal.targetAmount > 0 ? Math.min(savedAmount / goal.targetAmount, 1) : 0;
-      return { ...goal, savedAmount, progress };
+      
+      const monthsEstimated = Math.ceil(remainingAmount / goal.monthlyContribution);
+      let timeString = '';
+      if (remainingAmount <= 0) {
+        timeString = 'Concluída! 🎉';
+      } else {
+        const expectedDate = new Date();
+        expectedDate.setMonth(expectedDate.getMonth() + monthsEstimated);
+        const monthName = expectedDate.toLocaleString('pt-BR', { month: 'short' });
+        timeString = `${monthName}/${expectedDate.getFullYear()}`;
+      }
+
+      return { ...goal, savedAmount, progress, timeString };
     });
   }, [goals, getGoalSavedAmount]);
 
@@ -374,15 +387,20 @@ export function SaldosScreen() {
                     <Text style={[styles.accountName, { color: colors.foreground, flex: 1, fontSize: 16, fontWeight: '700' }]} numberOfLines={1}>{goal.name}</Text>
                   </View>
                   <View>
-                    <View style={[styles.progressBarBg, { backgroundColor: colors.border, marginVertical: 16 }]}>
+                    <View style={[styles.progressBarBg, { backgroundColor: colors.border, marginVertical: 12 }]}>
                       <View style={[styles.progressBarFill, { backgroundColor: goal.color, width: `${goal.progress * 100}%` }]} />
                     </View>
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                       <Text style={[styles.secondaryText, { color: colors.success, fontWeight: '800', fontSize: 14 }]}>{formatCurrency(goal.savedAmount)}</Text>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                         <Text style={[styles.secondaryText, { color: colors.mutedForeground, fontSize: 12 }]}>Alvo:</Text>
                         <Text style={[styles.secondaryText, { color: colors.foreground, fontSize: 12, fontWeight: '600' }]}>{formatCurrency(goal.targetAmount)}</Text>
                       </View>
+                    </View>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Text style={[styles.secondaryText, { color: colors.mutedForeground, fontSize: 12 }]}>
+                        Previsão: <Text style={{ color: colors.foreground, fontWeight: '600' }}>{goal.timeString}</Text>
+                      </Text>
                     </View>
                   </View>
                 </View>
