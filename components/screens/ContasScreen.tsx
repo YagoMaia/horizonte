@@ -100,7 +100,7 @@ export function ContasScreen() {
       setBalance(
         acc.type === 'cartao_credito'
           ? ''
-          : acc.balance.toString(),
+          : acc.balance.toFixed(2).replace('.', ','),
       );
       setType(acc.type);
       setSelectedColor(acc.color);
