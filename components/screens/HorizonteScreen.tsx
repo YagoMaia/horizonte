@@ -201,8 +201,8 @@ export function HorizonteScreen() {
     let simYear = startYear;
     let simMonth = startMonth;
 
-    // Alvo final: 1 ano para frente para detecção global de saldo crítico
-    const horizonEnd = new Date(today.getFullYear() + 1, today.getMonth(), today.getDate());
+    // Alvo final: até o fim do próximo ano (máximo 1 ano à frente do ano atual)
+    const horizonEnd = new Date(today.getFullYear() + 1, 11, 31);
     
     // Alvo visual: O mês que o utilizador escolheu + 2 meses para a frente (para encher a grelha)
     let visualEndYear = year;
@@ -301,11 +301,20 @@ export function HorizonteScreen() {
 
         const expense = effectiveDayTxs
           .filter((t) => {
-            if (t.isVirtual) return t.type === 'despesa';
+            if (t.isVirtual) return false;
             if (t.type === 'despesa' && activeAccountIds.includes(t.accountId)) return true;
-            if (t.type === 'transferencia' && activeAccountIds.includes(t.accountId) && (!t.targetAccountId || !activeAccountIds.includes(t.targetAccountId))) return true;
             return false;
           })
+          .reduce((s, t) => s + t.amount, 0);
+
+        // Transferências impactam o saldo mas não são classificadas como "gasto"
+        const transferOut = effectiveDayTxs
+          .filter((t) => t.type === 'transferencia' && activeAccountIds.includes(t.accountId) && (!t.targetAccountId || !activeAccountIds.includes(t.targetAccountId)))
+          .reduce((s, t) => s + t.amount, 0);
+
+        // Faturas de cartão de crédito (transações virtuais de fatura)
+        const creditExpense = effectiveDayTxs
+          .filter((t) => t.isVirtual && t.type === 'despesa')
           .reduce((s, t) => s + t.amount, 0);
 
         const dayDate = new Date(simYear, simMonth, d);
@@ -336,14 +345,14 @@ export function HorizonteScreen() {
           }
         }
 
-        const dayNet = income - expense;
+        const dayNet = income - expense - transferOut - creditExpense;
         if (isDayPast) {
           runningBalance += dayNet;
         } else {
           runningBalance += dayNet - dailyPlan;
         }
 
-        if (runningBalance < 0 && !firstNegDate && !isDayPast) {
+        if (runningBalance < 0 && !firstNegDate && !isDayPast && dayDate <= horizonEnd) {
           firstNegDate = dayDate.toISOString();
         }
 
@@ -352,6 +361,8 @@ export function HorizonteScreen() {
           weekDay: getWeekDay(simYear, simMonth, d),
           income,
           expense,
+          transferOut,
+          creditExpense,
           dailyPlan,
           balance: runningBalance,
           isPast: isDayPast,
@@ -378,6 +389,8 @@ export function HorizonteScreen() {
 
   const totalIncome = days.reduce((s, d) => s + d.income, 0);
   const totalExpense = days.reduce((s, d) => s + d.expense, 0);
+  const totalTransferOut = days.reduce((s, d) => s + (d.transferOut || 0), 0);
+  const totalCreditExpense = days.reduce((s, d) => s + (d.creditExpense || 0), 0);
   const endBalance =
     days.length > 0 ? days[days.length - 1].balance : activeBalance;
   const currentDailyPlan =
@@ -631,6 +644,50 @@ export function HorizonteScreen() {
             { backgroundColor: colors.border },
           ]}
         />
+        {/* {totalTransferOut > 0 && (
+          <>
+            <View style={styles.summaryItem}>
+              <Text
+                style={[styles.summaryLabel, { color: colors.mutedForeground }]}
+              >
+                Transferências
+              </Text>
+              <Text
+                style={[styles.summaryValue, { color: colors.warning }]}
+              >
+                -{formatShort(totalTransferOut)}
+              </Text>
+            </View>
+            <View
+              style={[
+                styles.summaryDivider,
+                { backgroundColor: colors.border },
+              ]}
+            />
+          </>
+        )}
+        {totalCreditExpense > 0 && (
+          <>
+            <View style={styles.summaryItem}>
+              <Text
+                style={[styles.summaryLabel, { color: colors.mutedForeground }]}
+              >
+                Crédito
+              </Text>
+              <Text
+                style={[styles.summaryValue, { color: colors.destructive }]}
+              >
+                -{formatShort(totalCreditExpense)}
+              </Text>
+            </View>
+            <View
+              style={[
+                styles.summaryDivider,
+                { backgroundColor: colors.border },
+              ]}
+            />
+          </>
+        )} */}
         <View style={styles.summaryItem}>
           <Text
             style={[styles.summaryLabel, { color: colors.mutedForeground }]}
@@ -749,6 +806,42 @@ export function HorizonteScreen() {
                       {formatShort(d.expense)}
                     </Text>
                   </View>
+
+                  {d.transferOut > 0 && (
+                    <View style={styles.indicatorLine}>
+                      <Ionicons
+                        name="swap-horizontal"
+                        size={16}
+                        color={colors.warning}
+                      />
+                      <Text
+                        style={[
+                          styles.indicatorText,
+                          { color: colors.foreground },
+                        ]}
+                      >
+                        {formatShort(d.transferOut)}
+                      </Text>
+                    </View>
+                  )}
+
+                  {d.creditExpense > 0 && (
+                    <View style={styles.indicatorLine}>
+                      <Ionicons
+                        name="card-outline"
+                        size={16}
+                        color={colors.destructive}
+                      />
+                      <Text
+                        style={[
+                          styles.indicatorText,
+                          { color: colors.foreground },
+                        ]}
+                      >
+                        {formatShort(d.creditExpense)}
+                      </Text>
+                    </View>
+                  )}
 
                   {currentBudget > 0 && (
                     <View style={styles.indicatorLine}>

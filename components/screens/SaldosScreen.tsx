@@ -10,8 +10,11 @@ import {
   ScrollView,
   Alert,
   Modal,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
 import { useTheme } from '@/hooks/useTheme';
 import {
   calculateCreditCardInvoice,
@@ -172,6 +175,142 @@ export function SaldosScreen() {
     setFilterAccountId('todas');
   };
 
+  const [exportModalVisible, setExportModalVisible] = useState(false);
+
+  const getMonthExportData = () => {
+    const monthStart = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+    const monthEnd = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0, 23, 59, 59);
+
+    const monthTransactions = transactions.filter((tx) => {
+      const d = new Date(tx.date);
+      return d >= monthStart && d <= monthEnd;
+    });
+
+    const receitas = monthTransactions.filter(t => t.type === 'receita');
+    const despesas = monthTransactions.filter(t => t.type === 'despesa');
+    const transferencias = monthTransactions.filter(t => t.type === 'transferencia');
+
+    const receitasPagas = receitas.filter(t => t.paid);
+    const despesasPagas = despesas.filter(t => t.paid);
+    const despesasCredito = despesas.filter(t => t.paymentMethod === 'credito');
+    const despesasDebito = despesas.filter(t => t.paymentMethod !== 'credito' && t.paid);
+
+    const resolveAccountName = (accountId: string) =>
+      accounts.find(a => a.id === accountId)?.name ?? 'Conta removida';
+
+    return {
+      monthStart, monthEnd, monthTransactions,
+      receitas, despesas, transferencias,
+      receitasPagas, despesasPagas, despesasCredito, despesasDebito,
+      resolveAccountName,
+    };
+  };
+
+  const exportAsJson = async () => {
+    setExportModalVisible(false);
+    try {
+      const { monthStart, monthEnd, receitas, despesas, transferencias, receitasPagas, despesasPagas, despesasCredito, despesasDebito, resolveAccountName, monthTransactions } = getMonthExportData();
+
+      const mapTx = (tx: Transaction) => ({
+        descricao: tx.description,
+        valor: tx.amount,
+        data: tx.date,
+        conta: resolveAccountName(tx.accountId),
+        pago: tx.paid,
+        metodo: tx.paymentMethod || 'debito',
+      });
+
+      const exportData = {
+        mes: MONTHS[currentDate.getMonth()],
+        ano: currentDate.getFullYear(),
+        periodo: {
+          inicio: monthStart.toISOString().split('T')[0],
+          fim: monthEnd.toISOString().split('T')[0],
+        },
+        resumo: {
+          totalReceitas: receitasPagas.reduce((s, t) => s + t.amount, 0),
+          totalDespesasDebito: despesasDebito.reduce((s, t) => s + t.amount, 0),
+          totalDespesasCredito: despesasCredito.reduce((s, t) => s + t.amount, 0),
+          totalTransferencias: transferencias.reduce((s, t) => s + t.amount, 0),
+          saldoLiquido: receitasPagas.reduce((s, t) => s + t.amount, 0) - despesasPagas.reduce((s, t) => s + t.amount, 0),
+          totalTransacoes: monthTransactions.length,
+        },
+        transacoes: {
+          receitas: receitas.map(mapTx),
+          despesas: despesas.map(mapTx),
+          transferencias: transferencias.map((tx) => ({
+            ...mapTx(tx),
+            contaDestino: tx.targetAccountId ? resolveAccountName(tx.targetAccountId) : 'N/A',
+          })),
+        },
+      };
+
+      const monthStr = String(currentDate.getMonth() + 1).padStart(2, '0');
+      const fileName = `extrato-${currentDate.getFullYear()}-${monthStr}.json`;
+      const content = JSON.stringify(exportData, null, 2);
+
+      await shareFile(fileName, content, 'application/json');
+    } catch (error) {
+      Alert.alert('Erro', 'Não foi possível exportar os dados.');
+    }
+  };
+
+  const exportAsCsv = async () => {
+    setExportModalVisible(false);
+    try {
+      const { monthTransactions, resolveAccountName } = getMonthExportData();
+
+      const header = 'Data;Descrição;Tipo;Valor;Conta;Conta Destino;Pago;Método\n';
+      const rows = monthTransactions
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+        .map((tx) => {
+          const data = tx.date.split('T')[0];
+          const desc = tx.description.replace(/;/g, ',');
+          const tipo = tx.type;
+          const valor = tx.amount.toFixed(2).replace('.', ',');
+          const conta = resolveAccountName(tx.accountId);
+          const contaDestino = tx.type === 'transferencia' && tx.targetAccountId
+            ? resolveAccountName(tx.targetAccountId) : '';
+          const pago = tx.paid ? 'Sim' : 'Não';
+          const metodo = tx.paymentMethod || 'debito';
+          return `${data};${desc};${tipo};${valor};${conta};${contaDestino};${pago};${metodo}`;
+        })
+        .join('\n');
+
+      const monthStr = String(currentDate.getMonth() + 1).padStart(2, '0');
+      const fileName = `extrato-${currentDate.getFullYear()}-${monthStr}.csv`;
+      const content = header + rows;
+
+      await shareFile(fileName, content, 'text/csv');
+    } catch (error) {
+      Alert.alert('Erro', 'Não foi possível exportar os dados.');
+    }
+  };
+
+  const shareFile = async (fileName: string, content: string, mimeType: string) => {
+    if (Platform.OS === 'web') {
+      const blob = new Blob([content], { type: mimeType });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } else {
+      const filePath = `${FileSystem.cacheDirectory}${fileName}`;
+      await FileSystem.writeAsStringAsync(filePath, content);
+
+      const canShare = await Sharing.isAvailableAsync();
+      if (canShare) {
+        await Sharing.shareAsync(filePath, { mimeType, dialogTitle: 'Exportar Extrato' });
+      } else {
+        Alert.alert('Exportado', `Arquivo salvo em: ${filePath}`);
+      }
+    }
+  };
+
   const handleDeletePrompt = (txId: string) => {
     const tx = transactions.find((t) => t.id === txId);
     if (!tx) return;
@@ -304,17 +443,25 @@ export function SaldosScreen() {
       {/* 3. CABEÇALHO DE LANÇAMENTOS COM O BOTÃO DE FILTRO */}
       <View style={[styles.sectionHeader, { marginTop: 8 }]}>
         <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Lançamentos</Text>
-        <TouchableOpacity
-          style={[styles.filterBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
-          onPress={() => setIsFilterModalOpen(true)}
-        >
-          <Ionicons name='options-outline' size={18} color={colors.foreground} />
-          {activeFiltersCount > 0 && (
-            <View style={[styles.filterBadge, { backgroundColor: colors.primary }]}>
-              <Text style={styles.filterBadgeText}>{activeFiltersCount}</Text>
-            </View>
-          )}
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          <TouchableOpacity
+            style={[styles.filterBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+            onPress={() => setExportModalVisible(true)}
+          >
+            <Ionicons name='download-outline' size={18} color={colors.foreground} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.filterBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+            onPress={() => setIsFilterModalOpen(true)}
+          >
+            <Ionicons name='options-outline' size={18} color={colors.foreground} />
+            {activeFiltersCount > 0 && (
+              <View style={[styles.filterBadge, { backgroundColor: colors.primary }]}>
+                <Text style={styles.filterBadgeText}>{activeFiltersCount}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* 4. BARRA DE NAVEGAÇÃO DOS MESES (Agora abaixo do botão de filtros) */}
@@ -561,6 +708,59 @@ export function SaldosScreen() {
           }
         }}
       />
+
+      {/* Modal de Exportação */}
+      <Modal
+        visible={exportModalVisible}
+        transparent
+        animationType='fade'
+        onRequestClose={() => setExportModalVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.exportOverlay}
+          activeOpacity={1}
+          onPress={() => setExportModalVisible(false)}
+        >
+          <View style={[styles.exportModal, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[styles.exportTitle, { color: colors.foreground }]}>
+              Exportar {MONTHS[currentDate.getMonth()]} {currentDate.getFullYear()}
+            </Text>
+            <Text style={[styles.exportSubtitle, { color: colors.mutedForeground }]}>
+              Escolha o formato de exportação
+            </Text>
+
+            <TouchableOpacity
+              style={[styles.exportOption, { borderColor: colors.border }]}
+              onPress={exportAsCsv}
+            >
+              <View style={[styles.exportOptionIcon, { backgroundColor: colors.success + '15' }]}>
+                <Ionicons name="grid-outline" size={22} color={colors.success} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.exportOptionTitle, { color: colors.foreground }]}>CSV</Text>
+                <Text style={[styles.exportOptionDesc, { color: colors.mutedForeground }]}>
+                  Para Excel e Google Sheets
+                </Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.exportOption, { borderColor: colors.border }]}
+              onPress={exportAsJson}
+            >
+              <View style={[styles.exportOptionIcon, { backgroundColor: colors.primary + '15' }]}>
+                <Ionicons name="code-slash-outline" size={22} color={colors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.exportOptionTitle, { color: colors.foreground }]}>JSON</Text>
+                <Text style={[styles.exportOptionDesc, { color: colors.mutedForeground }]}>
+                  Para análise com Python ou programação
+                </Text>
+              </View>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </GestureHandlerRootView>
   );
 }
@@ -707,5 +907,54 @@ const styles = StyleSheet.create({
   searchModeLabelText: {
     fontSize: 16,
     fontWeight: '700',
+  },
+  exportOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  exportModal: {
+    width: '100%',
+    maxWidth: 340,
+    borderRadius: 24,
+    padding: 24,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  exportTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  exportSubtitle: {
+    fontSize: 13,
+    textAlign: 'center',
+    marginTop: 4,
+    marginBottom: 20,
+  },
+  exportOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    marginBottom: 10,
+  },
+  exportOptionIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  exportOptionTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  exportOptionDesc: {
+    fontSize: 12,
+    marginTop: 2,
   },
   });
