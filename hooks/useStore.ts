@@ -186,7 +186,74 @@ export function useStore() {
         );
       }
     }
-  }, [notificationPreferences, saveNotificationPreferences]);
+
+    if (key === 'expenseReminders') {
+      const updatedTransactions = [...transactions];
+      let changed = false;
+      for (let i = 0; i < updatedTransactions.length; i++) {
+        const tx = updatedTransactions[i];
+        if (tx.type === 'despesa' && !tx.paid) {
+          if (value) {
+            // Agendar notificações para despesas pendentes
+            const notificationId = await NotificationService.scheduleTransactionReminder(
+              tx.description,
+              tx.amount,
+              new Date(tx.date),
+              notificationPreferences.expenseReminderTime.hour,
+              notificationPreferences.expenseReminderTime.minute
+            );
+            if (notificationId) {
+              updatedTransactions[i] = { ...tx, notificationId };
+              changed = true;
+            }
+          } else {
+            // Cancelar notificações existentes
+            if (tx.notificationId) {
+              await NotificationService.cancelReminder(tx.notificationId);
+              updatedTransactions[i] = { ...tx, notificationId: undefined };
+              changed = true;
+            }
+          }
+        }
+      }
+      if (changed) {
+        await saveTransactions(updatedTransactions);
+      }
+    }
+
+    if (key === 'creditCardAlerts') {
+      const updatedAccounts = [...accounts];
+      let changed = false;
+      for (let i = 0; i < updatedAccounts.length; i++) {
+        const acc = updatedAccounts[i];
+        if (acc.type === 'cartao_credito' && acc.dueDay) {
+          if (value) {
+            // Agendar alertas para cartões de crédito
+            const notificationId = await NotificationService.scheduleCreditCardReminder(
+              acc.name,
+              acc.dueDay,
+              notificationPreferences.creditCardAlertTime.hour,
+              notificationPreferences.creditCardAlertTime.minute
+            );
+            if (notificationId) {
+              updatedAccounts[i] = { ...acc, notificationId };
+              changed = true;
+            }
+          } else {
+            // Cancelar alertas existentes
+            if (acc.notificationId) {
+              await NotificationService.cancelReminder(acc.notificationId);
+              updatedAccounts[i] = { ...acc, notificationId: undefined };
+              changed = true;
+            }
+          }
+        }
+      }
+      if (changed) {
+        await saveAccounts(updatedAccounts);
+      }
+    }
+  }, [notificationPreferences, transactions, accounts, saveNotificationPreferences, saveTransactions, saveAccounts]);
 
   const updateNotificationTime = useCallback(async (key: 'dailyReminderTime' | 'expenseReminderTime' | 'creditCardAlertTime', hour: number, minute: number) => {
     const updated = { ...notificationPreferences, [key]: { hour, minute } };
@@ -491,6 +558,25 @@ export function useStore() {
         setTotaisLayout(JSON.parse(totaisLayoutRaw[1]));
       }
 
+      // Re-agendar notificações de despesas e cartões na inicialização
+      const loadedNotifPrefs = notifPrefsRaw[1] ? JSON.parse(notifPrefsRaw[1]) : DEFAULT_NOTIFICATION_PREFS;
+      try {
+        const { updatedTransactions, updatedAccounts, hasChanges } = 
+          await NotificationService.rescheduleAllNotifications(
+            loadedTransactions,
+            loadedAccounts,
+            loadedNotifPrefs
+          );
+        if (hasChanges) {
+          setTransactions(updatedTransactions);
+          setAccounts(updatedAccounts);
+          await AsyncStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(updatedTransactions));
+          await AsyncStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(updatedAccounts));
+        }
+      } catch (notifError) {
+        console.warn('Erro ao re-agendar notificações na inicialização:', notifError);
+      }
+
       await autoProcessOverdueTransactions(loadedTransactions, loadedAccounts);
     } catch (e) {
       console.error("Erro ao carregar dados:", e);
@@ -678,11 +764,23 @@ export function useStore() {
         }
       }
       else {
+        let notificationId: string | undefined;
+        if (tx.type === 'despesa' && !tx.paid && notificationPreferences.expenseReminders) {
+          notificationId = await NotificationService.scheduleTransactionReminder(
+            tx.description,
+            tx.amount,
+            new Date(tx.date),
+            notificationPreferences.expenseReminderTime.hour,
+            notificationPreferences.expenseReminderTime.minute
+          );
+        }
+
         const newTx: Transaction = {
           ...tx,
           id: Date.now().toString(),
           paymentMethod: finalizedTxMethod,
           paid: isCreditCard ? false : tx.paid,
+          notificationId,
         };
         newTransactions.push(newTx);
       }

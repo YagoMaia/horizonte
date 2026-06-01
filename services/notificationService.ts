@@ -1,5 +1,9 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import type { Transaction, Account } from '@/constants/types';
+
+const DAILY_REMINDER_STORAGE_KEY = '@horizonte_daily_reminder_id';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -47,10 +51,13 @@ export async function scheduleDailyReminder(hour = 20, minute = 0) {
   if (Platform.OS === 'web') return;
 
   try {
-    // Limpa agendamentos anteriores para evitar duplicatas
-    await Notifications.cancelAllScheduledNotificationsAsync();
+    // Cancela apenas o lembrete diário anterior (se existir)
+    const previousId = await AsyncStorage.getItem(DAILY_REMINDER_STORAGE_KEY);
+    if (previousId) {
+      await Notifications.cancelScheduledNotificationAsync(previousId);
+    }
 
-    await Notifications.scheduleNotificationAsync({
+    const notificationId = await Notifications.scheduleNotificationAsync({
       content: {
         title: 'Horizonte 💰',
         body: 'Hora de cuidar do seu dinheiro! Já registrou seus gastos de hoje?',
@@ -63,6 +70,9 @@ export async function scheduleDailyReminder(hour = 20, minute = 0) {
         channelId: 'default',
       },
     });
+
+    // Salva o ID para poder cancelar na próxima vez
+    await AsyncStorage.setItem(DAILY_REMINDER_STORAGE_KEY, notificationId);
   } catch (error) {
     console.warn('Erro ao agendar notificação diária:', error);
   }
@@ -153,4 +163,70 @@ export async function scheduleCreditCardReminder(
 export async function cancelReminder(notificationId: string) {
   if (Platform.OS === 'web') return;
   await Notifications.cancelScheduledNotificationAsync(notificationId);
+}
+
+/**
+ * Re-agenda todas as notificações ativas de despesas e cartões na inicialização.
+ * Retorna arrays atualizados de transações e contas com os novos notificationIds.
+ */
+export async function rescheduleAllNotifications(
+  transactions: Transaction[],
+  accounts: Account[],
+  prefs: { expenseReminders: boolean; expenseReminderTime: { hour: number; minute: number }; creditCardAlerts: boolean; creditCardAlertTime: { hour: number; minute: number } }
+): Promise<{ updatedTransactions: Transaction[]; updatedAccounts: Account[]; hasChanges: boolean }> {
+  if (Platform.OS === 'web') {
+    return { updatedTransactions: transactions, updatedAccounts: accounts, hasChanges: false };
+  }
+
+  let hasChanges = false;
+  const updatedTransactions = [...transactions];
+  const updatedAccounts = [...accounts];
+
+  // Re-agendar lembretes de despesas pendentes
+  if (prefs.expenseReminders) {
+    for (let i = 0; i < updatedTransactions.length; i++) {
+      const tx = updatedTransactions[i];
+      if (tx.type === 'despesa' && !tx.paid) {
+        const dueDate = new Date(tx.date);
+        const triggerDate = new Date(dueDate);
+        triggerDate.setHours(prefs.expenseReminderTime.hour, prefs.expenseReminderTime.minute, 0, 0);
+
+        // Só agenda se a data ainda não passou
+        if (triggerDate.getTime() > Date.now()) {
+          const notificationId = await scheduleTransactionReminder(
+            tx.description,
+            tx.amount,
+            dueDate,
+            prefs.expenseReminderTime.hour,
+            prefs.expenseReminderTime.minute
+          );
+          if (notificationId !== tx.notificationId) {
+            updatedTransactions[i] = { ...tx, notificationId };
+            hasChanges = true;
+          }
+        }
+      }
+    }
+  }
+
+  // Re-agendar alertas de cartão de crédito
+  if (prefs.creditCardAlerts) {
+    for (let i = 0; i < updatedAccounts.length; i++) {
+      const acc = updatedAccounts[i];
+      if (acc.type === 'cartao_credito' && acc.dueDay) {
+        const notificationId = await scheduleCreditCardReminder(
+          acc.name,
+          acc.dueDay,
+          prefs.creditCardAlertTime.hour,
+          prefs.creditCardAlertTime.minute
+        );
+        if (notificationId !== acc.notificationId) {
+          updatedAccounts[i] = { ...acc, notificationId };
+          hasChanges = true;
+        }
+      }
+    }
+  }
+
+  return { updatedTransactions, updatedAccounts, hasChanges };
 }
