@@ -18,6 +18,7 @@ import { useTheme } from '@/hooks/useTheme';
 import { useStoreContext } from '@/context/StoreContext';
 import { WishlistItem } from '@/constants/types';
 import { WishlistItemCard } from '@/components/wishlist/WishlistItemCard';
+import { ItemBreakdownSheet } from '@/components/wishlist/ItemBreakdownSheet';
 import { useRouter } from 'expo-router';
 
 type FilterType = 'todos' | 'PENDENTE' | 'COMPRADO';
@@ -36,7 +37,14 @@ export function WishlistScreen() {
     updateUserSettings,
     accounts,
     toggleSimulatorAccount,
+    evaluateItemAffordability,
+    getMonthBreakdown,
   } = useStoreContext();
+
+  const [breakdownModalVisible, setBreakdownModalVisible] = useState(false);
+  const [selectedItemForBreakdown, setSelectedItemForBreakdown] = useState<WishlistItem | null>(null);
+  const [currentBreakdownData, setCurrentBreakdownData] = useState<any | null>(null);
+  const [targetMonthIndex, setTargetMonthIndex] = useState(new Date().getMonth());
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
@@ -144,6 +152,24 @@ export function WishlistScreen() {
     setShowSettingsModal(false);
   }, [settingsDailyAllowance, settingsSafetyMargin, updateUserSettings]);
 
+  const handleItemPress = useCallback((item: WishlistItem) => {
+    if (item.status === 'COMPRADO') return;
+
+    const { status, bestFutureMonth } = evaluateItemAffordability(item.price);
+    
+    let targetMonth = new Date().getMonth();
+    if (status !== 'VERDE' && bestFutureMonth !== undefined) {
+      targetMonth = bestFutureMonth;
+    }
+    
+    const breakdown = getMonthBreakdown(targetMonth, new Date().getFullYear());
+    
+    setSelectedItemForBreakdown(item);
+    setCurrentBreakdownData(breakdown);
+    setTargetMonthIndex(targetMonth);
+    setBreakdownModalVisible(true);
+  }, [evaluateItemAffordability, getMonthBreakdown]);
+
   const renderHeader = () => (
     <View style={styles.headerSection}>
       {/* Budget Card */}
@@ -249,6 +275,7 @@ export function WishlistScreen() {
             item={item}
             onBuyPress={handleBuyPress}
             onDeletePress={handleDeleteItem}
+            onPress={() => handleItemPress(item)}
           />
         )}
         contentContainerStyle={styles.listContent}
@@ -405,6 +432,14 @@ export function WishlistScreen() {
           </View>
         </View>
       </Modal>
+
+      <ItemBreakdownSheet
+        isVisible={breakdownModalVisible}
+        onClose={() => setBreakdownModalVisible(false)}
+        item={selectedItemForBreakdown}
+        breakdownData={currentBreakdownData}
+        targetMonthIndex={targetMonthIndex}
+      />
     </View>
   );
 }

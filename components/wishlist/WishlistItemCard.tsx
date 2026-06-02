@@ -11,6 +11,7 @@ interface WishlistItemCardProps {
   item: WishlistItem;
   onBuyPress: (item: WishlistItem) => void;
   onDeletePress: (item: WishlistItem) => void;
+  onPress?: () => void;
 }
 
 const MONTH_NAMES = [
@@ -18,7 +19,7 @@ const MONTH_NAMES = [
   'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
 ];
 
-export function WishlistItemCard({ item, onBuyPress, onDeletePress }: WishlistItemCardProps) {
+export function WishlistItemCard({ item, onBuyPress, onDeletePress, onPress }: WishlistItemCardProps) {
   const { colors } = useTheme();
   const { evaluateItemAffordability } = useStoreContext();
   
@@ -42,7 +43,12 @@ export function WishlistItemCard({ item, onBuyPress, onDeletePress }: WishlistIt
   }
 
   return (
-    <View style={[styles.card, { backgroundColor: colors.card, borderLeftColor: borderColor, borderColor: colors.border }]}>
+    <TouchableOpacity 
+      style={[styles.card, { backgroundColor: colors.card, borderLeftColor: borderColor, borderColor: colors.border }]}
+      onPress={onPress}
+      activeOpacity={onPress ? 0.7 : 1}
+      disabled={!onPress}
+    >
       <View style={styles.contentRow}>
         <View style={styles.info}>
           <Text
@@ -86,7 +92,7 @@ export function WishlistItemCard({ item, onBuyPress, onDeletePress }: WishlistIt
           </TouchableOpacity>
         </View>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 }
 
@@ -100,7 +106,7 @@ const styles = StyleSheet.create({
   },
   contentRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
   },
   info: {
@@ -136,6 +142,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   actions: {
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },

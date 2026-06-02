@@ -187,132 +187,30 @@ export function useStore() {
     const updated = { ...notificationPreferences, [key]: value };
     await saveNotificationPreferences(updated);
 
-    if (key === 'dailyReminders') {
-      if (value) {
-        await NotificationService.scheduleDailyReminder(
-          notificationPreferences.dailyReminderTime.hour,
-          notificationPreferences.dailyReminderTime.minute
-        );
-      }
+    const anyNotificationEnabled = updated.dailyReminders || updated.expenseReminders || updated.creditCardAlerts;
+    
+    if (anyNotificationEnabled) {
+      await NotificationService.scheduleDailyFinanceSummary(
+        updated.dailyReminderTime.hour,
+        updated.dailyReminderTime.minute
+      );
+    } else {
+      await NotificationService.cancelDailyFinanceSummary();
     }
-
-    if (key === 'expenseReminders') {
-      const updatedTransactions = [...transactions];
-      let changed = false;
-      for (let i = 0; i < updatedTransactions.length; i++) {
-        const tx = updatedTransactions[i];
-        if (tx.type === 'despesa' && !tx.paid) {
-          if (value) {
-            // Agendar notificações para despesas pendentes
-            const notificationId = await NotificationService.scheduleTransactionReminder(
-              tx.description,
-              tx.amount,
-              new Date(tx.date),
-              notificationPreferences.expenseReminderTime.hour,
-              notificationPreferences.expenseReminderTime.minute
-            );
-            if (notificationId) {
-              updatedTransactions[i] = { ...tx, notificationId };
-              changed = true;
-            }
-          } else {
-            // Cancelar notificações existentes
-            if (tx.notificationId) {
-              await NotificationService.cancelReminder(tx.notificationId);
-              updatedTransactions[i] = { ...tx, notificationId: undefined };
-              changed = true;
-            }
-          }
-        }
-      }
-      if (changed) {
-        await saveTransactions(updatedTransactions);
-      }
-    }
-
-    if (key === 'creditCardAlerts') {
-      const updatedAccounts = [...accounts];
-      let changed = false;
-      for (let i = 0; i < updatedAccounts.length; i++) {
-        const acc = updatedAccounts[i];
-        if (acc.type === 'cartao_credito' && acc.dueDay) {
-          if (value) {
-            // Agendar alertas para cartões de crédito
-            const notificationId = await NotificationService.scheduleCreditCardReminder(
-              acc.name,
-              acc.dueDay,
-              notificationPreferences.creditCardAlertTime.hour,
-              notificationPreferences.creditCardAlertTime.minute
-            );
-            if (notificationId) {
-              updatedAccounts[i] = { ...acc, notificationId };
-              changed = true;
-            }
-          } else {
-            // Cancelar alertas existentes
-            if (acc.notificationId) {
-              await NotificationService.cancelReminder(acc.notificationId);
-              updatedAccounts[i] = { ...acc, notificationId: undefined };
-              changed = true;
-            }
-          }
-        }
-      }
-      if (changed) {
-        await saveAccounts(updatedAccounts);
-      }
-    }
-  }, [notificationPreferences, transactions, accounts, saveNotificationPreferences, saveTransactions, saveAccounts]);
+  }, [notificationPreferences, saveNotificationPreferences]);
 
   const updateNotificationTime = useCallback(async (key: 'dailyReminderTime' | 'expenseReminderTime' | 'creditCardAlertTime', hour: number, minute: number) => {
     const updated = { ...notificationPreferences, [key]: { hour, minute } };
     await saveNotificationPreferences(updated);
 
-    if (key === 'dailyReminderTime' && notificationPreferences.dailyReminders) {
-      await NotificationService.scheduleDailyReminder(hour, minute);
+    const anyNotificationEnabled = updated.dailyReminders || updated.expenseReminders || updated.creditCardAlerts;
+    if (anyNotificationEnabled) {
+      await NotificationService.scheduleDailyFinanceSummary(
+        updated.dailyReminderTime.hour,
+        updated.dailyReminderTime.minute
+      );
     }
-
-    if (key === 'expenseReminderTime' && notificationPreferences.expenseReminders) {
-      const updatedTransactions = [...transactions];
-      for (let i = 0; i < updatedTransactions.length; i++) {
-        const tx = updatedTransactions[i];
-        if (tx.type === 'despesa' && !tx.paid) {
-          if (tx.notificationId) {
-            await NotificationService.cancelReminder(tx.notificationId);
-          }
-          const notificationId = await NotificationService.scheduleTransactionReminder(
-            tx.description,
-            tx.amount,
-            new Date(tx.date),
-            hour,
-            minute
-          );
-          updatedTransactions[i] = { ...tx, notificationId };
-        }
-      }
-      await saveTransactions(updatedTransactions);
-    }
-
-    if (key === 'creditCardAlertTime' && notificationPreferences.creditCardAlerts) {
-      const updatedAccounts = [...accounts];
-      for (let i = 0; i < updatedAccounts.length; i++) {
-        const acc = updatedAccounts[i];
-        if (acc.type === 'cartao_credito' && acc.dueDay) {
-          if (acc.notificationId) {
-            await NotificationService.cancelReminder(acc.notificationId);
-          }
-          const notificationId = await NotificationService.scheduleCreditCardReminder(
-            acc.name,
-            acc.dueDay,
-            hour,
-            minute
-          );
-          updatedAccounts[i] = { ...acc, notificationId };
-        }
-      }
-      await saveAccounts(updatedAccounts);
-    }
-  }, [notificationPreferences, transactions, accounts, saveNotificationPreferences, saveTransactions, saveAccounts]);
+  }, [notificationPreferences, saveNotificationPreferences]);
 
   const addProject = useCallback(async (project: Omit<Project, 'id'>) => {
     const newProject: Project = { ...project, id: Date.now().toString() };
@@ -457,11 +355,6 @@ export function useStore() {
           // Como as faturas de cartão viram despesas na conta corrente, podemos ou não abater aqui. 
           // Para segurança máxima do orçamento base zero, consideramos a despesa.
           projectedExpenses += tx.amount;
-
-          // Rastreio de despesas fantasmas do mês atual
-          if (targetMonth === currentMonth) {
-            console.log(`👻 DÍVIDA PENDENTE: ${tx.description} | R$ ${tx.amount} | Data: ${tx.date}`);
-          }
         }
       }
     });
@@ -475,19 +368,61 @@ export function useStore() {
     const rawEndBalance = currentTotalBalance + projectedRevenues - projectedExpenses;
     const available = rawEndBalance - totalDailyAllowance - totalSafetyMargin;
 
-    console.log('\n--- 🐞 DEBUG DO SIMULADOR (MÊS/ANO: ' + targetMonth + '/' + targetYear + ') ---');
-    console.log('0. Meses Acumulados Projetados:', validMonthsAccumulated);
-    console.log('1. Saldo Real (das contas ativas):', currentTotalBalance);
-    console.log('2. Receitas Futuras (Entradas projetadas):', projectedRevenues);
-    console.log('3. Despesas Futuras (Saídas projetadas):', projectedExpenses);
-    console.log('4. Gasto Diário Total Projetado:', totalDailyAllowance);
-    console.log('5. Margem de Segurança Total Projetada:', totalSafetyMargin);
-    console.log('--------------------------------------------------');
-    const matematicaBruta = currentTotalBalance + projectedRevenues - projectedExpenses - totalDailyAllowance - totalSafetyMargin;
-    console.log('🧮 RESULTADO DA MATEMÁTICA PURA:', matematicaBruta);
-    console.log('==================================================\n');
-
     return Math.max(available, 0);
+  }, [accounts, transactions, userSettings]);
+
+  const getMonthBreakdown = useCallback((targetMonth: number, targetYear: number) => {
+    const currentTotalBalance = accounts.reduce((sum, a) => {
+      if (a.type === 'cartao_credito') return sum;
+      
+      const isIncluded = userSettings.simulatorIncludedAccounts 
+        ? userSettings.simulatorIncludedAccounts.includes(a.id)
+        : true;
+        
+      if (!isIncluded) return sum;
+
+      return sum + a.balance;
+    }, 0);
+
+    let projectedRevenues = 0;
+    let projectedExpenses = 0;
+
+    const pendentes = transactions.filter(tx => tx.paid === false);
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+
+    pendentes.forEach(tx => {
+      const txDate = new Date(tx.date);
+      const txYear = txDate.getFullYear();
+      const txMonth = txDate.getMonth();
+
+      if (txYear < targetYear || (txYear === targetYear && txMonth <= targetMonth)) {
+        if (tx.type === 'receita') {
+          projectedRevenues += tx.amount;
+        } else if (tx.type === 'despesa' || tx.type === 'transferencia') {
+          projectedExpenses += tx.amount;
+        }
+      }
+    });
+
+    const monthsAccumulated = (targetYear - currentYear) * 12 + (targetMonth - currentMonth) + 1;
+    const validMonthsAccumulated = Math.max(1, monthsAccumulated);
+
+    const totalDailyAllowance = userSettings.dailyAllowance * validMonthsAccumulated;
+    const totalSafetyMargin = userSettings.safetyMargin * validMonthsAccumulated;
+
+    const rawEndBalance = currentTotalBalance + projectedRevenues - projectedExpenses;
+    const rawAvailable = rawEndBalance - totalDailyAllowance - totalSafetyMargin;
+
+    return {
+      initialBalance: currentTotalBalance,
+      projectedRevenues,
+      projectedExpenses,
+      totalDailyAllowance,
+      totalSafetyMargin,
+      rawAvailable
+    };
   }, [accounts, transactions, userSettings]);
 
   const evaluateItemAffordability = useCallback((itemPrice: number) => {
@@ -556,19 +491,7 @@ export function useStore() {
   }, []);
   const addAccount = useCallback(
     async (acc: Account) => {
-      let notificationId: string | undefined;
-
-      if (acc.type === 'cartao_credito' && acc.dueDay && notificationPreferences.creditCardAlerts) {
-        notificationId = await NotificationService.scheduleCreditCardReminder(
-          acc.name,
-          acc.dueDay,
-          notificationPreferences.creditCardAlertTime.hour,
-          notificationPreferences.creditCardAlertTime.minute
-        );
-      }
-
-      const accountWithNotification = { ...acc, notificationId };
-      const updatedAccounts = [...accounts, accountWithNotification];
+      const updatedAccounts = [...accounts, acc];
       await saveAccounts(updatedAccounts);
 
       if (acc.type !== "cartao_credito" && acc.balance !== 0) {
@@ -597,24 +520,6 @@ export function useStore() {
       const oldAcc = accounts.find((a) => a.id === updatedAcc.id);
       if (!oldAcc) return;
 
-      let notificationId = oldAcc.notificationId;
-
-      if (updatedAcc.type === "cartao_credito" &&
-        (updatedAcc.dueDay !== oldAcc.dueDay || updatedAcc.name !== oldAcc.name)
-      ) {
-        if (notificationId) {
-          await NotificationService.cancelReminder(notificationId);
-        }
-        if (updatedAcc.dueDay && notificationPreferences.creditCardAlerts) {
-          notificationId = await NotificationService.scheduleCreditCardReminder(
-            updatedAcc.name,
-            updatedAcc.dueDay,
-            notificationPreferences.creditCardAlertTime.hour,
-            notificationPreferences.creditCardAlertTime.minute
-          );
-        }
-      }
-
       let finalTransactions = transactions;
       if (
         !skipAdjustment &&
@@ -638,7 +543,7 @@ export function useStore() {
       }
 
       const updatedAccounts = accounts.map((a) =>
-        a.id === updatedAcc.id ? { ...updatedAcc, notificationId } : a,
+        a.id === updatedAcc.id ? updatedAcc : a,
       );
       await syncBalances(finalTransactions, updatedAccounts);
     },
@@ -648,10 +553,6 @@ export function useStore() {
   const deleteAccount = useCallback(
     async (id: string) => {
       const targetAcc = accounts.find(a => a.id === id);
-
-      if (targetAcc?.notificationId) {
-        NotificationService.cancelReminder(targetAcc.notificationId);
-      }
 
       const updatedAccounts = accounts.filter((a) => a.id !== id);
       const updatedTransactions = transactions.filter(
@@ -748,20 +649,18 @@ export function useStore() {
         setUserSettings(JSON.parse(userSettingsRaw[1]));
       }
 
-      // Re-agendar notificações de despesas e cartões na inicialização
+      // Re-agendar resumo diário na inicialização
       const loadedNotifPrefs = notifPrefsRaw[1] ? JSON.parse(notifPrefsRaw[1]) : DEFAULT_NOTIFICATION_PREFS;
+      const anyNotificationEnabled = loadedNotifPrefs.dailyReminders || loadedNotifPrefs.expenseReminders || loadedNotifPrefs.creditCardAlerts;
+      
       try {
-        const { updatedTransactions, updatedAccounts, hasChanges } = 
-          await NotificationService.rescheduleAllNotifications(
-            loadedTransactions,
-            loadedAccounts,
-            loadedNotifPrefs
+        if (anyNotificationEnabled) {
+          await NotificationService.scheduleDailyFinanceSummary(
+            loadedNotifPrefs.dailyReminderTime.hour,
+            loadedNotifPrefs.dailyReminderTime.minute
           );
-        if (hasChanges) {
-          setTransactions(updatedTransactions);
-          setAccounts(updatedAccounts);
-          await AsyncStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(updatedTransactions));
-          await AsyncStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(updatedAccounts));
+        } else {
+          await NotificationService.cancelDailyFinanceSummary();
         }
       } catch (notifError) {
         console.warn('Erro ao re-agendar notificações na inicialização:', notifError);
@@ -934,17 +833,6 @@ export function useStore() {
 
           const isPaid = isCreditCard ? false : (i === 0 ? (isFuture ? false : tx.paid) : false);
 
-          let notificationId: string | undefined;
-          if (tx.type === 'despesa' && notificationPreferences.expenseReminders) {
-            notificationId = await NotificationService.scheduleTransactionReminder(
-              tx.description,
-              tx.amount,
-              effectiveDate,
-              notificationPreferences.expenseReminderTime.hour,
-              notificationPreferences.expenseReminderTime.minute
-            );
-          }
-
           newTransactions.push({
             ...tx,
             id: `${baseId}-${i}`,
@@ -953,28 +841,16 @@ export function useStore() {
             date: effectiveDate.toISOString(),
             paid: isPaid,
             paymentMethod: finalizedTxMethod,
-            notificationId,
           });
         }
       }
       else {
-        let notificationId: string | undefined;
-        if (tx.type === 'despesa' && !tx.paid && notificationPreferences.expenseReminders) {
-          notificationId = await NotificationService.scheduleTransactionReminder(
-            tx.description,
-            tx.amount,
-            new Date(tx.date),
-            notificationPreferences.expenseReminderTime.hour,
-            notificationPreferences.expenseReminderTime.minute
-          );
-        }
 
         const newTx: Transaction = {
           ...tx,
           id: Date.now().toString(),
           paymentMethod: finalizedTxMethod,
           paid: isCreditCard ? false : tx.paid,
-          notificationId,
         };
         newTransactions.push(newTx);
       }
@@ -1007,10 +883,6 @@ export function useStore() {
       }
 
       const updated = transactions.filter((t) => !idsToDelete.includes(t.id));
-
-      transactions.filter(t => idsToDelete.includes(t.id)).forEach(t => {
-        if (t.notificationId) NotificationService.cancelReminder(t.notificationId);
-      });
 
       await saveTransactions(updated);
       await syncBalances(updated, accounts);
@@ -1296,10 +1168,6 @@ export function useStore() {
 
       const updated = transactions.filter((t) => !finalIdsToRemove.includes(t.id));
 
-      transactions.filter(t => finalIdsToRemove.includes(t.id)).forEach(t => {
-        if (t.notificationId) NotificationService.cancelReminder(t.notificationId);
-      });
-
       await saveTransactions(updated);
       await syncBalances(updated, accounts);
     },
@@ -1418,6 +1286,7 @@ export function useStore() {
     markAsBought,
     calculateAvailableCash,
     calculateAvailableCashForMonth,
+    getMonthBreakdown,
     evaluateItemAffordability,
     toggleSimulatorAccount,
     userSettings,
