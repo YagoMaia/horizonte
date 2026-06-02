@@ -78,6 +78,7 @@ export function ContasScreen() {
   // 👉 ESTADOS DO CARTÃO DE CRÉDITO
   const [closingDay, setClosingDay] = useState('');
   const [dueDay, setDueDay] = useState('');
+  const [creditLimit, setCreditLimit] = useState('');
 
   const openAdd = useCallback(() => {
     setEditAccount(null);
@@ -88,6 +89,7 @@ export function ContasScreen() {
     setSelectedIcon('card');
     setClosingDay('');
     setDueDay('');
+    setCreditLimit('');
     setModalVisible(true);
   }, []);
 
@@ -107,6 +109,7 @@ export function ContasScreen() {
       setSelectedIcon(acc.icon);
       setClosingDay(acc.closingDay ? acc.closingDay.toString() : '');
       setDueDay(acc.dueDay ? acc.dueDay.toString() : '');
+      setCreditLimit(acc.creditLimit ? acc.creditLimit.toFixed(2).replace('.', ',') : '');
       setModalVisible(true);
     });
   }, []);
@@ -118,6 +121,7 @@ export function ContasScreen() {
     let parsedBalance = 0;
     let finalClosingDay: number | undefined = undefined;
     let finalDueDay: number | undefined = undefined;
+    let finalCreditLimit: number | undefined = undefined;
 
     if (type === 'cartao_credito') {
       const parsedClosing = parseInt(closingDay, 10);
@@ -148,6 +152,7 @@ export function ContasScreen() {
       parsedBalance = 0; // O saldo (liquidez) de um cartão recém criado é sempre 0
       finalClosingDay = parsedClosing;
       finalDueDay = parsedDue;
+      finalCreditLimit = parseFloat(creditLimit.replace(/\./g, '').replace(',', '.')) || 0;
     } else {
       parsedBalance = parseFloat(balance.replace(',', '.')) || 0;
     }
@@ -162,6 +167,7 @@ export function ContasScreen() {
         icon: selectedIcon,
         closingDay: finalClosingDay,
         dueDay: finalDueDay,
+        creditLimit: finalCreditLimit,
       };
 
       const hasBalanceChanged = type !== 'cartao_credito' && parsedBalance !== editAccount.balance;
@@ -202,6 +208,7 @@ export function ContasScreen() {
         icon: selectedIcon,
         closingDay: finalClosingDay,
         dueDay: finalDueDay,
+        creditLimit: finalCreditLimit,
       };
       await addAccount(newAccount);
     }
@@ -468,6 +475,34 @@ export function ContasScreen() {
                   />
                 </View>
               </View>
+            )}
+
+            {type === 'cartao_credito' && (
+              <>
+                <Text
+                  style={[
+                    styles.fieldLabel,
+                    { color: colors.mutedForeground, marginTop: 12 },
+                  ]}
+                >
+                  Limite Total do Cartão (R$)
+                </Text>
+                <TextInput
+                  style={[
+                    styles.input,
+                    {
+                      color: colors.foreground,
+                      borderColor: colors.border,
+                      backgroundColor: colors.card,
+                    },
+                  ]}
+                  value={creditLimit}
+                  onChangeText={setCreditLimit}
+                  placeholder='0,00'
+                  placeholderTextColor={colors.mutedForeground}
+                  keyboardType='decimal-pad'
+                />
+              </>
             )}
 
             <Text

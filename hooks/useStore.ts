@@ -341,6 +341,12 @@ export function useStore() {
     const currentYear = now.getFullYear();
 
     pendentes.forEach(tx => {
+      const isAccountIncluded = userSettings.simulatorIncludedAccounts 
+        ? userSettings.simulatorIncludedAccounts.includes(tx.accountId)
+        : true;
+
+      if (!isAccountIncluded) return;
+
       const txDate = new Date(tx.date);
       const txYear = txDate.getFullYear();
       const txMonth = txDate.getMonth();
@@ -393,6 +399,12 @@ export function useStore() {
     const currentYear = now.getFullYear();
 
     pendentes.forEach(tx => {
+      const isAccountIncluded = userSettings.simulatorIncludedAccounts 
+        ? userSettings.simulatorIncludedAccounts.includes(tx.accountId)
+        : true;
+
+      if (!isAccountIncluded) return;
+
       const txDate = new Date(tx.date);
       const txYear = txDate.getFullYear();
       const txMonth = txDate.getMonth();
@@ -425,38 +437,149 @@ export function useStore() {
     };
   }, [accounts, transactions, userSettings]);
 
-  const evaluateItemAffordability = useCallback((itemPrice: number) => {
+  const evaluateItemAffordability = useCallback((itemPrice: number | string) => {
+    // Higienizador: Remove 'R$', espaços, converte vírgula para ponto e faz o parse seguro
+    const cleanPrice = (val: number | string): number => {
+      if (typeof val === 'number') return val;
+      if (!val) return 0;
+      const cleanedString = String(val).replace(/[R$\s]/g, '').replace(',', '.');
+      return Number(cleanedString) || 0;
+    };
+    
+    const price = cleanPrice(itemPrice);
+
+    // LOG DE SEGURANÇA
     const now = new Date();
     const currentMonth = now.getMonth();
     const currentYear = now.getFullYear();
-
     const currentAvailable = calculateAvailableCashForMonth(currentMonth, currentYear);
 
-    let status: 'VERDE' | 'AMARELO' | 'VERMELHO' = 'VERMELHO';
-    if (itemPrice <= currentAvailable) {
-      status = 'VERDE';
-    } else if (itemPrice <= currentAvailable * 3) {
-      status = 'AMARELO';
+    console.log(`\n🩺 [DIAGNÓSTICO] Item: ${price} | Caixa Livre Hoje: ${currentAvailable} | Tipo do Preço: ${typeof price}`);
+  
+    // 1. Dinheiro Livre Agora (A_VISTA)
+    if (price <= currentAvailable) {
+      return {
+        status: 'VERDE',
+        suggestedMethod: 'A_VISTA',
+        suggestedMessage: 'Dinheiro disponível. Pode comprar no PIX ou Débito.',
+        bestFutureMonth: currentMonth,
+        currentAvailable
+      };
     }
-
-    let bestFutureMonth: number | undefined;
-
-    if (status !== 'VERDE') {
-      for (let m = currentMonth + 1; m <= 11; m++) {
-        const futureAvailable = calculateAvailableCashForMonth(m, currentYear);
-        if (itemPrice <= futureAvailable) {
-          bestFutureMonth = m;
-          break;
+  
+    // --- TRAVA FÍSICA: CÁLCULO DE LIMITE DE CRÉDITO DISPONÍVEL ---
+    const creditCards = accounts.filter(a => a.type === 'cartao_credito');
+    const totalCreditLimit = creditCards.reduce((sum, card) => sum + (card.creditLimit || 0), 0);
+    const usedCredit = transactions.reduce((sum, tx) => {
+      if (!tx.paid && creditCards.some(c => c.id === tx.accountId) && tx.type !== 'receita') {
+        return sum + tx.amount;
+      }
+      return sum;
+    }, 0);
+    const totalAvailableCredit = Math.max(0, totalCreditLimit - usedCredit);
+    // -------------------------------------------------------------
+  
+    // Lógica para virada de mês/ano segura
+    let nextMonth = currentMonth + 1;
+    let nextMonthYear = currentYear;
+    if (nextMonth > 11) {
+      nextMonth = 0;
+      nextMonthYear++;
+    }
+    
+    const nextMonthAvailable = calculateAvailableCashForMonth(nextMonth, nextMonthYear);
+  
+    // 2. Cartão de Crédito (CARTAO_1X) - Verifica Fluxo E Limite
+    if (price <= nextMonthAvailable && price <= totalAvailableCredit) {
+      return {
+        status: 'VERDE',
+        suggestedMethod: 'CARTAO_1X',
+        suggestedMessage: 'Compre no Crédito hoje. Seu fluxo de caixa cobre a fatura no mês que vem.',
+        bestFutureMonth: nextMonth,
+        currentAvailable
+      };
+    }
+  
+    // 3. Parcelamento Seguro (PARCELADO)
+    let canInstallment = false;
+    let bestInstallments = 0;
+    let bestInstallmentValue = 0;
+  
+    // Só tenta calcular parcelas se o valor total couber no limite do cartão
+    if (price <= totalAvailableCredit) {
+      for (let parcels = 2; parcels <= 12; parcels++) {
+        const installmentValue = price / parcels;
+        let isSafe = true;
+  
+        // Verifica se a parcela acumulada cabe EM TODOS os meses projetados
+        for (let i = 1; i <= parcels; i++) {
+          let m = currentMonth + i;
+          let y = currentYear;
+          while (m > 11) {
+            m -= 12;
+            y++;
+          }
+          
+          const monthAvailable = calculateAvailableCashForMonth(m, y);
+          
+          // CORREÇÃO MATEMÁTICA: Avalia o peso acumulado das parcelas até o mês atual simulado
+          const accumulatedInstallmentCost = installmentValue * i;
+  
+          if (accumulatedInstallmentCost > monthAvailable) {
+            isSafe = false;
+            break; // Aborta para essa quantidade de parcelas
+          }
+        }
+  
+        if (isSafe) {
+          canInstallment = true;
+          bestInstallments = parcels;
+          bestInstallmentValue = installmentValue;
+          break; // Encontrou o cenário ideal, para de procurar
         }
       }
     }
-
+  
+    if (canInstallment) {
+      return {
+        status: 'AMARELO',
+        suggestedMethod: 'PARCELADO',
+        suggestedMessage: `Pode ser parcelado de forma segura em até ${bestInstallments}x de R$ ${bestInstallmentValue.toFixed(2)}.`,
+        bestFutureMonth: undefined,
+        currentAvailable
+      };
+    }
+  
+    // 4. Necessidade de Poupar (POUPAR)
+    let bestFutureMonth: number | undefined;
+    let bestFutureYear: number | undefined;
+  
+    for (let i = 1; i <= 24; i++) { // Projeta até 2 anos
+      let m = currentMonth + i;
+      let y = currentYear;
+      while (m > 11) {
+        m -= 12;
+        y++;
+      }
+      const futureAvailable = calculateAvailableCashForMonth(m, y);
+      if (price <= futureAvailable) {
+        bestFutureMonth = m;
+        bestFutureYear = y;
+        break;
+      }
+    }
+  
+    const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+    const monthText = bestFutureMonth !== undefined ? `${monthNames[bestFutureMonth]} de ${bestFutureYear}` : 'um mês futuro';
+  
     return {
-      status,
+      status: 'VERMELHO',
+      suggestedMethod: 'POUPAR',
+      suggestedMessage: `Sem margem (ou limite). Guarde dinheiro e compre à vista em ${monthText}.`,
       bestFutureMonth,
       currentAvailable
     };
-  }, [calculateAvailableCashForMonth]);
+  }, [calculateAvailableCashForMonth, accounts, transactions, userSettings]);
 
   const calculateAvailableCash = useCallback(() => {
     const now = new Date();
@@ -471,7 +594,6 @@ export function useStore() {
   const toggleSimulatorAccount = useCallback((accountId: string) => {
     let currentList = userSettings.simulatorIncludedAccounts;
     if (!currentList) {
-      // Se não havia lista, assumimos que todas estavam selecionadas, então criamos uma com todas menos a que foi clicada
       currentList = accounts.filter(a => a.type !== 'cartao_credito').map(a => a.id).filter(id => id !== accountId);
     } else {
       if (currentList.includes(accountId)) {
@@ -481,7 +603,11 @@ export function useStore() {
       }
     }
     updateUserSettings({ simulatorIncludedAccounts: currentList });
-  }, [userSettings, accounts, updateUserSettings]);
+  }, [userSettings.simulatorIncludedAccounts, accounts, updateUserSettings]);
+
+  const selectSimulatorCreditCard = useCallback((accountId: string | null) => {
+    updateUserSettings({ simulatorSelectedCreditCardId: accountId });
+  }, [updateUserSettings]);
 
   // --- DEMAIS MÉTODOS ---
 
@@ -1196,12 +1322,17 @@ export function useStore() {
 
   const getGoalSavedAmount = useCallback((goalId: string) => {
     if (!goalId) return 0;
+    const goal = goals.find(g => g.id === goalId);
+    const baseAmount = goal ? (goal.savedAmount || 0) : 0;
+
     const goalTxs = transactions.filter(tx => tx.goalId === goalId);
-    return goalTxs.reduce((sum, tx) => {
+    const txsAmount = goalTxs.reduce((sum, tx) => {
       // Considera todas as transações atreladas à meta como aporte (geralmente transferências ou despesas voltadas pra meta)
       return sum + (Number(tx.amount) || 0);
     }, 0);
-  }, [transactions]);
+
+    return baseAmount + txsAmount;
+  }, [transactions, goals]);
 
   const getInvoiceTotalForMonth = useCallback((creditCardId: string, targetMonth: number, targetYear: number) => {
     const cardAccount = accounts.find((a) => a.id === creditCardId);
@@ -1289,6 +1420,7 @@ export function useStore() {
     getMonthBreakdown,
     evaluateItemAffordability,
     toggleSimulatorAccount,
+    selectSimulatorCreditCard,
     userSettings,
     updateUserSettings,
     loading,

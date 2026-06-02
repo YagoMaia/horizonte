@@ -29,6 +29,7 @@ export interface Account {
   name: string
   balance: number // For checking: available money. For credit cards: current invoice total (usually negative or tracked as owed).
   type: 'corrente' | 'poupanca' | 'investimento' | 'carteira' | 'cartao_credito' // 👉 Added 'cartao_credito'
+  creditLimit?: number; // Limite total do cartão de crédito
   color: string
   icon: string
   // Optional specific properties for credit cards
@@ -100,6 +101,7 @@ export interface UserSettings {
   dailyAllowance: number;
   safetyMargin: number;
   simulatorIncludedAccounts?: string[];
+  simulatorSelectedCreditCardId?: string | null;
 }
 
 export interface NotificationPreferences {

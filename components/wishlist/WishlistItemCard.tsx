@@ -24,7 +24,7 @@ export function WishlistItemCard({ item, onBuyPress, onDeletePress, onPress }: W
   const { evaluateItemAffordability } = useStoreContext();
   
   const isBought = item.status === 'COMPRADO';
-  const { status, bestFutureMonth } = evaluateItemAffordability(item.price);
+  const { status, bestFutureMonth, suggestedMethod, suggestedMessage } = evaluateItemAffordability(item.price);
 
   let borderColor = '#9CA3AF';
   let statusLabel = 'Comprado';
@@ -38,7 +38,7 @@ export function WishlistItemCard({ item, onBuyPress, onDeletePress, onPress }: W
       statusLabel = 'Parcelável';
     } else {
       borderColor = '#EF4444';
-      statusLabel = 'Fora do orçamento';
+      statusLabel = bestFutureMonth !== undefined ? 'Requer poupar' : 'Fora do orçamento';
     }
   }
 
@@ -65,9 +65,9 @@ export function WishlistItemCard({ item, onBuyPress, onDeletePress, onPress }: W
             <Text style={[styles.badgeText, { color: borderColor }]}>{statusLabel}</Text>
           </View>
           
-          {!isBought && status !== 'VERDE' && bestFutureMonth !== undefined && (
+          {!isBought && suggestedMessage && (
             <Text style={[styles.hintText, { color: colors.mutedForeground }]}>
-              Ideal comprar à vista em {MONTH_NAMES[bestFutureMonth]}
+              {suggestedMessage}
             </Text>
           )}
         </View>

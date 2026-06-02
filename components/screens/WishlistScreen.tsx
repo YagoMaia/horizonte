@@ -12,6 +12,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Switch,
+  ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/hooks/useTheme';
@@ -37,6 +38,7 @@ export function WishlistScreen() {
     updateUserSettings,
     accounts,
     toggleSimulatorAccount,
+    selectSimulatorCreditCard,
     evaluateItemAffordability,
     getMonthBreakdown,
   } = useStoreContext();
@@ -394,17 +396,14 @@ export function WishlistScreen() {
               Escolha quais contas bancárias farão parte do saldo livre para a simulação.
             </Text>
 
-            <FlatList
-              data={accounts.filter(a => a.type !== 'cartao_credito')}
-              keyExtractor={item => item.id}
-              style={{ maxHeight: 300 }}
-              renderItem={({ item }) => {
+            <ScrollView style={{ maxHeight: 400 }} showsVerticalScrollIndicator={false}>
+              {accounts.filter(a => a.type !== 'cartao_credito').map(item => {
                 const isIncluded = userSettings.simulatorIncludedAccounts
                   ? userSettings.simulatorIncludedAccounts.includes(item.id)
                   : true;
 
                 return (
-                  <View style={[styles.accountItem, { borderBottomColor: colors.border }]}>
+                  <View key={item.id} style={[styles.accountItem, { borderBottomColor: colors.border }]}>
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.accountName, { color: colors.foreground }]}>{item.name}</Text>
                       <Text style={[styles.accountBalance, { color: colors.mutedForeground }]}>
@@ -418,8 +417,52 @@ export function WishlistScreen() {
                     />
                   </View>
                 );
-              }}
-            />
+              })}
+
+              <Text style={[styles.modalSubtitle, { color: colors.foreground, marginTop: 16, marginBottom: 8, fontWeight: '600' }]}>
+                Cartão de Crédito (Simulação de Limite)
+              </Text>
+              
+              <TouchableOpacity
+                style={[styles.accountItem, { borderBottomColor: colors.border }]}
+                onPress={() => selectSimulatorCreditCard(null)}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.accountName, { color: colors.foreground }]}>Nenhum cartão</Text>
+                  <Text style={[styles.accountBalance, { color: colors.mutedForeground }]}>
+                    Não simular limite de crédito
+                  </Text>
+                </View>
+                <Ionicons 
+                  name={userSettings.simulatorSelectedCreditCardId === null || userSettings.simulatorSelectedCreditCardId === undefined ? "radio-button-on" : "radio-button-off"} 
+                  size={24} 
+                  color={userSettings.simulatorSelectedCreditCardId === null || userSettings.simulatorSelectedCreditCardId === undefined ? colors.primary : colors.mutedForeground} 
+                />
+              </TouchableOpacity>
+
+              {accounts.filter(a => a.type === 'cartao_credito').map(item => {
+                const isSelected = userSettings.simulatorSelectedCreditCardId === item.id;
+                return (
+                  <TouchableOpacity
+                    key={item.id}
+                    style={[styles.accountItem, { borderBottomColor: colors.border }]}
+                    onPress={() => selectSimulatorCreditCard(item.id)}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.accountName, { color: colors.foreground }]}>{item.name}</Text>
+                      <Text style={[styles.accountBalance, { color: colors.mutedForeground }]}>
+                        Limite Total: R$ {item.creditLimit ? item.creditLimit.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : '0,00'}
+                      </Text>
+                    </View>
+                    <Ionicons 
+                      name={isSelected ? "radio-button-on" : "radio-button-off"} 
+                      size={24} 
+                      color={isSelected ? colors.primary : colors.mutedForeground} 
+                    />
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
 
             <View style={styles.modalActions}>
               <TouchableOpacity

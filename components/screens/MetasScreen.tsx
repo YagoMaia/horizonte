@@ -30,6 +30,7 @@ export function MetasScreen() {
   const [newGoalName, setNewGoalName] = useState('');
   const [newGoalTarget, setNewGoalTarget] = useState('');
   const [newGoalContribution, setNewGoalContribution] = useState('');
+  const [newGoalSaved, setNewGoalSaved] = useState('');
   const [newGoalColor, setNewGoalColor] = useState(GOAL_COLORS[0]);
 
   const formatCurrency = (value: number) => {
@@ -53,6 +54,7 @@ export function MetasScreen() {
     setNewGoalName('');
     setNewGoalTarget('');
     setNewGoalContribution('');
+    setNewGoalSaved('');
     setNewGoalColor(GOAL_COLORS[0]);
     setModalVisible(true);
   };
@@ -62,6 +64,7 @@ export function MetasScreen() {
     setNewGoalName(goal.name);
     setNewGoalTarget(formatCurrencyMask(String(goal.targetAmount * 100)));
     setNewGoalContribution(formatCurrencyMask(String(goal.monthlyContribution * 100)));
+    setNewGoalSaved(formatCurrencyMask(String((goal.savedAmount || 0) * 100)));
     setNewGoalColor(goal.color);
     setModalVisible(true);
   };
@@ -88,6 +91,7 @@ export function MetasScreen() {
     
     const targetNumeric = parseFloat(newGoalTarget.replace(/\./g, '').replace(',', '.'));
     const contribNumeric = parseFloat(newGoalContribution.replace(/\./g, '').replace(',', '.'));
+    const savedNumeric = newGoalSaved ? parseFloat(newGoalSaved.replace(/\./g, '').replace(',', '.')) : 0;
 
     if (targetNumeric <= 0 || contribNumeric <= 0) {
       Alert.alert('Erro', 'Os valores devem ser maiores que zero.');
@@ -100,7 +104,7 @@ export function MetasScreen() {
         name: newGoalName.trim(),
         targetAmount: targetNumeric,
         monthlyContribution: contribNumeric,
-        savedAmount: 0,
+        savedAmount: savedNumeric,
         color: newGoalColor,
         icon: 'star',
       });
@@ -109,7 +113,7 @@ export function MetasScreen() {
         name: newGoalName.trim(),
         targetAmount: targetNumeric,
         monthlyContribution: contribNumeric,
-        savedAmount: 0,
+        savedAmount: savedNumeric,
         color: newGoalColor,
         icon: 'star',
       });
@@ -181,9 +185,14 @@ export function MetasScreen() {
                     </View>
                     <Text style={[styles.goalName, { color: colors.foreground }]}>{goal.name}</Text>
                   </View>
-                  <TouchableOpacity onPress={() => handleDeleteGoal(goal.id)}>
-                    <Ionicons name="trash-outline" size={20} color={colors.destructive} />
-                  </TouchableOpacity>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+                    <TouchableOpacity onPress={() => handleEditGoal(goal)}>
+                      <Ionicons name="pencil-outline" size={20} color={colors.primary} />
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => handleDeleteGoal(goal.id)}>
+                      <Ionicons name="trash-outline" size={20} color={colors.destructive} />
+                    </TouchableOpacity>
+                  </View>
                 </View>
 
                 <View style={styles.goalValues}>
@@ -249,7 +258,7 @@ export function MetasScreen() {
                 onChangeText={(text) => setNewGoalTarget(formatCurrencyMask(text))}
               />
 
-              <Text style={[styles.inputLabel, { color: colors.mutedForeground }]}>Aporte Mensal Planejado</Text>
+              <Text style={[styles.inputLabel, { color: colors.mutedForeground }]}>Aporte Mensal (Quanto consegue guardar?)</Text>
               <TextInput
                 style={[styles.input, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.background }]}
                 placeholder="0,00"
@@ -259,7 +268,17 @@ export function MetasScreen() {
                 onChangeText={(text) => setNewGoalContribution(formatCurrencyMask(text))}
               />
 
-              <Text style={[styles.inputLabel, { color: colors.mutedForeground, marginTop: 16 }]}>Cor</Text>
+              <Text style={[styles.inputLabel, { color: colors.mutedForeground }]}>Valor Inicial Guardado (Opcional)</Text>
+              <TextInput
+                style={[styles.input, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.background }]}
+                placeholder="0,00"
+                placeholderTextColor={colors.mutedForeground}
+                keyboardType="numeric"
+                value={newGoalSaved}
+                onChangeText={(text) => setNewGoalSaved(formatCurrencyMask(text))}
+              />
+
+              <Text style={[styles.inputLabel, { color: colors.mutedForeground }]}>Cor de Destaque</Text>
               <View style={styles.colorGrid}>
                 {GOAL_COLORS.map(c => (
                   <TouchableOpacity

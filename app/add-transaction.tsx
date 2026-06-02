@@ -109,7 +109,7 @@ export default function AddTransactionScreen() {
       setAccountId(transactionToEdit.accountId);
       setRecurrence(transactionToEdit.recurrence);
       setPaid(transactionToEdit.paid);
-      setTag(transactionToEdit.tag || '');
+      setPaid(transactionToEdit.paid);
       setProjectId(transactionToEdit.projectId);
       setGoalId(transactionToEdit.goalId);
       setInstallments(transactionToEdit.totalInstallments || 1);

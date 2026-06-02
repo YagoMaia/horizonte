@@ -17,10 +17,7 @@ function AppContent() {
 
   useEffect(() => {
     async function setupNotifications() {
-      const granted = await NotificationService.requestPermissions()
-      if (granted) {
-        await NotificationService.scheduleDailyReminder()
-      }
+      await NotificationService.requestPermissions()
     }
     setupNotifications()
   }, [])
