@@ -11,6 +11,7 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Switch,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/hooks/useTheme';
@@ -34,10 +35,12 @@ export function WishlistScreen() {
     userSettings,
     updateUserSettings,
     accounts,
+    toggleSimulatorAccount,
   } = useStoreContext();
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showAccountsModal, setShowAccountsModal] = useState(false);
 
   // Add form
   const [newName, setNewName] = useState('');
@@ -161,14 +164,24 @@ export function WishlistScreen() {
           </View>
         </View>
 
-        <TouchableOpacity
-          style={[styles.settingsBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
-          onPress={handleOpenSettings}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="settings-outline" size={14} color={colors.mutedForeground} />
-          <Text style={[styles.settingsBtnText, { color: colors.mutedForeground }]}>Configurar orçamento</Text>
-        </TouchableOpacity>
+        <View style={styles.budgetActionRow}>
+          <TouchableOpacity
+            style={[styles.settingsBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+            onPress={handleOpenSettings}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="options-outline" size={14} color={colors.mutedForeground} />
+            <Text style={[styles.settingsBtnText, { color: colors.mutedForeground }]}>Valores</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.settingsBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+            onPress={() => setShowAccountsModal(true)}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="wallet-outline" size={14} color={colors.mutedForeground} />
+            <Text style={[styles.settingsBtnText, { color: colors.mutedForeground }]}>Contas</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Filters */}
@@ -344,6 +357,54 @@ export function WishlistScreen() {
           </KeyboardAvoidingView>
         </View>
       </Modal>
+
+      {/* Accounts Modal */}
+      <Modal visible={showAccountsModal} transparent animationType="fade">
+        <View style={styles.overlay}>
+          <View style={[styles.modalBox, { backgroundColor: colors.card, borderColor: colors.border, maxHeight: '80%' }]}>
+            <Text style={[styles.modalTitle, { color: colors.foreground }]}>Contas Consideradas</Text>
+            <Text style={[styles.modalSubtitle, { color: colors.mutedForeground, marginBottom: 8 }]}>
+              Escolha quais contas bancárias farão parte do saldo livre para a simulação.
+            </Text>
+
+            <FlatList
+              data={accounts.filter(a => a.type !== 'cartao_credito')}
+              keyExtractor={item => item.id}
+              style={{ maxHeight: 300 }}
+              renderItem={({ item }) => {
+                const isIncluded = userSettings.simulatorIncludedAccounts
+                  ? userSettings.simulatorIncludedAccounts.includes(item.id)
+                  : true;
+
+                return (
+                  <View style={[styles.accountItem, { borderBottomColor: colors.border }]}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.accountName, { color: colors.foreground }]}>{item.name}</Text>
+                      <Text style={[styles.accountBalance, { color: colors.mutedForeground }]}>
+                        R$ {item.balance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </Text>
+                    </View>
+                    <Switch
+                      value={isIncluded}
+                      onValueChange={() => toggleSimulatorAccount(item.id)}
+                      trackColor={{ true: colors.primary, false: colors.border }}
+                    />
+                  </View>
+                );
+              }}
+            />
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.modalBtn, { backgroundColor: colors.primary }]}
+                onPress={() => setShowAccountsModal(false)}
+              >
+                <Text style={{ color: '#FFF', fontWeight: '600' }}>Concluído</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -390,7 +451,12 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '700',
   },
+  budgetActionRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
   settingsBtn: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -501,6 +567,20 @@ const styles = StyleSheet.create({
     gap: 5,
     paddingVertical: 12,
     borderRadius: 12,
+  },
+  accountItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  accountName: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  accountBalance: {
+    fontSize: 13,
+    marginTop: 2,
   },
   confirmIcon: {
     alignSelf: 'center',

@@ -422,29 +422,71 @@ export function useStore() {
   const calculateAvailableCashForMonth = useCallback((targetMonth: number, targetYear: number) => {
     const currentTotalBalance = accounts.reduce((sum, a) => {
       if (a.type === 'cartao_credito') return sum;
+      
+      const isIncluded = userSettings.simulatorIncludedAccounts 
+        ? userSettings.simulatorIncludedAccounts.includes(a.id)
+        : true;
+        
+      if (!isIncluded) return sum;
+
       return sum + a.balance;
     }, 0);
 
     let projectedRevenues = 0;
     let projectedExpenses = 0;
 
-    transactions.forEach(tx => {
-      if (tx.paid) return;
+    // APLICANDO A REGRA DE OURO: Ignorar completamente tudo que já foi pago (pois já está no Saldo Real das contas)
+    const pendentes = transactions.filter(tx => tx.paid === false);
+
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+
+    pendentes.forEach(tx => {
       const txDate = new Date(tx.date);
       const txYear = txDate.getFullYear();
       const txMonth = txDate.getMonth();
 
+      // Projeta apenas transações que vencem até o final do mês alvo
       if (txYear < targetYear || (txYear === targetYear && txMonth <= targetMonth)) {
         if (tx.type === 'receita') {
           projectedRevenues += tx.amount;
         } else if (tx.type === 'despesa' || tx.type === 'transferencia') {
+          // Extra: se a transação pendente for no cartão de crédito, ela não sai do saldo agora, 
+          // ela só sai quando a fatura é paga. Mas o usuário quer abater despesas futuras do banco.
+          // Como as faturas de cartão viram despesas na conta corrente, podemos ou não abater aqui. 
+          // Para segurança máxima do orçamento base zero, consideramos a despesa.
           projectedExpenses += tx.amount;
+
+          // Rastreio de despesas fantasmas do mês atual
+          if (targetMonth === currentMonth) {
+            console.log(`👻 DÍVIDA PENDENTE: ${tx.description} | R$ ${tx.amount} | Data: ${tx.date}`);
+          }
         }
       }
     });
 
+    const monthsAccumulated = (targetYear - currentYear) * 12 + (targetMonth - currentMonth) + 1;
+    const validMonthsAccumulated = Math.max(1, monthsAccumulated); // Proteção contra meses passados
+
+    const totalDailyAllowance = userSettings.dailyAllowance * validMonthsAccumulated;
+    const totalSafetyMargin = userSettings.safetyMargin * validMonthsAccumulated;
+
     const rawEndBalance = currentTotalBalance + projectedRevenues - projectedExpenses;
-    const available = rawEndBalance - userSettings.dailyAllowance - userSettings.safetyMargin;
+    const available = rawEndBalance - totalDailyAllowance - totalSafetyMargin;
+
+    console.log('\n--- 🐞 DEBUG DO SIMULADOR (MÊS/ANO: ' + targetMonth + '/' + targetYear + ') ---');
+    console.log('0. Meses Acumulados Projetados:', validMonthsAccumulated);
+    console.log('1. Saldo Real (das contas ativas):', currentTotalBalance);
+    console.log('2. Receitas Futuras (Entradas projetadas):', projectedRevenues);
+    console.log('3. Despesas Futuras (Saídas projetadas):', projectedExpenses);
+    console.log('4. Gasto Diário Total Projetado:', totalDailyAllowance);
+    console.log('5. Margem de Segurança Total Projetada:', totalSafetyMargin);
+    console.log('--------------------------------------------------');
+    const matematicaBruta = currentTotalBalance + projectedRevenues - projectedExpenses - totalDailyAllowance - totalSafetyMargin;
+    console.log('🧮 RESULTADO DA MATEMÁTICA PURA:', matematicaBruta);
+    console.log('==================================================\n');
+
     return Math.max(available, 0);
   }, [accounts, transactions, userSettings]);
 
@@ -490,6 +532,21 @@ export function useStore() {
     const updated = { ...userSettings, ...updates };
     await saveUserSettings(updated);
   }, [userSettings, saveUserSettings]);
+
+  const toggleSimulatorAccount = useCallback((accountId: string) => {
+    let currentList = userSettings.simulatorIncludedAccounts;
+    if (!currentList) {
+      // Se não havia lista, assumimos que todas estavam selecionadas, então criamos uma com todas menos a que foi clicada
+      currentList = accounts.filter(a => a.type !== 'cartao_credito').map(a => a.id).filter(id => id !== accountId);
+    } else {
+      if (currentList.includes(accountId)) {
+        currentList = currentList.filter(id => id !== accountId);
+      } else {
+        currentList = [...currentList, accountId];
+      }
+    }
+    updateUserSettings({ simulatorIncludedAccounts: currentList });
+  }, [userSettings, accounts, updateUserSettings]);
 
   // --- DEMAIS MÉTODOS ---
 
@@ -1362,6 +1419,7 @@ export function useStore() {
     calculateAvailableCash,
     calculateAvailableCashForMonth,
     evaluateItemAffordability,
+    toggleSimulatorAccount,
     userSettings,
     updateUserSettings,
     loading,

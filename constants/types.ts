@@ -99,6 +99,7 @@ export interface WishlistItem {
 export interface UserSettings {
   dailyAllowance: number;
   safetyMargin: number;
+  simulatorIncludedAccounts?: string[];
 }
 
 export interface NotificationPreferences {
