@@ -1,7 +1,7 @@
 // hooks/useStore.ts
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Transaction, Account, Tag, DEFAULT_TAGS, Project, NotificationPreferences } from '@/constants/types';
+import { Transaction, Account, Tag, DEFAULT_TAGS, Project, NotificationPreferences, WishlistItem, UserSettings } from '@/constants/types';
 import * as NotificationService from '../services/notificationService';
 import { addMonths, addYears, addWeeks, addDays, setDate } from 'date-fns';
 
@@ -17,6 +17,13 @@ const STORAGE_KEYS = {
   GOALS: '@horizonte:goals',
   HOME_LAYOUT: '@horizonte:home_layout',
   TOTAIS_LAYOUT: '@horizonte:totais_layout',
+  WISHLIST: '@horizonte:wishlist',
+  USER_SETTINGS: '@horizonte:user_settings',
+};
+
+const DEFAULT_USER_SETTINGS: UserSettings = {
+  dailyAllowance: 0,
+  safetyMargin: 0,
 };
 
 const DEFAULT_ACCOUNTS: Account[] = [];
@@ -52,6 +59,8 @@ export function useStore() {
     { id: 'category', visible: true },
     { id: 'period', visible: true },
   ]);
+  const [wishlist, setWishlist] = useState<WishlistItem[]>([]);
+  const [userSettings, setUserSettings] = useState<UserSettings>(DEFAULT_USER_SETTINGS);
   const [loading, setLoading] = useState(true);
 
   // --- MÉTODOS DE PROCESSAMENTO BASE (Sincronização) ---
@@ -370,6 +379,118 @@ export function useStore() {
     await AsyncStorage.setItem(STORAGE_KEYS.TOTAIS_LAYOUT, JSON.stringify(newLayout));
   }, []);
 
+  // --- MÉTODOS PARA WISHLIST ---
+
+  const saveWishlist = useCallback(async (data: WishlistItem[]) => {
+    await AsyncStorage.setItem(STORAGE_KEYS.WISHLIST, JSON.stringify(data));
+    setWishlist(data);
+  }, []);
+
+  const saveUserSettings = useCallback(async (data: UserSettings) => {
+    await AsyncStorage.setItem(STORAGE_KEYS.USER_SETTINGS, JSON.stringify(data));
+    setUserSettings(data);
+  }, []);
+
+  const addWishlistItem = useCallback(async (item: Omit<WishlistItem, 'id' | 'status' | 'createdAt'>) => {
+    const newItem: WishlistItem = {
+      ...item,
+      id: Date.now().toString(),
+      status: 'PENDENTE',
+      createdAt: new Date().toISOString(),
+    };
+    const updated = [...wishlist, newItem];
+    await saveWishlist(updated);
+  }, [wishlist, saveWishlist]);
+
+  const editWishlistItem = useCallback(async (updatedItem: WishlistItem) => {
+    const updated = wishlist.map(i => i.id === updatedItem.id ? updatedItem : i);
+    await saveWishlist(updated);
+  }, [wishlist, saveWishlist]);
+
+  const deleteWishlistItem = useCallback(async (id: string) => {
+    const updated = wishlist.filter(i => i.id !== id);
+    await saveWishlist(updated);
+  }, [wishlist, saveWishlist]);
+
+  const markAsBought = useCallback(async (id: string) => {
+    const updated = wishlist.map(i =>
+      i.id === id ? { ...i, status: 'COMPRADO' as const } : i
+    );
+    await saveWishlist(updated);
+  }, [wishlist, saveWishlist]);
+
+  const calculateAvailableCashForMonth = useCallback((targetMonth: number, targetYear: number) => {
+    const currentTotalBalance = accounts.reduce((sum, a) => {
+      if (a.type === 'cartao_credito') return sum;
+      return sum + a.balance;
+    }, 0);
+
+    let projectedRevenues = 0;
+    let projectedExpenses = 0;
+
+    transactions.forEach(tx => {
+      if (tx.paid) return;
+      const txDate = new Date(tx.date);
+      const txYear = txDate.getFullYear();
+      const txMonth = txDate.getMonth();
+
+      if (txYear < targetYear || (txYear === targetYear && txMonth <= targetMonth)) {
+        if (tx.type === 'receita') {
+          projectedRevenues += tx.amount;
+        } else if (tx.type === 'despesa' || tx.type === 'transferencia') {
+          projectedExpenses += tx.amount;
+        }
+      }
+    });
+
+    const rawEndBalance = currentTotalBalance + projectedRevenues - projectedExpenses;
+    const available = rawEndBalance - userSettings.dailyAllowance - userSettings.safetyMargin;
+    return Math.max(available, 0);
+  }, [accounts, transactions, userSettings]);
+
+  const evaluateItemAffordability = useCallback((itemPrice: number) => {
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+
+    const currentAvailable = calculateAvailableCashForMonth(currentMonth, currentYear);
+
+    let status: 'VERDE' | 'AMARELO' | 'VERMELHO' = 'VERMELHO';
+    if (itemPrice <= currentAvailable) {
+      status = 'VERDE';
+    } else if (itemPrice <= currentAvailable * 3) {
+      status = 'AMARELO';
+    }
+
+    let bestFutureMonth: number | undefined;
+
+    if (status !== 'VERDE') {
+      for (let m = currentMonth + 1; m <= 11; m++) {
+        const futureAvailable = calculateAvailableCashForMonth(m, currentYear);
+        if (itemPrice <= futureAvailable) {
+          bestFutureMonth = m;
+          break;
+        }
+      }
+    }
+
+    return {
+      status,
+      bestFutureMonth,
+      currentAvailable
+    };
+  }, [calculateAvailableCashForMonth]);
+
+  const calculateAvailableCash = useCallback(() => {
+    const now = new Date();
+    return calculateAvailableCashForMonth(now.getMonth(), now.getFullYear());
+  }, [calculateAvailableCashForMonth]);
+
+  const updateUserSettings = useCallback(async (updates: Partial<UserSettings>) => {
+    const updated = { ...userSettings, ...updates };
+    await saveUserSettings(updated);
+  }, [userSettings, saveUserSettings]);
+
   // --- DEMAIS MÉTODOS ---
 
   const completeOnboarding = useCallback(async () => {
@@ -513,7 +634,9 @@ export function useStore() {
         notifPrefsRaw,
         goalsRaw,
         homeLayoutRaw,
-        totaisLayoutRaw
+        totaisLayoutRaw,
+        wishlistRaw,
+        userSettingsRaw
       ] = await AsyncStorage.multiGet([
           STORAGE_KEYS.TRANSACTIONS,
           STORAGE_KEYS.ACCOUNTS,
@@ -526,6 +649,8 @@ export function useStore() {
           STORAGE_KEYS.GOALS,
           STORAGE_KEYS.HOME_LAYOUT,
           STORAGE_KEYS.TOTAIS_LAYOUT,
+          STORAGE_KEYS.WISHLIST,
+          STORAGE_KEYS.USER_SETTINGS,
         ]);
 
       const loadedTransactions = txRaw[1] ? JSON.parse(txRaw[1]) : DEFAULT_TRANSACTIONS;
@@ -556,6 +681,14 @@ export function useStore() {
 
       if (totaisLayoutRaw && totaisLayoutRaw[1] !== null) {
         setTotaisLayout(JSON.parse(totaisLayoutRaw[1]));
+      }
+
+      if (wishlistRaw && wishlistRaw[1] !== null) {
+        setWishlist(JSON.parse(wishlistRaw[1]));
+      }
+
+      if (userSettingsRaw && userSettingsRaw[1] !== null) {
+        setUserSettings(JSON.parse(userSettingsRaw[1]));
       }
 
       // Re-agendar notificações de despesas e cartões na inicialização
@@ -602,6 +735,8 @@ export function useStore() {
       STORAGE_KEYS.GOALS,
       STORAGE_KEYS.HOME_LAYOUT,
       STORAGE_KEYS.TOTAIS_LAYOUT,
+      STORAGE_KEYS.WISHLIST,
+      STORAGE_KEYS.USER_SETTINGS,
     ]);
     setTransactions(DEFAULT_TRANSACTIONS);
     setAccounts(DEFAULT_ACCOUNTS);
@@ -624,6 +759,8 @@ export function useStore() {
       { id: 'category', visible: true },
       { id: 'period', visible: true },
     ]);
+    setWishlist([]);
+    setUserSettings(DEFAULT_USER_SETTINGS);
   }, []);
 
   const addTag = useCallback(async (tag: Omit<Tag, 'id'>) => {
@@ -1199,7 +1336,6 @@ export function useStore() {
     showPending,
     hasSeenOnboarding,
     completeOnboarding,
-    loading,
     totalBalance,
     addTransaction,
     deleteTransaction,
@@ -1218,6 +1354,16 @@ export function useStore() {
     updateHomeLayout,
     totaisLayout,
     updateTotaisLayout,
+    wishlist,
+    addWishlistItem,
+    editWishlistItem,
+    deleteWishlistItem,
+    markAsBought,
+    calculateAvailableCash,
+    calculateAvailableCashForMonth,
+    evaluateItemAffordability,
+    userSettings,
+    updateUserSettings,
     loading,
   };
 }

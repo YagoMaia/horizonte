@@ -39,11 +39,11 @@ const RECURRENCE_OPTIONS: { value: RecurrenceType; label: string }[] = [
 
 export default function AddTransactionScreen() {
   const router = useRouter();
-  const { accountId: initialAccountId, type: initialTypeStr, txId } = useLocalSearchParams<{ accountId?: string; type?: string; txId?: string }>();
+  const { accountId: initialAccountId, type: initialTypeStr, txId, wishlistId, initialDescription, initialAmount } = useLocalSearchParams<{ accountId?: string; type?: string; txId?: string; wishlistId?: string; initialDescription?: string; initialAmount?: string }>();
   const initialType = initialTypeStr as TransactionType | undefined;
 
   const { colors } = useTheme();
-  const { tags, projects, goals, accounts, transactions, addTransaction, updateTransaction } = useStoreContext();
+  const { tags, projects, goals, accounts, transactions, addTransaction, updateTransaction, markAsBought } = useStoreContext();
   const insets = useSafeAreaInsets();
   
   const transactionToEdit = useMemo(() => transactions.find(t => t.id === txId), [transactions, txId]);
@@ -56,18 +56,18 @@ export default function AddTransactionScreen() {
     return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
   };
 
-  const [type, setType] = useState<TransactionType>(initialType ?? 'despesa');
-  const [description, setDescription] = useState('');
-  const [amount, setAmount] = useState('');
-  const [tag, setTag] = useState<string>('Outros');
-  const [projectId, setProjectId] = useState<string | undefined>(undefined);
-  const [goalId, setGoalId] = useState<string | undefined>(undefined);
-  
   const formatCurrencyMask = (value: string) => {
     const cleanValue = value.replace(/\D/g, '');
     const amountNumber = Number(cleanValue) / 100;
     return amountNumber.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   };
+
+  const [type, setType] = useState<TransactionType>(initialType ?? 'despesa');
+  const [description, setDescription] = useState(initialDescription || '');
+  const [amount, setAmount] = useState(initialAmount ? formatCurrencyMask(String(Math.round(parseFloat(initialAmount) * 100))) : '');
+  const [tag, setTag] = useState<string>('Outros');
+  const [projectId, setProjectId] = useState<string | undefined>(undefined);
+  const [goalId, setGoalId] = useState<string | undefined>(undefined);
 
   const handleAmountChange = (text: string) => setAmount(formatCurrencyMask(text));
 
@@ -303,6 +303,9 @@ export default function AddTransactionScreen() {
       }
     } else {
       addTransaction(txData);
+      if (wishlistId) {
+        markAsBought(wishlistId);
+      }
       router.back();
     }
   };

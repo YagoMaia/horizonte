@@ -1,0 +1,530 @@
+// components/screens/WishlistScreen.tsx
+import React, { useState, useMemo, useCallback } from 'react';
+import {
+  View,
+  Text,
+  FlatList,
+  TouchableOpacity,
+  TextInput,
+  Modal,
+  StyleSheet,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '@/hooks/useTheme';
+import { useStoreContext } from '@/context/StoreContext';
+import { WishlistItem } from '@/constants/types';
+import { WishlistItemCard } from '@/components/wishlist/WishlistItemCard';
+import { useRouter } from 'expo-router';
+
+type FilterType = 'todos' | 'PENDENTE' | 'COMPRADO';
+
+export function WishlistScreen() {
+  const { colors } = useTheme();
+  const router = useRouter();
+  const {
+    wishlist,
+    addWishlistItem,
+    deleteWishlistItem,
+    markAsBought,
+    addTransaction,
+    calculateAvailableCash,
+    userSettings,
+    updateUserSettings,
+    accounts,
+  } = useStoreContext();
+
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+
+  // Add form
+  const [newName, setNewName] = useState('');
+  const [newPrice, setNewPrice] = useState('');
+
+  // Settings form
+  const [settingsDailyAllowance, setSettingsDailyAllowance] = useState('');
+  const [settingsSafetyMargin, setSettingsSafetyMargin] = useState('');
+
+  // Filter
+  const [filter, setFilter] = useState<FilterType>('todos');
+
+  const availableCash = useMemo(() => calculateAvailableCash(), [calculateAvailableCash]);
+
+  const filteredWishlist = useMemo(() => {
+    const sorted = [...wishlist].sort((a, b) => {
+      if (a.status === 'COMPRADO' && b.status !== 'COMPRADO') return 1;
+      if (a.status !== 'COMPRADO' && b.status === 'COMPRADO') return -1;
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
+    if (filter === 'todos') return sorted;
+    return sorted.filter(i => i.status === filter);
+  }, [wishlist, filter]);
+
+  const pendingTotal = useMemo(() => {
+    return wishlist
+      .filter(i => i.status === 'PENDENTE')
+      .reduce((sum, i) => sum + i.price, 0);
+  }, [wishlist]);
+
+  const formatCurrencyMask = (value: string) => {
+    const cleanValue = value.replace(/\D/g, '');
+    const amountNumber = Number(cleanValue) / 100;
+    return amountNumber.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  };
+
+  const parseCurrency = (value: string): number => {
+    return parseFloat(value.replace(/\./g, '').replace(',', '.')) || 0;
+  };
+
+  const handleAddItem = useCallback(() => {
+    const price = parseCurrency(newPrice);
+    if (!newName.trim() || price <= 0) {
+      Alert.alert('Atenção', 'Preencha o nome e um valor válido.');
+      return;
+    }
+    addWishlistItem({ name: newName.trim(), price });
+    setNewName('');
+    setNewPrice('');
+    setShowAddModal(false);
+  }, [newName, newPrice, addWishlistItem]);
+
+  const handleDeleteItem = useCallback((item: WishlistItem) => {
+    Alert.alert(
+      'Remover item',
+      `Deseja remover "${item.name}" da lista de desejos?`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Remover',
+          style: 'destructive',
+          onPress: () => deleteWishlistItem(item.id),
+        },
+      ]
+    );
+  }, [deleteWishlistItem]);
+
+  const handleBuyPress = useCallback((item: WishlistItem) => {
+    const defaultAccount = accounts.find(a => a.type !== 'cartao_credito');
+    router.push({
+      pathname: '/add-transaction',
+      params: {
+        accountId: defaultAccount?.id,
+        type: 'despesa',
+        wishlistId: item.id,
+        initialDescription: item.name,
+        initialAmount: item.price.toString(),
+      }
+    });
+  }, [router, accounts]);
+
+  const handleOpenSettings = useCallback(() => {
+    setSettingsDailyAllowance(
+      userSettings.dailyAllowance > 0
+        ? formatCurrencyMask(String(Math.round(userSettings.dailyAllowance * 100)))
+        : ''
+    );
+    setSettingsSafetyMargin(
+      userSettings.safetyMargin > 0
+        ? formatCurrencyMask(String(Math.round(userSettings.safetyMargin * 100)))
+        : ''
+    );
+    setShowSettingsModal(true);
+  }, [userSettings]);
+
+  const handleSaveSettings = useCallback(() => {
+    updateUserSettings({
+      dailyAllowance: parseCurrency(settingsDailyAllowance),
+      safetyMargin: parseCurrency(settingsSafetyMargin),
+    });
+    setShowSettingsModal(false);
+  }, [settingsDailyAllowance, settingsSafetyMargin, updateUserSettings]);
+
+  const renderHeader = () => (
+    <View style={styles.headerSection}>
+      {/* Budget Card */}
+      <View style={[styles.budgetCard, { backgroundColor: colors.primary + '12', borderColor: colors.primary + '30' }]}>
+        <View style={styles.budgetRow}>
+          <View style={styles.budgetItem}>
+            <Text style={[styles.budgetLabel, { color: colors.mutedForeground }]}>Caixa Disponível</Text>
+            <Text style={[styles.budgetValue, { color: colors.primary }]}>
+              R$ {availableCash.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+            </Text>
+          </View>
+          <View style={[styles.budgetDivider, { backgroundColor: colors.primary + '30' }]} />
+          <View style={styles.budgetItem}>
+            <Text style={[styles.budgetLabel, { color: colors.mutedForeground }]}>Total Pendente</Text>
+            <Text style={[styles.budgetValue, { color: pendingTotal > availableCash ? colors.destructive : colors.success }]}>
+              R$ {pendingTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+            </Text>
+          </View>
+        </View>
+
+        <TouchableOpacity
+          style={[styles.settingsBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+          onPress={handleOpenSettings}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="settings-outline" size={14} color={colors.mutedForeground} />
+          <Text style={[styles.settingsBtnText, { color: colors.mutedForeground }]}>Configurar orçamento</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Filters */}
+      <View style={styles.filterRow}>
+        {([
+          { key: 'todos', label: 'Todos', icon: 'list-outline' },
+          { key: 'PENDENTE', label: 'Pendentes', icon: 'time-outline' },
+          { key: 'COMPRADO', label: 'Comprados', icon: 'checkmark-circle-outline' },
+        ] as { key: FilterType; label: string; icon: string }[]).map(f => (
+          <TouchableOpacity
+            key={f.key}
+            style={[
+              styles.filterChip,
+              { borderColor: colors.border },
+              filter === f.key && { backgroundColor: colors.primary, borderColor: colors.primary },
+            ]}
+            onPress={() => setFilter(f.key)}
+          >
+            <Ionicons
+              name={f.icon as any}
+              size={14}
+              color={filter === f.key ? '#FFF' : colors.mutedForeground}
+            />
+            <Text style={[
+              styles.filterChipText,
+              { color: filter === f.key ? '#FFF' : colors.foreground },
+            ]}>
+              {f.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {/* Add New Item Button */}
+      <TouchableOpacity
+        style={[styles.addBtn, { borderColor: colors.primary, backgroundColor: colors.primary + '10' }]}
+        onPress={() => setShowAddModal(true)}
+        activeOpacity={0.7}
+      >
+        <Ionicons name="add-circle-outline" size={20} color={colors.primary} />
+        <Text style={[styles.addBtnText, { color: colors.primary }]}>Adicionar novo desejo</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
+  const renderEmpty = () => (
+    <View style={styles.emptyState}>
+      <Ionicons name="gift-outline" size={56} color={colors.mutedForeground} />
+      <Text style={[styles.emptyTitle, { color: colors.foreground }]}>Lista vazia</Text>
+      <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
+        Adicione itens que deseja comprar para simular o impacto no seu orçamento.
+      </Text>
+    </View>
+  );
+
+  return (
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <FlatList
+        data={filteredWishlist}
+        keyExtractor={item => item.id}
+        ListHeaderComponent={renderHeader}
+        ListEmptyComponent={renderEmpty}
+        renderItem={({ item }) => (
+          <WishlistItemCard
+            item={item}
+            onBuyPress={handleBuyPress}
+            onDeletePress={handleDeleteItem}
+          />
+        )}
+        contentContainerStyle={styles.listContent}
+        showsVerticalScrollIndicator={false}
+      />
+
+      {/* Add Modal */}
+      <Modal visible={showAddModal} transparent animationType="fade">
+        <View style={styles.overlay}>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+            <View style={[styles.modalBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Text style={[styles.modalTitle, { color: colors.foreground }]}>Novo desejo</Text>
+
+              <View style={styles.modalField}>
+                <Text style={[styles.modalLabel, { color: colors.mutedForeground }]}>Nome do item</Text>
+                <TextInput
+                  style={[styles.modalInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.secondary }]}
+                  value={newName}
+                  onChangeText={setNewName}
+                  placeholder="Ex: iPhone 15, Cadeira Gamer..."
+                  placeholderTextColor={colors.mutedForeground}
+                  autoFocus
+                />
+              </View>
+
+              <View style={styles.modalField}>
+                <Text style={[styles.modalLabel, { color: colors.mutedForeground }]}>Preço estimado</Text>
+                <TextInput
+                  style={[styles.modalInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.secondary }]}
+                  value={newPrice}
+                  onChangeText={t => setNewPrice(formatCurrencyMask(t))}
+                  placeholder="0,00"
+                  placeholderTextColor={colors.mutedForeground}
+                  keyboardType="numeric"
+                />
+              </View>
+
+              <View style={styles.modalActions}>
+                <TouchableOpacity
+                  style={[styles.modalBtn, { backgroundColor: colors.secondary }]}
+                  onPress={() => { setShowAddModal(false); setNewName(''); setNewPrice(''); }}
+                >
+                  <Text style={{ color: colors.foreground, fontWeight: '600' }}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalBtn, { backgroundColor: colors.primary }]}
+                  onPress={handleAddItem}
+                >
+                  <Text style={{ color: '#FFF', fontWeight: '600' }}>Adicionar</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
+
+      {/* Settings Modal */}
+      <Modal visible={showSettingsModal} transparent animationType="fade">
+        <View style={styles.overlay}>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+            <View style={[styles.modalBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Text style={[styles.modalTitle, { color: colors.foreground }]}>Orçamento Base Zero</Text>
+              <Text style={[styles.modalSubtitle, { color: colors.mutedForeground }]}>
+                Configure os valores que serão subtraídos do saldo disponível antes de calcular o que pode ser comprado.
+              </Text>
+
+              <View style={styles.modalField}>
+                <Text style={[styles.modalLabel, { color: colors.mutedForeground }]}>Gasto livre do dia a dia (R$)</Text>
+                <TextInput
+                  style={[styles.modalInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.secondary }]}
+                  value={settingsDailyAllowance}
+                  onChangeText={t => setSettingsDailyAllowance(formatCurrencyMask(t))}
+                  placeholder="0,00"
+                  placeholderTextColor={colors.mutedForeground}
+                  keyboardType="numeric"
+                />
+              </View>
+
+              <View style={styles.modalField}>
+                <Text style={[styles.modalLabel, { color: colors.mutedForeground }]}>Reserva / Margem de segurança (R$)</Text>
+                <TextInput
+                  style={[styles.modalInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.secondary }]}
+                  value={settingsSafetyMargin}
+                  onChangeText={t => setSettingsSafetyMargin(formatCurrencyMask(t))}
+                  placeholder="0,00"
+                  placeholderTextColor={colors.mutedForeground}
+                  keyboardType="numeric"
+                />
+              </View>
+
+              <View style={styles.modalActions}>
+                <TouchableOpacity
+                  style={[styles.modalBtn, { backgroundColor: colors.secondary }]}
+                  onPress={() => setShowSettingsModal(false)}
+                >
+                  <Text style={{ color: colors.foreground, fontWeight: '600' }}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalBtn, { backgroundColor: colors.primary }]}
+                  onPress={handleSaveSettings}
+                >
+                  <Text style={{ color: '#FFF', fontWeight: '600' }}>Salvar</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  listContent: {
+    padding: 16,
+    paddingBottom: 100,
+  },
+  headerSection: {
+    gap: 16,
+    marginBottom: 16,
+  },
+  budgetCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 16,
+    gap: 12,
+  },
+  budgetRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  budgetItem: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 4,
+  },
+  budgetDivider: {
+    width: 1,
+    height: 40,
+    marginHorizontal: 12,
+  },
+  budgetLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  budgetValue: {
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  settingsBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  settingsBtnText: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  filterRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  filterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  filterChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  emptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+    gap: 10,
+  },
+  emptyTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+  },
+  emptyText: {
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 19,
+    paddingHorizontal: 20,
+  },
+  addBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    marginTop: 16,
+  },
+  addBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalBox: {
+    width: 340,
+    borderRadius: 20,
+    padding: 24,
+    borderWidth: 1,
+    gap: 16,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  modalSubtitle: {
+    fontSize: 13,
+    lineHeight: 19,
+    marginTop: -8,
+  },
+  modalField: {
+    gap: 6,
+  },
+  modalLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 12,
+    fontSize: 15,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 4,
+  },
+  modalBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  confirmIcon: {
+    alignSelf: 'center',
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.05)',
+  },
+  confirmItemName: {
+    fontSize: 16,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  confirmItemPrice: {
+    fontSize: 24,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginTop: -4,
+  },
+  confirmDesc: {
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: 'center',
+  },
+});

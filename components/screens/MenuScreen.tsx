@@ -66,11 +66,12 @@ interface MenuScreenProps {
   onNavigateToAccounts: () => void
   onNavigateToProjects: () => void
   onNavigateToMetas: () => void
+  onNavigateToWishlist: () => void
   onNavigateToHomeLayout: () => void
   onNavigateToTotaisLayout: () => void
 }
 
-export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavigateToMetas, onNavigateToHomeLayout, onNavigateToTotaisLayout }: MenuScreenProps) {
+export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavigateToMetas, onNavigateToWishlist, onNavigateToHomeLayout, onNavigateToTotaisLayout }: MenuScreenProps) {
   const { colors, themeMode, setThemeMode, primaryColor, setPrimaryColor } = useTheme()
   // Puxamos a função 'monthlyBudgets' caso você a tenha exportado no StoreContext
   const { 
@@ -423,6 +424,17 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavig
           <Text style={[styles.statValue, { color: colors.foreground }]}>{transactions.length}</Text>
           <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>Lançamentos</Text>
         </View>
+      </View>
+
+      {/* Extras (NOVA SESSÃO) */}
+      <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>EXTRAS</Text>
+      <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <MenuItem
+          icon="gift-outline"
+          label="Simulador de Compras"
+          colors={colors}
+          onPress={onNavigateToWishlist}
+        />
       </View>
 
       {/* Settings - Gerenciamento */}
