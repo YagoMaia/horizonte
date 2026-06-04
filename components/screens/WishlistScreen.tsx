@@ -17,7 +17,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/hooks/useTheme';
 import { useStoreContext } from '@/context/StoreContext';
-import { WishlistItem } from '@/constants/types';
+import { WishlistItem, PaymentPreference } from '@/constants/types';
 import { WishlistItemCard } from '@/components/wishlist/WishlistItemCard';
 import { ItemBreakdownSheet } from '@/components/wishlist/ItemBreakdownSheet';
 import { useRouter } from 'expo-router';
@@ -47,6 +47,9 @@ export function WishlistScreen() {
   const [selectedItemForBreakdown, setSelectedItemForBreakdown] = useState<WishlistItem | null>(null);
   const [currentBreakdownData, setCurrentBreakdownData] = useState<any | null>(null);
   const [targetMonthIndex, setTargetMonthIndex] = useState(new Date().getMonth());
+  const [currentSuggestedMessage, setCurrentSuggestedMessage] = useState<string>('');
+  const [currentAvailableAtPress, setCurrentAvailableAtPress] = useState<number>(0);
+  const [currentCreditData, setCurrentCreditData] = useState<any | null>(null);
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
@@ -55,10 +58,15 @@ export function WishlistScreen() {
   // Add form
   const [newName, setNewName] = useState('');
   const [newPrice, setNewPrice] = useState('');
+  const [newPreference, setNewPreference] = useState<PaymentPreference>('QUALQUER');
+  const [newInstallments, setNewInstallments] = useState<string>('2');
 
   // Settings form
   const [settingsDailyAllowance, setSettingsDailyAllowance] = useState('');
   const [settingsSafetyMargin, setSettingsSafetyMargin] = useState('');
+  const [isSettingsModalVisible, setIsSettingsModalVisible] = useState(false);
+  const [tempMaxSpend, setTempMaxSpend] = useState('');
+  const [tempCreditSafetyMargin, setTempCreditSafetyMargin] = useState('');
 
   // Filter
   const [filter, setFilter] = useState<FilterType>('todos');
@@ -91,17 +99,24 @@ export function WishlistScreen() {
     return parseFloat(value.replace(/\./g, '').replace(',', '.')) || 0;
   };
 
-  const handleAddItem = useCallback(() => {
+  const handleAddItem = useCallback(async () => {
+    if (!newName.trim() || !newPrice.trim()) return;
     const price = parseCurrency(newPrice);
-    if (!newName.trim() || price <= 0) {
-      Alert.alert('Atenção', 'Preencha o nome e um valor válido.');
-      return;
-    }
-    addWishlistItem({ name: newName.trim(), price });
+    if (price <= 0) return;
+
+    await addWishlistItem({
+      name: newName.trim(),
+      price,
+      paymentPreference: newPreference,
+      installments: newPreference === 'CREDITO' ? (parseInt(newInstallments) || 2) : undefined,
+    });
+    
     setNewName('');
     setNewPrice('');
+    setNewPreference('QUALQUER');
+    setNewInstallments('2');
     setShowAddModal(false);
-  }, [newName, newPrice, addWishlistItem]);
+  }, [newName, newPrice, newPreference, newInstallments, addWishlistItem]);
 
   const handleDeleteItem = useCallback((item: WishlistItem) => {
     Alert.alert(
@@ -154,21 +169,31 @@ export function WishlistScreen() {
     setShowSettingsModal(false);
   }, [settingsDailyAllowance, settingsSafetyMargin, updateUserSettings]);
 
+  const handleSaveMaxSpend = useCallback(() => {
+    updateUserSettings({
+      maxMonthlyCreditSpend: Number(tempMaxSpend) || undefined,
+      creditSafetyMargin: Number(tempCreditSafetyMargin) || 0,
+    });
+    setIsSettingsModalVisible(false);
+  }, [tempMaxSpend, tempCreditSafetyMargin, updateUserSettings]);
+
   const handleItemPress = useCallback((item: WishlistItem) => {
     if (item.status === 'COMPRADO') return;
 
-    const { status, bestFutureMonth } = evaluateItemAffordability(item.price);
+    const { status, bestFutureMonth, suggestedMessage, currentAvailable, creditData } = evaluateItemAffordability(item.price, item.paymentPreference, item.installments);
     
     let targetMonth = new Date().getMonth();
     if (status !== 'VERDE' && bestFutureMonth !== undefined) {
       targetMonth = bestFutureMonth;
     }
     
-    const breakdown = getMonthBreakdown(targetMonth, new Date().getFullYear());
-    
     setSelectedItemForBreakdown(item);
-    setCurrentBreakdownData(breakdown);
+    setCurrentBreakdownData(getMonthBreakdown(targetMonth, new Date().getFullYear()));
     setTargetMonthIndex(targetMonth);
+    setCurrentSuggestedMessage(suggestedMessage);
+    setCurrentAvailableAtPress(currentAvailable);
+    setCurrentCreditData(creditData || null);
+    setSelectedItemForBreakdown(item);
     setBreakdownModalVisible(true);
   }, [evaluateItemAffordability, getMonthBreakdown]);
 
@@ -193,6 +218,18 @@ export function WishlistScreen() {
         </View>
 
         <View style={styles.budgetActionRow}>
+          <TouchableOpacity
+            style={[styles.settingsBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+            onPress={() => {
+              setTempMaxSpend(String(userSettings.maxMonthlyCreditSpend || ''));
+              setTempCreditSafetyMargin(String(userSettings.creditSafetyMargin || ''));
+              setIsSettingsModalVisible(true);
+            }}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="settings-outline" size={14} color={colors.mutedForeground} />
+            <Text style={[styles.settingsBtnText, { color: colors.mutedForeground }]}>Teto Fatura</Text>
+          </TouchableOpacity>
           <TouchableOpacity
             style={[styles.settingsBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
             onPress={handleOpenSettings}
@@ -315,10 +352,55 @@ export function WishlistScreen() {
                 />
               </View>
 
+              <View style={styles.modalField}>
+                <Text style={[styles.modalLabel, { color: colors.mutedForeground }]}>Pretende pagar como?</Text>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  {(['QUALQUER', 'DEBITO', 'CREDITO'] as PaymentPreference[]).map(pref => (
+                    <TouchableOpacity
+                      key={pref}
+                      style={[
+                        { flex: 1, paddingVertical: 8, borderRadius: 8, borderWidth: 1, alignItems: 'center' },
+                        newPreference === pref 
+                          ? { backgroundColor: colors.primary, borderColor: colors.primary } 
+                          : { backgroundColor: colors.secondary, borderColor: colors.border }
+                      ]}
+                      onPress={() => setNewPreference(pref)}
+                    >
+                      <Text style={{ 
+                        fontSize: 12, 
+                        fontWeight: '600', 
+                        color: newPreference === pref ? '#FFF' : colors.foreground 
+                      }}>
+                        {pref === 'QUALQUER' ? 'Tanto Faz' : pref === 'DEBITO' ? 'À Vista' : 'Crédito'}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+
+              {newPreference === 'CREDITO' && (
+                <View style={styles.modalField}>
+                  <Text style={[styles.modalLabel, { color: colors.mutedForeground }]}>Quantidade de Parcelas</Text>
+                  <TextInput
+                    style={[styles.modalInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.secondary }]}
+                    value={newInstallments}
+                    onChangeText={setNewInstallments}
+                    placeholder="Ex: 4"
+                    placeholderTextColor={colors.mutedForeground}
+                    keyboardType="numeric"
+                  />
+                  {parseCurrency(newPrice) > 0 && parseInt(newInstallments) > 0 && (
+                    <Text style={{ marginTop: 6, fontSize: 13, color: colors.primary, fontWeight: '500' }}>
+                      Valor da parcela: {parseInt(newInstallments)}x de R$ {(parseCurrency(newPrice) / parseInt(newInstallments)).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </Text>
+                  )}
+                </View>
+              )}
+
               <View style={styles.modalActions}>
                 <TouchableOpacity
                   style={[styles.modalBtn, { backgroundColor: colors.secondary }]}
-                  onPress={() => { setShowAddModal(false); setNewName(''); setNewPrice(''); }}
+                  onPress={() => { setShowAddModal(false); setNewName(''); setNewPrice(''); setNewPreference('QUALQUER'); setNewInstallments('2'); }}
                 >
                   <Text style={{ color: colors.foreground, fontWeight: '600' }}>Cancelar</Text>
                 </TouchableOpacity>
@@ -418,50 +500,6 @@ export function WishlistScreen() {
                   </View>
                 );
               })}
-
-              <Text style={[styles.modalSubtitle, { color: colors.foreground, marginTop: 16, marginBottom: 8, fontWeight: '600' }]}>
-                Cartão de Crédito (Simulação de Limite)
-              </Text>
-              
-              <TouchableOpacity
-                style={[styles.accountItem, { borderBottomColor: colors.border }]}
-                onPress={() => selectSimulatorCreditCard(null)}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.accountName, { color: colors.foreground }]}>Nenhum cartão</Text>
-                  <Text style={[styles.accountBalance, { color: colors.mutedForeground }]}>
-                    Não simular limite de crédito
-                  </Text>
-                </View>
-                <Ionicons 
-                  name={userSettings.simulatorSelectedCreditCardId === null || userSettings.simulatorSelectedCreditCardId === undefined ? "radio-button-on" : "radio-button-off"} 
-                  size={24} 
-                  color={userSettings.simulatorSelectedCreditCardId === null || userSettings.simulatorSelectedCreditCardId === undefined ? colors.primary : colors.mutedForeground} 
-                />
-              </TouchableOpacity>
-
-              {accounts.filter(a => a.type === 'cartao_credito').map(item => {
-                const isSelected = userSettings.simulatorSelectedCreditCardId === item.id;
-                return (
-                  <TouchableOpacity
-                    key={item.id}
-                    style={[styles.accountItem, { borderBottomColor: colors.border }]}
-                    onPress={() => selectSimulatorCreditCard(item.id)}
-                  >
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.accountName, { color: colors.foreground }]}>{item.name}</Text>
-                      <Text style={[styles.accountBalance, { color: colors.mutedForeground }]}>
-                        Limite Total: R$ {item.creditLimit ? item.creditLimit.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : '0,00'}
-                      </Text>
-                    </View>
-                    <Ionicons 
-                      name={isSelected ? "radio-button-on" : "radio-button-off"} 
-                      size={24} 
-                      color={isSelected ? colors.primary : colors.mutedForeground} 
-                    />
-                  </TouchableOpacity>
-                );
-              })}
             </ScrollView>
 
             <View style={styles.modalActions}>
@@ -476,12 +514,67 @@ export function WishlistScreen() {
         </View>
       </Modal>
 
+      {/* Teto Fatura Modal */}
+      <Modal visible={isSettingsModalVisible} transparent animationType="fade">
+        <View style={styles.overlay}>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+            <View style={[styles.modalBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Text style={[styles.modalTitle, { color: colors.foreground }]}>Configurações do Simulador</Text>
+              <Text style={[styles.modalSubtitle, { color: colors.mutedForeground }]}>
+                Defina o valor máximo que você aceita pagar por mês na soma das suas faturas de cartão de crédito.
+              </Text>
+
+              <View style={styles.modalField}>
+                <TextInput
+                  style={[styles.modalInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.secondary }]}
+                  value={tempMaxSpend}
+                  onChangeText={setTempMaxSpend}
+                  placeholder="Teto (Ex: 1500)"
+                  placeholderTextColor={colors.mutedForeground}
+                  keyboardType="numeric"
+                />
+              </View>
+
+              <View style={styles.modalField}>
+                <Text style={[styles.modalLabel, { color: colors.mutedForeground, marginTop: 10 }]}>Margem de Segurança da Fatura (R$)</Text>
+                <TextInput
+                  style={[styles.modalInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.secondary }]}
+                  value={tempCreditSafetyMargin}
+                  onChangeText={setTempCreditSafetyMargin}
+                  placeholder="Ex: 200"
+                  placeholderTextColor={colors.mutedForeground}
+                  keyboardType="numeric"
+                />
+              </View>
+
+              <View style={styles.modalActions}>
+                <TouchableOpacity
+                  style={[styles.modalBtn, { backgroundColor: colors.secondary }]}
+                  onPress={() => setIsSettingsModalVisible(false)}
+                >
+                  <Text style={{ color: colors.foreground, fontWeight: '600' }}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalBtn, { backgroundColor: colors.primary }]}
+                  onPress={handleSaveMaxSpend}
+                >
+                  <Text style={{ color: '#FFF', fontWeight: '600' }}>Salvar</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
+
       <ItemBreakdownSheet
         isVisible={breakdownModalVisible}
         onClose={() => setBreakdownModalVisible(false)}
         item={selectedItemForBreakdown}
         breakdownData={currentBreakdownData}
         targetMonthIndex={targetMonthIndex}
+        suggestedMessage={currentSuggestedMessage}
+        currentAvailable={currentAvailableAtPress}
+        creditData={currentCreditData}
       />
     </View>
   );

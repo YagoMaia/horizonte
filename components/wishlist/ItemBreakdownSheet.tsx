@@ -27,6 +27,14 @@ interface ItemBreakdownSheetProps {
   item: WishlistItem | null;
   breakdownData: BreakdownData | null;
   targetMonthIndex: number;
+  suggestedMessage?: string;
+  currentAvailable?: number;
+  creditData?: {
+    maxCreditSpend: number;
+    currentMonthBill: number;
+    installmentValue: number;
+    installments: number;
+  } | null;
 }
 
 const MONTH_NAMES = [
@@ -40,6 +48,9 @@ export function ItemBreakdownSheet({
   item,
   breakdownData,
   targetMonthIndex,
+  suggestedMessage,
+  currentAvailable = 0,
+  creditData,
 }: ItemBreakdownSheetProps) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
@@ -111,41 +122,41 @@ export function ItemBreakdownSheet({
               </View>
 
               <View style={styles.invoiceList}>
-                <View style={styles.invoiceRow}>
-                  <Text style={[styles.invoiceLabel, { color: colors.foreground }]}>💰 Saldo Atual Contas</Text>
-                  <Text style={[styles.invoiceValue, { color: colors.foreground }]}>
-                    {initialBalance >= 0 ? '' : '-'}{formatMoney(initialBalance)}
+                {/* Explanation Box */}
+                <View style={[styles.explanationBox, { backgroundColor: currentAvailable >= item.price ? colors.primary + '15' : colors.destructive + '15', borderColor: currentAvailable >= item.price ? colors.primary + '30' : colors.destructive + '30' }]}>
+                  <View style={styles.explanationHeader}>
+                    <Ionicons name="information-circle" size={20} color={currentAvailable >= item.price ? colors.primary : colors.destructive} />
+                    <Text style={[styles.explanationTitle, { color: colors.foreground }]}>O que isso significa?</Text>
+                  </View>
+                  <Text style={[styles.explanationText, { color: colors.foreground }]}>
+                    {suggestedMessage}
                   </Text>
-                </View>
-
-                <View style={styles.invoiceRow}>
-                  <Text style={[styles.invoiceLabel, { color: colors.foreground }]}>📈 Entradas Futuras</Text>
-                  <Text style={[styles.invoiceValue, { color: '#10B981' }]}>
-                    + {formatMoney(projectedRevenues)}
-                  </Text>
-                </View>
-
-                <View style={styles.invoiceRow}>
-                  <Text style={[styles.invoiceLabel, { color: colors.foreground }]}>📉 Saídas e Faturas</Text>
-                  <Text style={[styles.invoiceValue, { color: '#EF4444' }]}>
-                    - {formatMoney(projectedExpenses)}
-                  </Text>
-                </View>
-
-                <View style={styles.invoiceRow}>
-                  <Text style={[styles.invoiceLabel, { color: colors.foreground }]}>🛡️ Custo de Vida / Margem</Text>
-                  <Text style={[styles.invoiceValue, { color: '#F59E0B' }]}>
-                    - {formatMoney(totalDailyAllowance + totalSafetyMargin)}
-                  </Text>
-                </View>
-
-                <View style={[styles.separator, { backgroundColor: colors.border }]} />
-
-                <View style={styles.invoiceRowTotal}>
-                  <Text style={[styles.invoiceTotalLabel, { color: colors.foreground }]}>✨ Caixa Livre Projetado</Text>
-                  <Text style={[styles.invoiceTotalValue, { color: highlightColor }]}>
-                    {rawAvailable >= 0 ? '' : '-'}{formatMoney(rawAvailable)}
-                  </Text>
+                  
+                  <View style={{ marginTop: 8 }}>
+                    {creditData && (
+                      <>
+                        <Text style={[styles.explanationText, { color: colors.mutedForeground, marginTop: 4 }]}>
+                          • Valor da parcela ({creditData.installments}x): <Text style={{ fontWeight: '600', color: colors.foreground }}>{formatMoney(creditData.installmentValue)}</Text>
+                        </Text>
+                        <Text style={[styles.explanationText, { color: colors.mutedForeground }]}>
+                          • Teto do Cartão Mensal: <Text style={{ fontWeight: '600', color: colors.foreground }}>{creditData.maxCreditSpend === Infinity ? 'Sem Teto' : formatMoney(creditData.maxCreditSpend)}</Text>
+                        </Text>
+                        {creditData.creditSafetyMargin > 0 && creditData.maxCreditSpend !== Infinity && (
+                          <Text style={[styles.explanationText, { color: colors.mutedForeground }]}>
+                            • Margem de Segurança (Reservado): <Text style={{ fontWeight: '600', color: colors.foreground }}>{formatMoney(creditData.creditSafetyMargin)}</Text> (Teto Útil: {formatMoney(creditData.effectiveMaxCreditSpend)})
+                          </Text>
+                        )}
+                        <Text style={[styles.explanationText, { color: colors.mutedForeground }]}>
+                          • Fatura Mensal Já Comprometida: <Text style={{ fontWeight: '600', color: colors.foreground }}>{formatMoney(creditData.currentMonthBill)}</Text>
+                        </Text>
+                        {creditData.currentMonthBill + creditData.installmentValue > creditData.maxCreditSpend && (
+                          <Text style={[styles.explanationText, { color: colors.destructive, fontWeight: '600', marginTop: 4 }]}>
+                            A parcela de {formatMoney(creditData.installmentValue)} somada à sua fatura ({formatMoney(creditData.currentMonthBill)}) supera o seu Teto de {formatMoney(creditData.maxCreditSpend)}.
+                          </Text>
+                        )}
+                      </>
+                    )}
+                  </View>
                 </View>
               </View>
 
@@ -234,5 +245,25 @@ const styles = StyleSheet.create({
   invoiceTotalValue: {
     fontSize: 18,
     fontWeight: '800',
+  },
+  explanationBox: {
+    marginTop: 16,
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  explanationHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  explanationTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  explanationText: {
+    fontSize: 14,
+    lineHeight: 20,
   },
 });

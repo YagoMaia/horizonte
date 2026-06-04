@@ -1,9 +1,10 @@
 // hooks/useStore.ts
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Transaction, Account, Tag, DEFAULT_TAGS, Project, NotificationPreferences, WishlistItem, UserSettings } from '@/constants/types';
+import { Transaction, Account, Tag, DEFAULT_TAGS, Project, NotificationPreferences, WishlistItem, UserSettings, PaymentPreference } from '@/constants/types';
 import * as NotificationService from '../services/notificationService';
 import { addMonths, addYears, addWeeks, addDays, setDate } from 'date-fns';
+import { getInvoiceForTx } from '@/lib/utils';
 
 const STORAGE_KEYS = {
   TRANSACTIONS: '@horizonte:transactions',
@@ -437,7 +438,7 @@ export function useStore() {
     };
   }, [accounts, transactions, userSettings]);
 
-  const evaluateItemAffordability = useCallback((itemPrice: number | string) => {
+  const evaluateItemAffordability = useCallback((itemPrice: number | string, preference: PaymentPreference = 'QUALQUER', userInstallments?: number) => {
     // Higienizador: Remove 'R$', espaços, converte vírgula para ponto e faz o parse seguro
     const cleanPrice = (val: number | string): number => {
       if (typeof val === 'number') return val;
@@ -453,11 +454,9 @@ export function useStore() {
     const currentMonth = now.getMonth();
     const currentYear = now.getFullYear();
     const currentAvailable = calculateAvailableCashForMonth(currentMonth, currentYear);
-
-    console.log(`\n🩺 [DIAGNÓSTICO] Item: ${price} | Caixa Livre Hoje: ${currentAvailable} | Tipo do Preço: ${typeof price}`);
   
     // 1. Dinheiro Livre Agora (A_VISTA)
-    if (price <= currentAvailable) {
+    if (preference !== 'CREDITO' && price <= currentAvailable) {
       return {
         status: 'VERDE',
         suggestedMethod: 'A_VISTA',
@@ -467,18 +466,16 @@ export function useStore() {
       };
     }
   
-    // --- TRAVA FÍSICA: CÁLCULO DE LIMITE DE CRÉDITO DISPONÍVEL ---
-    const creditCards = accounts.filter(a => a.type === 'cartao_credito');
-    const totalCreditLimit = creditCards.reduce((sum, card) => sum + (card.creditLimit || 0), 0);
-    const usedCredit = transactions.reduce((sum, tx) => {
-      if (!tx.paid && creditCards.some(c => c.id === tx.accountId) && tx.type !== 'receita') {
-        return sum + tx.amount;
-      }
-      return sum;
-    }, 0);
-    const totalAvailableCredit = Math.max(0, totalCreditLimit - usedCredit);
-    // -------------------------------------------------------------
-  
+    // --- TRAVA COMPORTAMENTAL: TETO DE FATURA ---
+    const maxCreditSpend = userSettings.maxMonthlyCreditSpend !== undefined && userSettings.maxMonthlyCreditSpend > 0 
+      ? userSettings.maxMonthlyCreditSpend 
+      : Infinity;
+
+    const creditSafetyMargin = userSettings.creditSafetyMargin || 0;
+    const effectiveMaxCreditSpend = maxCreditSpend === Infinity ? Infinity : maxCreditSpend - creditSafetyMargin;
+
+    const creditCardIds = accounts.filter(a => a.type === 'cartao_credito').map(c => c.id);
+
     // Lógica para virada de mês/ano segura
     let nextMonth = currentMonth + 1;
     let nextMonthYear = currentYear;
@@ -486,33 +483,130 @@ export function useStore() {
       nextMonth = 0;
       nextMonthYear++;
     }
+
+    const getCreditBillForMonth = (targetMonth: number, targetYear: number) => {
+      let total = 0;
+      transactions.forEach(tx => {
+        if (!tx.paid && tx.type !== 'receita' && creditCardIds.includes(tx.accountId)) {
+          const account = accounts.find(a => a.id === tx.accountId);
+          if (account) {
+            const invoice = getInvoiceForTx(tx.date, account);
+            if (invoice.viewMonth === targetMonth && invoice.viewYear === targetYear) {
+              total += tx.amount;
+            }
+          }
+        }
+      });
+      return total;
+    };
+
+    const nextMonthBill = getCreditBillForMonth(nextMonth, nextMonthYear);
+    const currentMonthBill = getCreditBillForMonth(currentMonth, currentYear);
     
     const nextMonthAvailable = calculateAvailableCashForMonth(nextMonth, nextMonthYear);
   
-    // 2. Cartão de Crédito (CARTAO_1X) - Verifica Fluxo E Limite
-    if (price <= nextMonthAvailable && price <= totalAvailableCredit) {
+    // 2. Cartão de Crédito (CARTAO_1X) - Verifica Fluxo E Limite (apenas para QUALQUER)
+    if (preference === 'QUALQUER' && price <= nextMonthAvailable && (price + nextMonthBill) <= effectiveMaxCreditSpend && (price + currentMonthBill) <= effectiveMaxCreditSpend) {
       return {
         status: 'VERDE',
         suggestedMethod: 'CARTAO_1X',
-        suggestedMessage: 'Compre no Crédito hoje. Seu fluxo de caixa cobre a fatura no mês que vem.',
+        suggestedMessage: 'Compre no Crédito hoje em 1x. Seu fluxo de caixa cobre a fatura.',
         bestFutureMonth: nextMonth,
         currentAvailable
       };
     }
   
-    // 3. Parcelamento Seguro (PARCELADO)
+    // 3. Lógica específica para quando o usuário escolhe CREDITO
+    if (preference === 'CREDITO') {
+      const installments = userInstallments && userInstallments >= 2 ? userInstallments : 2;
+      const installmentValue = price / installments;
+      
+      let bestFutureMonthForInstallments: number | undefined;
+      let bestFutureYearForInstallments: number | undefined;
+      let startOffsetThatWorked = -1;
+
+      for (let startOffset = 0; startOffset <= 24; startOffset++) {
+        let targetStartM = currentMonth + startOffset;
+        let targetStartY = currentYear;
+        while (targetStartM > 11) {
+          targetStartM -= 12;
+          targetStartY++;
+        }
+
+        let isSafe = true;
+        for (let i = 0; i < installments; i++) {
+          let m = targetStartM + i;
+          let y = targetStartY;
+          while (m > 11) {
+            m -= 12;
+            y++;
+          }
+          
+          const monthBill = getCreditBillForMonth(m, y);
+          if ((installmentValue + monthBill) > effectiveMaxCreditSpend) {
+            isSafe = false;
+            break;
+          }
+
+          const monthAvailable = calculateAvailableCashForMonth(m, y);
+          const accumulatedInstallmentCost = installmentValue * (i + 1);
+  
+          if (accumulatedInstallmentCost > monthAvailable) {
+            isSafe = false;
+            break;
+          }
+        }
+
+        if (isSafe) {
+          bestFutureMonthForInstallments = targetStartM;
+          bestFutureYearForInstallments = targetStartY;
+          startOffsetThatWorked = startOffset;
+          break;
+        }
+      }
+
+      if (startOffsetThatWorked === 0) {
+        return {
+          status: 'VERDE',
+          suggestedMethod: 'PARCELADO',
+          suggestedMessage: `Pode comprar hoje parcelado em ${installments}x de R$ ${installmentValue.toFixed(2)} com total segurança.`,
+          bestFutureMonth: undefined,
+          currentAvailable,
+          creditData: { maxCreditSpend, creditSafetyMargin, currentMonthBill, installmentValue, installments, effectiveMaxCreditSpend }
+        };
+      } else if (startOffsetThatWorked > 0 && bestFutureMonthForInstallments !== undefined) {
+        const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+        return {
+          status: 'AMARELO',
+          suggestedMethod: 'PARCELADO',
+          suggestedMessage: `Aguarde para comprar no cartão em ${monthNames[bestFutureMonthForInstallments]} de ${bestFutureYearForInstallments}. Assim, as parcelas de ${installments}x ficarão seguras.`,
+          bestFutureMonth: bestFutureMonthForInstallments,
+          currentAvailable,
+          creditData: { maxCreditSpend, creditSafetyMargin, currentMonthBill: getCreditBillForMonth(bestFutureMonthForInstallments, bestFutureYearForInstallments), installmentValue, installments, effectiveMaxCreditSpend }
+        };
+      } else {
+        return {
+          status: 'VERMELHO',
+          suggestedMethod: 'CREDITO_RECUSADO',
+          suggestedMessage: `Parcelamento recusado. O valor de ${installments}x estoura o seu Teto do Cartão mensal (já descontada a margem) ou o seu fluxo de caixa não comporta essas parcelas nem mesmo no futuro.`,
+          bestFutureMonth: undefined,
+          currentAvailable,
+          creditData: { maxCreditSpend, creditSafetyMargin, currentMonthBill, installmentValue, installments, effectiveMaxCreditSpend }
+        };
+      }
+    }
+
+    // 4. Parcelamento Seguro Automático (apenas para QUALQUER)
     let canInstallment = false;
     let bestInstallments = 0;
     let bestInstallmentValue = 0;
   
-    // Só tenta calcular parcelas se o valor total couber no limite do cartão
-    if (price <= totalAvailableCredit) {
+    if (preference === 'QUALQUER') {
       for (let parcels = 2; parcels <= 12; parcels++) {
         const installmentValue = price / parcels;
         let isSafe = true;
-  
-        // Verifica se a parcela acumulada cabe EM TODOS os meses projetados
-        for (let i = 1; i <= parcels; i++) {
+        
+        for (let i = 0; i < parcels; i++) {
           let m = currentMonth + i;
           let y = currentYear;
           while (m > 11) {
@@ -520,14 +614,18 @@ export function useStore() {
             y++;
           }
           
+          const monthBill = getCreditBillForMonth(m, y);
+          if ((installmentValue + monthBill) > effectiveMaxCreditSpend) {
+            isSafe = false;
+            break;
+          }
+
           const monthAvailable = calculateAvailableCashForMonth(m, y);
-          
-          // CORREÇÃO MATEMÁTICA: Avalia o peso acumulado das parcelas até o mês atual simulado
-          const accumulatedInstallmentCost = installmentValue * i;
+          const accumulatedInstallmentCost = installmentValue * (i + 1);
   
           if (accumulatedInstallmentCost > monthAvailable) {
             isSafe = false;
-            break; // Aborta para essa quantidade de parcelas
+            break;
           }
         }
   
@@ -535,7 +633,7 @@ export function useStore() {
           canInstallment = true;
           bestInstallments = parcels;
           bestInstallmentValue = installmentValue;
-          break; // Encontrou o cenário ideal, para de procurar
+          break;
         }
       }
     }
@@ -544,13 +642,13 @@ export function useStore() {
       return {
         status: 'AMARELO',
         suggestedMethod: 'PARCELADO',
-        suggestedMessage: `Pode ser parcelado de forma segura em até ${bestInstallments}x de R$ ${bestInstallmentValue.toFixed(2)}.`,
+        suggestedMessage: `Pode ser parcelado de forma segura hoje em até ${bestInstallments}x de R$ ${bestInstallmentValue.toFixed(2)}.`,
         bestFutureMonth: undefined,
         currentAvailable
       };
     }
   
-    // 4. Necessidade de Poupar (POUPAR)
+    // 5. Necessidade de Poupar (POUPAR) para compra à vista (usado se QUALQUER ou DEBITO falharem hoje)
     let bestFutureMonth: number | undefined;
     let bestFutureYear: number | undefined;
   
@@ -575,7 +673,7 @@ export function useStore() {
     return {
       status: 'VERMELHO',
       suggestedMethod: 'POUPAR',
-      suggestedMessage: `Sem margem (ou limite). Guarde dinheiro e compre à vista em ${monthText}.`,
+      suggestedMessage: `Sem margem. Guarde dinheiro e compre à vista em ${monthText}.`,
       bestFutureMonth,
       currentAvailable
     };

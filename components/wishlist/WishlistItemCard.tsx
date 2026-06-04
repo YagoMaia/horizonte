@@ -24,7 +24,7 @@ export function WishlistItemCard({ item, onBuyPress, onDeletePress, onPress }: W
   const { evaluateItemAffordability } = useStoreContext();
   
   const isBought = item.status === 'COMPRADO';
-  const { status, bestFutureMonth, suggestedMethod, suggestedMessage } = evaluateItemAffordability(item.price);
+  const { status, bestFutureMonth, suggestedMethod, suggestedMessage } = evaluateItemAffordability(item.price, item.paymentPreference, item.installments);
 
   let borderColor = '#9CA3AF';
   let statusLabel = 'Comprado';
@@ -49,48 +49,43 @@ export function WishlistItemCard({ item, onBuyPress, onDeletePress, onPress }: W
       activeOpacity={onPress ? 0.7 : 1}
       disabled={!onPress}
     >
-      <View style={styles.contentRow}>
-        <View style={styles.info}>
-          <Text
-            style={[styles.name, { color: isBought ? colors.mutedForeground : colors.foreground }]}
-            numberOfLines={1}
-          >
-            {item.name}
-          </Text>
-          <Text style={[styles.price, { color: isBought ? colors.mutedForeground : colors.primary }]}>
-            R$ {item.price.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </Text>
-          <View style={[styles.badge, { backgroundColor: borderColor + '18' }]}>
-            <View style={[styles.badgeDot, { backgroundColor: borderColor }]} />
-            <Text style={[styles.badgeText, { color: borderColor }]}>{statusLabel}</Text>
-          </View>
-          
-          {!isBought && suggestedMessage && (
-            <Text style={[styles.hintText, { color: colors.mutedForeground }]}>
-              {suggestedMessage}
-            </Text>
-          )}
+      {/* Header Row */}
+      <View style={styles.headerRow}>
+        <Text style={[styles.name, { color: isBought ? colors.mutedForeground : colors.foreground }]} numberOfLines={1}>
+          {item.name}
+        </Text>
+        <View style={[styles.badge, { backgroundColor: borderColor + '18' }]}>
+          <View style={[styles.badgeDot, { backgroundColor: borderColor }]} />
+          <Text style={[styles.badgeText, { color: borderColor }]}>{statusLabel}</Text>
         </View>
+      </View>
 
-        <View style={styles.actions}>
-          {!isBought && (
-            <TouchableOpacity
-              style={[styles.buyBtn, { backgroundColor: colors.primary }]}
-              onPress={() => onBuyPress(item)}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="cart-outline" size={16} color="#FFF" />
-              <Text style={styles.buyBtnText}>Comprar</Text>
-            </TouchableOpacity>
-          )}
-          <TouchableOpacity
-            style={[styles.deleteBtn, { backgroundColor: colors.destructive + '15' }]}
-            onPress={() => onDeletePress(item)}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="trash-outline" size={16} color={colors.destructive} />
-          </TouchableOpacity>
+      {/* Price Row */}
+      <Text style={[styles.price, { color: isBought ? colors.mutedForeground : colors.primary }]}>
+        R$ {item.price.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+      </Text>
+
+      {/* Insight Box */}
+      {!isBought && suggestedMessage && (
+        <View style={[styles.insightBox, { backgroundColor: colors.foreground + '0D' }]}>
+          <Text style={styles.insightIcon}>💡</Text>
+          <Text style={[styles.hintText, { color: colors.mutedForeground }]}>
+            {suggestedMessage}
+          </Text>
         </View>
+      )}
+
+      {/* Action Row / Footer */}
+      <View style={styles.footerRow}>
+        <TouchableOpacity
+          style={[styles.deleteBtn, { backgroundColor: colors.destructive + '15' }]}
+          onPress={() => onDeletePress(item)}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="trash-outline" size={16} color={colors.destructive} />
+        </TouchableOpacity>
+
+
       </View>
     </TouchableOpacity>
   );
@@ -104,33 +99,25 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 10,
   },
-  contentRow: {
+  headerRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
     justifyContent: 'space-between',
-  },
-  info: {
-    flex: 1,
-    marginRight: 12,
-    gap: 4,
+    alignItems: 'center',
+    marginBottom: 4,
   },
   name: {
+    flex: 1,
+    marginRight: 8,
     fontSize: 15,
     fontWeight: '600',
-  },
-  price: {
-    fontSize: 18,
-    fontWeight: '700',
   },
   badge: {
     flexDirection: 'row',
     alignItems: 'center',
-    alignSelf: 'flex-start',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 10,
     gap: 5,
-    marginTop: 2,
   },
   badgeDot: {
     width: 6,
@@ -141,10 +128,33 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
   },
-  actions: {
+  price: {
+    fontSize: 22,
+    fontWeight: '700',
+    marginBottom: 12,
+  },
+  insightBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  insightIcon: {
+    fontSize: 14,
+    marginRight: 6,
+  },
+  hintText: {
+    flex: 1,
+    fontSize: 12,
+    fontStyle: 'normal',
+    lineHeight: 16,
+  },
+  footerRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    gap: 12,
   },
   buyBtn: {
     flexDirection: 'row',
@@ -162,10 +172,5 @@ const styles = StyleSheet.create({
   deleteBtn: {
     padding: 8,
     borderRadius: 10,
-  },
-  hintText: {
-    fontSize: 11,
-    marginTop: 4,
-    fontStyle: 'italic',
   },
 });

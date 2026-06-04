@@ -88,6 +88,7 @@ export interface Tag {
 }
 
 export type WishlistItemStatus = 'PENDENTE' | 'COMPRADO';
+export type PaymentPreference = 'DEBITO' | 'CREDITO' | 'QUALQUER';
 
 export interface WishlistItem {
   id: string;
@@ -95,6 +96,8 @@ export interface WishlistItem {
   price: number;
   status: WishlistItemStatus;
   createdAt: string;
+  paymentPreference?: PaymentPreference;
+  installments?: number;
 }
 
 export interface UserSettings {
@@ -102,6 +105,8 @@ export interface UserSettings {
   safetyMargin: number;
   simulatorIncludedAccounts?: string[];
   simulatorSelectedCreditCardId?: string | null;
+  maxMonthlyCreditSpend?: number;
+  creditSafetyMargin?: number;
 }
 
 export interface NotificationPreferences {
