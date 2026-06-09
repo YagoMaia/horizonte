@@ -9,7 +9,6 @@ import {
   Alert,
   Platform,
   Modal,
-  Switch,
 } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { useTheme } from '@/hooks/useTheme'
@@ -20,7 +19,6 @@ import * as Sharing from 'expo-sharing'
 import * as DocumentPicker from 'expo-document-picker'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { PRIMARY_COLORS } from '@/constants/theme'
-import { useAuthContext } from '@/context/AuthContext'
 
 interface MenuItemProps {
   icon: string
@@ -66,29 +64,9 @@ export function MenuScreen({ }: MenuScreenProps) {
   const { colors, themeMode, setThemeMode, primaryColor, setPrimaryColor } = useTheme()
   // Puxamos a função 'monthlyBudgets' caso você a tenha exportado no StoreContext
   const { accounts, transactions, monthlyBudgets, totalBalance, clearAllData } = useStoreContext()
-  const { isLockEnabled, hasBiometrics, setLockEnabled } = useAuthContext()
 
   const [themeModalVisible, setThemeModalVisible] = useState(false)
   const [colorModalVisible, setColorModalVisible] = useState(false)
-  const [lockToggleLoading, setLockToggleLoading] = useState(false)
-
-  const handleToggleLock = async (value: boolean) => {
-    setLockToggleLoading(true)
-    try {
-      const success = await setLockEnabled(value)
-      if (!success && value) {
-        // Authentication failed when trying to enable
-        Alert.alert(
-          'Autenticação necessária',
-          'Você precisa se autenticar para ativar o bloqueio do aplicativo.'
-        )
-      }
-    } catch (e) {
-      Alert.alert('Erro', 'Não foi possível alterar a configuração de segurança.')
-    } finally {
-      setLockToggleLoading(false)
-    }
-  }
 
   const themeModeLabel = {
     light: 'Claro',
@@ -403,31 +381,6 @@ export function MenuScreen({ }: MenuScreenProps) {
         </View>
         <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
           <MenuItem icon="cash-outline" label="Moeda" value="BRL (R$)" colors={colors} />
-        </View>
-      </View>
-
-      {/* Segurança */}
-      <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>SEGURANÇA</Text>
-      <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <View style={styles.menuItem}>
-          <View style={[styles.menuIcon, { backgroundColor: colors.primary + '20' }]}>
-            <Ionicons name="finger-print" size={18} color={colors.primary} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.menuLabel, { color: colors.foreground }]}>
-              Bloqueio com biometria
-            </Text>
-            <Text style={{ color: colors.mutedForeground, fontSize: 12, marginTop: 2 }}>
-              {hasBiometrics ? 'Biometria ou senha do dispositivo' : 'Senha do dispositivo'}
-            </Text>
-          </View>
-          <Switch
-            value={isLockEnabled}
-            onValueChange={handleToggleLock}
-            disabled={lockToggleLoading}
-            trackColor={{ false: colors.border, true: colors.primary + '60' }}
-            thumbColor={isLockEnabled ? colors.primary : colors.mutedForeground}
-          />
         </View>
       </View>
 
