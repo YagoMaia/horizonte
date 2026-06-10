@@ -500,20 +500,29 @@ export function useStore() {
       return total;
     };
 
-    const nextMonthBill = getCreditBillForMonth(nextMonth, nextMonthYear);
+    // Cartão representativo para mapear datas de compra → mês real da fatura
+    const representativeCard = accounts.find(a => a.type === 'cartao_credito') || { closingDay: 25, dueDay: 5 };
+
     const currentMonthBill = getCreditBillForMonth(currentMonth, currentYear);
-    
-    const nextMonthAvailable = calculateAvailableCashForMonth(nextMonth, nextMonthYear);
   
     // 2. Cartão de Crédito (CARTAO_1X) - Verifica Fluxo E Limite (apenas para QUALQUER)
-    if (preference === 'QUALQUER' && price <= nextMonthAvailable && (price + nextMonthBill) <= effectiveMaxCreditSpend && (price + currentMonthBill) <= effectiveMaxCreditSpend) {
-      return {
-        status: 'VERDE',
-        suggestedMethod: 'CARTAO_1X',
-        suggestedMessage: 'Compre no Crédito hoje em 1x. Seu fluxo de caixa cobre a fatura.',
-        bestFutureMonth: nextMonth,
-        currentAvailable
-      };
+    if (preference === 'QUALQUER') {
+      // Mapeia a compra de hoje para a fatura real usando closingDay/dueDay
+      const todayInvoice = getInvoiceForTx(now.toISOString(), representativeCard);
+      const invoiceMonth1x = todayInvoice.viewMonth;
+      const invoiceYear1x = todayInvoice.viewYear;
+      const invoiceBill1x = getCreditBillForMonth(invoiceMonth1x, invoiceYear1x);
+      const invoiceAvailable1x = calculateAvailableCashForMonth(invoiceMonth1x, invoiceYear1x);
+
+      if (price <= invoiceAvailable1x && (price + invoiceBill1x) <= effectiveMaxCreditSpend) {
+        return {
+          status: 'VERDE',
+          suggestedMethod: 'CARTAO_1X',
+          suggestedMessage: 'Compre no Crédito hoje em 1x. Seu fluxo de caixa cobre a fatura.',
+          bestFutureMonth: invoiceMonth1x,
+          currentAvailable
+        };
+      }
     }
   
     // 3. Lógica específica para quando o usuário escolhe CREDITO
@@ -526,21 +535,13 @@ export function useStore() {
       let startOffsetThatWorked = -1;
 
       for (let startOffset = 0; startOffset <= 24; startOffset++) {
-        let targetStartM = currentMonth + startOffset;
-        let targetStartY = currentYear;
-        while (targetStartM > 11) {
-          targetStartM -= 12;
-          targetStartY++;
-        }
-
         let isSafe = true;
         for (let i = 0; i < installments; i++) {
-          let m = targetStartM + i;
-          let y = targetStartY;
-          while (m > 11) {
-            m -= 12;
-            y++;
-          }
+          // Simula a data em que a parcela i seria cobrada no cartão
+          const simulatedChargeDate = new Date(currentYear, currentMonth + startOffset + i, now.getDate(), 12, 0, 0);
+          const invoiceInfo = getInvoiceForTx(simulatedChargeDate.toISOString(), representativeCard);
+          const m = invoiceInfo.viewMonth;
+          const y = invoiceInfo.viewYear;
           
           const monthBill = getCreditBillForMonth(m, y);
           if ((installmentValue + monthBill) > effectiveMaxCreditSpend) {
@@ -558,8 +559,14 @@ export function useStore() {
         }
 
         if (isSafe) {
-          bestFutureMonthForInstallments = targetStartM;
-          bestFutureYearForInstallments = targetStartY;
+          let computedMonth = currentMonth + startOffset;
+          let computedYear = currentYear;
+          while (computedMonth > 11) {
+            computedMonth -= 12;
+            computedYear++;
+          }
+          bestFutureMonthForInstallments = computedMonth;
+          bestFutureYearForInstallments = computedYear;
           startOffsetThatWorked = startOffset;
           break;
         }
@@ -570,7 +577,7 @@ export function useStore() {
           status: 'VERDE',
           suggestedMethod: 'PARCELADO',
           suggestedMessage: `Pode comprar hoje parcelado em ${installments}x de R$ ${installmentValue.toFixed(2)} com total segurança.`,
-          bestFutureMonth: undefined,
+          bestFutureMonth: currentMonth,
           currentAvailable,
           creditData: { maxCreditSpend, creditSafetyMargin, currentMonthBill, installmentValue, installments, effectiveMaxCreditSpend }
         };
@@ -607,12 +614,11 @@ export function useStore() {
         let isSafe = true;
         
         for (let i = 0; i < parcels; i++) {
-          let m = currentMonth + i;
-          let y = currentYear;
-          while (m > 11) {
-            m -= 12;
-            y++;
-          }
+          // Simula a data em que a parcela i seria cobrada no cartão
+          const simulatedChargeDate = new Date(currentYear, currentMonth + i, now.getDate(), 12, 0, 0);
+          const invoiceInfo = getInvoiceForTx(simulatedChargeDate.toISOString(), representativeCard);
+          const m = invoiceInfo.viewMonth;
+          const y = invoiceInfo.viewYear;
           
           const monthBill = getCreditBillForMonth(m, y);
           if ((installmentValue + monthBill) > effectiveMaxCreditSpend) {

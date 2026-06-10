@@ -90,11 +90,11 @@ export function SaldosScreen() {
   // 2. CÁLCULO DE RECEITAS E DESPESAS DO MÊS
   const monthlyStats = useMemo(() => {
     const income = transacoesDoMesSelecionado
-      .filter(tx => tx.type === 'receita')
+      .filter(tx => tx.type === 'receita' && tx.paymentMethod !== 'credito')
       .reduce((acc, tx) => acc + tx.amount, 0);
 
     const expense = transacoesDoMesSelecionado
-      .filter(tx => tx.type === 'despesa')
+      .filter(tx => tx.type === 'despesa' && tx.paymentMethod !== 'credito')
       .reduce((acc, tx) => acc + tx.amount, 0);
 
     return { income, expense };
