@@ -29,6 +29,8 @@ const MONTH_NAMES = [
   'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
 ];
 
+const WEEK_DAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+
 const ALL_CARDS_VIRTUAL_ACCOUNT: Account = {
   id: 'all',
   name: 'Todos os Cartões',
@@ -86,6 +88,9 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
   const [isAnticipateModalOpen, setIsAnticipateModalOpen] = useState(false);
   const [anticipateAmountStr, setAnticipateAmountStr] = useState('');
   const [anticipateSourceAccountId, setAnticipateSourceAccountId] = useState<string>('');
+  const [anticipateDate, setAnticipateDate] = useState(new Date());
+  const [showAnticipateCalendar, setShowAnticipateCalendar] = useState(false);
+  const [anticipateCalendarMonth, setAnticipateCalendarMonth] = useState(new Date());
 
   const {
     totalInvoice,
@@ -306,6 +311,9 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
     }
     setAnticipateSourceAccountId(debitAccounts[0].id);
     setAnticipateAmountStr('');
+    setAnticipateDate(new Date());
+    setShowAnticipateCalendar(false);
+    setAnticipateCalendarMonth(new Date());
     setIsAnticipateModalOpen(true);
   }, [debitAccounts, globalPendingDebt]);
 
@@ -324,13 +332,13 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
     }
 
     try {
-      await anticipateCreditCardPayment(selectedCard.id, anticipateSourceAccountId, amount, targetMonth, targetYear);
+      await anticipateCreditCardPayment(selectedCard.id, anticipateSourceAccountId, amount, targetMonth, targetYear, anticipateDate);
       setIsAnticipateModalOpen(false);
       Alert.alert('Sucesso', 'Fatura antecipada e limite liberado!');
     } catch (e) {
       Alert.alert('Erro', 'Não foi possível processar a antecipação.');
     }
-  }, [selectedCard, anticipateSourceAccountId, anticipateAmountStr, globalPendingDebt, anticipateCreditCardPayment, targetMonth, targetYear]);
+  }, [selectedCard, anticipateSourceAccountId, anticipateAmountStr, globalPendingDebt, anticipateCreditCardPayment, targetMonth, targetYear, anticipateDate]);
 
   const handleDeleteAllFromInvoice = useCallback(() => {
     if (invoiceTransactions.length === 0 || isAll) return;
@@ -585,20 +593,21 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
         </View>
       </Modal>
 
-      <Modal visible={isAnticipateModalOpen} transparent animationType='slide'>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Text style={[styles.modalTitle, { color: colors.foreground }]}>Antecipar Pagamento</Text>
-            <Text style={[styles.modalSubtitle, { color: colors.mutedForeground }]}>
+      <Modal visible={isAnticipateModalOpen} transparent animationType='fade'>
+        <View style={[styles.modalOverlay, { justifyContent: 'center', paddingBottom: 0, paddingHorizontal: 20 }]}>
+          <View style={[styles.modalContent, { backgroundColor: colors.card, borderColor: colors.border, maxHeight: '90%', width: '100%', maxWidth: 360, borderRadius: 20, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 16, paddingBottom: 20 }]}>
+          <ScrollView showsVerticalScrollIndicator={false}>
+            <Text style={[styles.modalTitle, { color: colors.foreground, fontSize: 17, marginBottom: 4 }]}>Antecipar Pagamento</Text>
+            <Text style={[styles.modalSubtitle, { color: colors.mutedForeground, fontSize: 13, marginBottom: 16 }]}>
               Dívida total pendente: {formatCurrency(globalPendingDebt)}
             </Text>
 
-            <View style={{ marginBottom: 24 }}>
-              <Text style={{ fontSize: 11, fontWeight: '700', textTransform: 'uppercase', color: colors.mutedForeground, marginBottom: 8 }}>
+            <View style={{ marginBottom: 16 }}>
+              <Text style={{ fontSize: 10, fontWeight: '700', textTransform: 'uppercase', color: colors.mutedForeground, marginBottom: 6 }}>
                 Valor a antecipar
               </Text>
               <TextInput
-                style={{ fontSize: 32, fontWeight: '700', borderBottomWidth: 1, borderBottomColor: colors.border, paddingBottom: 4, color: colors.foreground }}
+                style={{ fontSize: 26, fontWeight: '700', borderBottomWidth: 1, borderBottomColor: colors.border, paddingBottom: 4, color: colors.foreground }}
                 value={anticipateAmountStr}
                 onChangeText={setAnticipateAmountStr}
                 placeholder="0,00"
@@ -607,34 +616,107 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
               />
             </View>
 
-            <Text style={{ fontSize: 11, fontWeight: '700', textTransform: 'uppercase', color: colors.mutedForeground, marginBottom: 8 }}>
+            <View style={{ marginBottom: 16 }}>
+              <Text style={{ fontSize: 10, fontWeight: '700', textTransform: 'uppercase', color: colors.mutedForeground, marginBottom: 6 }}>
+                Data do pagamento
+              </Text>
+              <TouchableOpacity
+                style={[styles.anticipateDateBtn, { borderColor: colors.border, backgroundColor: colors.card, padding: 10 }]}
+                onPress={() => setShowAnticipateCalendar(!showAnticipateCalendar)}
+              >
+                <Ionicons name='calendar-outline' size={18} color={colors.primary} />
+                <Text style={{ fontSize: 14, fontWeight: '600', color: colors.foreground }}>
+                  {`${String(anticipateDate.getDate()).padStart(2, '0')}/${String(anticipateDate.getMonth() + 1).padStart(2, '0')}/${anticipateDate.getFullYear()}`}
+                </Text>
+                <Ionicons name={showAnticipateCalendar ? 'chevron-up' : 'chevron-down'} size={14} color={colors.mutedForeground} style={{ marginLeft: 'auto' }} />
+              </TouchableOpacity>
+
+              {showAnticipateCalendar && (() => {
+                const calYear = anticipateCalendarMonth.getFullYear();
+                const calMonth = anticipateCalendarMonth.getMonth();
+                const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+                const firstDayOfWeek = new Date(calYear, calMonth, 1).getDay();
+                const calDays: (number | null)[] = [];
+                for (let i = 0; i < firstDayOfWeek; i++) calDays.push(null);
+                for (let i = 1; i <= daysInMonth; i++) calDays.push(i);
+                const today = new Date();
+
+                return (
+                  <View style={[styles.inlineCalendar, { borderColor: colors.border, backgroundColor: colors.card, padding: 10 }]}>
+                    <View style={styles.inlineCalendarHeader}>
+                      <TouchableOpacity onPress={() => setAnticipateCalendarMonth(new Date(calYear, calMonth - 1, 1))}>
+                        <Ionicons name='chevron-back' size={16} color={colors.foreground} />
+                      </TouchableOpacity>
+                      <Text style={{ fontWeight: '700', fontSize: 12, color: colors.foreground }}>
+                        {MONTH_NAMES[calMonth]} {calYear}
+                      </Text>
+                      <TouchableOpacity onPress={() => setAnticipateCalendarMonth(new Date(calYear, calMonth + 1, 1))}>
+                        <Ionicons name='chevron-forward' size={16} color={colors.foreground} />
+                      </TouchableOpacity>
+                    </View>
+                    <View style={styles.inlineCalendarGrid}>
+                      {WEEK_DAYS.map((wd, i) => (
+                        <View key={`wd-${i}`} style={styles.inlineCalendarDayCell}>
+                          <Text style={{ fontSize: 9, color: colors.mutedForeground }}>{wd[0]}</Text>
+                        </View>
+                      ))}
+                      {calDays.map((d, i) => {
+                        if (!d) return <View key={`empty-${i}`} style={styles.inlineCalendarDayCell} />;
+                        const isSelected = anticipateDate.getDate() === d && anticipateDate.getMonth() === calMonth && anticipateDate.getFullYear() === calYear;
+                        const isToday = today.getDate() === d && today.getMonth() === calMonth && today.getFullYear() === calYear;
+                        return (
+                          <TouchableOpacity key={`day-${d}`} style={styles.inlineCalendarDayCell} onPress={() => {
+                            setAnticipateDate(new Date(calYear, calMonth, d, 12, 0, 0));
+                            setShowAnticipateCalendar(false);
+                          }}>
+                            <View style={[styles.inlineCalendarDayInner, isSelected && { backgroundColor: colors.primary }, isToday && !isSelected && { borderWidth: 1, borderColor: colors.primary }]}>
+                              <Text style={{ color: isSelected ? '#FFF' : colors.foreground, fontSize: 11 }}>{d}</Text>
+                            </View>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                    <TouchableOpacity style={{ alignItems: 'center', paddingVertical: 4 }} onPress={() => {
+                      setAnticipateDate(new Date());
+                      setAnticipateCalendarMonth(new Date());
+                      setShowAnticipateCalendar(false);
+                    }}>
+                      <Text style={{ color: colors.primary, fontWeight: '600', fontSize: 11 }}>Hoje</Text>
+                    </TouchableOpacity>
+                  </View>
+                );
+              })()}
+            </View>
+
+            <Text style={{ fontSize: 10, fontWeight: '700', textTransform: 'uppercase', color: colors.mutedForeground, marginBottom: 6 }}>
               Debitar de:
             </Text>
-            <View style={styles.accountSelection}>
+            <View style={[styles.accountSelection, { gap: 8, marginBottom: 20 }]}>
               {debitAccounts.map((acc: Account) => (
                 <TouchableOpacity
                   key={acc.id}
                   style={[
                     styles.accountOption,
-                    { borderColor: anticipateSourceAccountId === acc.id ? colors.primary : colors.border, backgroundColor: anticipateSourceAccountId === acc.id ? colors.primary + '10' : 'transparent' },
+                    { borderColor: anticipateSourceAccountId === acc.id ? colors.primary : colors.border, backgroundColor: anticipateSourceAccountId === acc.id ? colors.primary + '10' : 'transparent', padding: 12 },
                   ]}
                   onPress={() => setAnticipateSourceAccountId(acc.id)}
                 >
-                  <Ionicons name={acc.icon as any} size={20} color={acc.color} />
-                  <Text style={[styles.accountOptionName, { color: colors.foreground }]}>{acc.name}</Text>
-                  {anticipateSourceAccountId === acc.id && <Ionicons name='checkmark' size={18} color={colors.primary} style={{ marginLeft: 'auto' }} />}
+                  <Ionicons name={acc.icon as any} size={18} color={acc.color} />
+                  <Text style={[styles.accountOptionName, { color: colors.foreground, fontSize: 14 }]}>{acc.name}</Text>
+                  {anticipateSourceAccountId === acc.id && <Ionicons name='checkmark' size={16} color={colors.primary} style={{ marginLeft: 'auto' }} />}
                 </TouchableOpacity>
               ))}
             </View>
 
             <View style={styles.modalActions}>
-              <TouchableOpacity style={styles.cancelBtn} onPress={() => setIsAnticipateModalOpen(false)}>
-                <Text style={[styles.cancelBtnText, { color: colors.mutedForeground }]}>Cancelar</Text>
+              <TouchableOpacity style={[styles.cancelBtn, { paddingVertical: 12 }]} onPress={() => setIsAnticipateModalOpen(false)}>
+                <Text style={[styles.cancelBtnText, { color: colors.mutedForeground, fontSize: 14 }]}>Cancelar</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.confirmBtn, { backgroundColor: colors.primary }]} onPress={confirmAnticipation}>
-                <Text style={styles.confirmBtnText}>Antecipar</Text>
+              <TouchableOpacity style={[styles.confirmBtn, { backgroundColor: colors.primary, paddingVertical: 12 }]} onPress={confirmAnticipation}>
+                <Text style={[styles.confirmBtnText, { fontSize: 14 }]}>Antecipar</Text>
               </TouchableOpacity>
             </View>
+          </ScrollView>
           </View>
         </View>
       </Modal>
@@ -704,4 +786,10 @@ const styles = StyleSheet.create({
   typeIconContainer: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
   typeOptionTitle: { fontSize: 16, fontWeight: '700', marginBottom: 2 },
   typeOptionDesc: { fontSize: 12, lineHeight: 16 },
+  anticipateDateBtn: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderRadius: 10, padding: 12 },
+  inlineCalendar: { marginTop: 8, borderWidth: 1, borderRadius: 12, padding: 12 },
+  inlineCalendarHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  inlineCalendarGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  inlineCalendarDayCell: { width: '14.28%', alignItems: 'center', justifyContent: 'center', paddingVertical: 6 },
+  inlineCalendarDayInner: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
 });

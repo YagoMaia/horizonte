@@ -1324,18 +1324,20 @@ export function useStore() {
       amount: number,
       targetMonth: number,
       targetYear: number,
+      paymentDate?: Date,
     ) => {
       const cardAccount = accounts.find((a) => a.id === creditCardId);
       if (!cardAccount) return;
 
       const baseId = Date.now().toString();
+      const effectiveDate = paymentDate || new Date();
 
       const paymentTx: Transaction = {
         id: `${baseId}-out`,
         description: `Antecipação - ${cardAccount.name}`,
         amount: amount,
         type: 'despesa',
-        date: new Date().toISOString(),
+        date: effectiveDate.toISOString(),
         accountId: sourceAccountId,
         paymentMethod: 'debito',
         paid: true,
