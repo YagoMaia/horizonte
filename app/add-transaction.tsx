@@ -31,6 +31,7 @@ const MONTHS = [
 const RECURRENCE_OPTIONS: { value: RecurrenceType; label: string }[] = [
   { value: 'unica', label: 'Única' },
   { value: 'diaria', label: 'Diária' },
+  { value: 'dias_uteis', label: 'Dias Úteis' },
   { value: 'semanal', label: 'Semanal' },
   { value: 'mensal', label: 'Mensal' },
   { value: 'quinto_dia_util', label: '5º Dia Útil' },
@@ -270,6 +271,15 @@ export default function AddTransactionScreen() {
         calculatedMaxRecurrences = Math.floor(Math.abs(endD.getTime() - startD.getTime()) / (1000 * 60 * 60 * 24 * 7)) + 1;
       } else if (finalRecurrence === 'diaria') {
         calculatedMaxRecurrences = Math.ceil(Math.abs(endD.getTime() - startD.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+      } else if (finalRecurrence === 'dias_uteis') {
+        let count = 0;
+        let cur = new Date(startD);
+        while (cur <= endD) {
+          const day = cur.getDay();
+          if (day !== 0 && day !== 6) count++;
+          cur.setDate(cur.getDate() + 1);
+        }
+        calculatedMaxRecurrences = count > 0 ? count : 1;
       }
     }
 

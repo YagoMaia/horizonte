@@ -17,11 +17,13 @@ import { RecurrenceActionModal } from '@/components/RecurrenceActionModal';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
 const RECURRENCE_LABELS: Record<string, string> = {
-  unica: 'Única',
-  diaria: 'Diária',
-  semanal: 'Semanal',
-  mensal: 'Mensal',
-  anual: 'Anual',
+  'unica': 'Única',
+  'diaria': 'Diária',
+  'dias_uteis': 'Dias Úteis',
+  'semanal': 'Semanal',
+  'mensal': 'Mensal',
+  'anual': 'Anual',
+  'quinto_dia_util': '5º Dia Útil',
 };
 
 export default function TransactionDetailScreen() {

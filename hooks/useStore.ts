@@ -1032,6 +1032,19 @@ export function useStore() {
             case 'diaria':
               effectiveDate = addDays(baseDate, i);
               break;
+            case 'dias_uteis': {
+              let d = new Date(baseDate);
+              let added = 0;
+              while (added < i) {
+                d.setDate(d.getDate() + 1);
+                const dayOfWeek = d.getDay();
+                if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+                  added++;
+                }
+              }
+              effectiveDate = d;
+              break;
+            }
             case 'quinto_dia_util': {
               const targetMonthDate = addMonths(baseDate, i);
               const targetMonth = targetMonthDate.getMonth();
@@ -1170,6 +1183,21 @@ export function useStore() {
                 case 'diaria':
                   currentDate = addDays(newBaseDate, indexDiff);
                   break;
+                case 'dias_uteis': {
+                  let d = new Date(newBaseDate);
+                  let added = 0;
+                  const step = indexDiff > 0 ? 1 : -1;
+                  const targetAdded = Math.abs(indexDiff);
+                  while (added < targetAdded) {
+                    d.setDate(d.getDate() + step);
+                    const dayOfWeek = d.getDay();
+                    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+                      added++;
+                    }
+                  }
+                  currentDate = d;
+                  break;
+                }
                 case 'quinto_dia_util': {
                   const targetMonthDate = addMonths(newBaseDate, indexDiff);
                   const targetMonth = targetMonthDate.getMonth();

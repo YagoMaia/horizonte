@@ -4,7 +4,7 @@ export type TabType = 'saldos' | 'totais' | 'horizonte' | 'menu' | 'cartao' | 'c
 
 export type TransactionType = 'receita' | 'despesa' | 'transferencia'
 
-export type RecurrenceType = 'unica' | 'diaria' | 'semanal' | 'mensal' | 'anual' | 'quinto_dia_util'
+export type RecurrenceType = 'unica' | 'diaria' | 'dias_uteis' | 'semanal' | 'mensal' | 'anual' | 'quinto_dia_util'
 
 export interface Project {
   id: string
