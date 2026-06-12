@@ -49,7 +49,7 @@ export default function TransactionDetailScreen() {
 
   const account = accounts.find((a) => a.id === transaction.accountId);
   const project = projects.find((p) => p.id === transaction.projectId);
-  const goal = goals.find((g) => g.id === transaction.goalId);
+  const txGoals = goals.filter((g) => transaction.goalIds && transaction.goalIds.includes(g.id));
   const isReceita = transaction.type === 'receita';
   const isTransf = transaction.type === 'transferencia';
   const amountColor = isReceita ? colors.success : isTransf ? colors.primary : colors.destructive;
@@ -158,8 +158,8 @@ export default function TransactionDetailScreen() {
           {project && (
             <DetailRow label="Projeto" value={project.name || 'Projeto'} colors={colors} />
           )}
-          {goal && (
-            <DetailRow label="Meta Relacionada" value={goal.name || 'Meta'} colors={colors} />
+          {txGoals && txGoals.length > 0 && (
+            <DetailRow label={txGoals.length > 1 ? "Metas Relacionadas" : "Meta Relacionada"} value={txGoals.map(g => g.name).join(', ')} colors={colors} />
           )}
           <DetailRow label="Recorrência" value={transaction.recurrence ? (RECURRENCE_LABELS[transaction.recurrence] || '—') : '—'} colors={colors} />
           {transaction.notes ? (

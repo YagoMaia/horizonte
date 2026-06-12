@@ -62,7 +62,7 @@ export interface Transaction {
   isAdjustment?: boolean;
   notificationId?: string;
   projectId?: string; // 👉 Novo: ID do projeto vinculado
-  goalId?: string; // 👉 Novo: ID da meta vinculada
+  goalIds?: string[]; // 👉 ID(s) das metas vinculadas
   notifyRecurrence?: boolean; // 👉 Novo: Preferência individual de notificação para a recorrência
 }
 

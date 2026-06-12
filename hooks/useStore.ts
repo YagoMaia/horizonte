@@ -188,15 +188,15 @@ export function useStore() {
     const updated = { ...notificationPreferences, [key]: value };
     await saveNotificationPreferences(updated);
 
-    const anyNotificationEnabled = updated.dailyReminders || updated.expenseReminders || updated.creditCardAlerts;
-    
-    if (anyNotificationEnabled) {
-      await NotificationService.scheduleDailyFinanceSummary(
-        updated.dailyReminderTime.hour,
-        updated.dailyReminderTime.minute
-      );
-    } else {
-      await NotificationService.cancelDailyFinanceSummary();
+    if (key === 'dailyReminders') {
+      if (value) await NotificationService.scheduleDailyReminder(updated.dailyReminderTime.hour, updated.dailyReminderTime.minute);
+      else await NotificationService.cancelDailyReminder();
+    } else if (key === 'expenseReminders') {
+      if (value) await NotificationService.scheduleExpenseReminder(updated.expenseReminderTime.hour, updated.expenseReminderTime.minute);
+      else await NotificationService.cancelExpenseReminder();
+    } else if (key === 'creditCardAlerts') {
+      if (value) await NotificationService.scheduleCreditCardAlert(updated.creditCardAlertTime.hour, updated.creditCardAlertTime.minute);
+      else await NotificationService.cancelCreditCardAlert();
     }
   }, [notificationPreferences, saveNotificationPreferences]);
 
@@ -204,12 +204,12 @@ export function useStore() {
     const updated = { ...notificationPreferences, [key]: { hour, minute } };
     await saveNotificationPreferences(updated);
 
-    const anyNotificationEnabled = updated.dailyReminders || updated.expenseReminders || updated.creditCardAlerts;
-    if (anyNotificationEnabled) {
-      await NotificationService.scheduleDailyFinanceSummary(
-        updated.dailyReminderTime.hour,
-        updated.dailyReminderTime.minute
-      );
+    if (key === 'dailyReminderTime' && updated.dailyReminders) {
+      await NotificationService.scheduleDailyReminder(hour, minute);
+    } else if (key === 'expenseReminderTime' && updated.expenseReminders) {
+      await NotificationService.scheduleExpenseReminder(hour, minute);
+    } else if (key === 'creditCardAlertTime' && updated.creditCardAlerts) {
+      await NotificationService.scheduleCreditCardAlert(hour, minute);
     }
   }, [notificationPreferences, saveNotificationPreferences]);
 
@@ -256,13 +256,21 @@ export function useStore() {
   }, [goals, saveGoals]);
 
   const deleteGoal = useCallback(async (id: string) => {
-    const updated = goals.filter(g => g.id !== id);
-    await saveGoals(updated);
+    const updatedGoals = goals.filter(g => g.id !== id);
+    await saveGoals(updatedGoals);
 
-    const updatedTxs = transactions.map(tx =>
-      tx.goalId === id ? { ...tx, goalId: undefined } : tx
-    );
-    if (updatedTxs.some(tx => tx.goalId !== transactions.find(t => t.id === tx.id)?.goalId)) {
+    // Remove the goal from any associated transactions
+    const updatedTxs = transactions.map(tx => {
+      if (tx.goalIds && tx.goalIds.includes(id)) {
+        const newGoalIds = tx.goalIds.filter(gid => gid !== id);
+        return { ...tx, goalIds: newGoalIds.length > 0 ? newGoalIds : undefined };
+      }
+      return tx;
+    });
+    
+    // Check if any transactions were modified
+    const hasChanges = updatedTxs.some((tx, index) => tx.goalIds !== transactions[index].goalIds);
+    if (hasChanges) {
       setTransactions(updatedTxs);
       await AsyncStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(updatedTxs));
     }
@@ -879,22 +887,8 @@ export function useStore() {
         setUserSettings(JSON.parse(userSettingsRaw[1]));
       }
 
-      // Re-agendar resumo diário na inicialização
-      const loadedNotifPrefs = notifPrefsRaw[1] ? JSON.parse(notifPrefsRaw[1]) : DEFAULT_NOTIFICATION_PREFS;
-      const anyNotificationEnabled = loadedNotifPrefs.dailyReminders || loadedNotifPrefs.expenseReminders || loadedNotifPrefs.creditCardAlerts;
-      
-      try {
-        if (anyNotificationEnabled) {
-          await NotificationService.scheduleDailyFinanceSummary(
-            loadedNotifPrefs.dailyReminderTime.hour,
-            loadedNotifPrefs.dailyReminderTime.minute
-          );
-        } else {
-          await NotificationService.cancelDailyFinanceSummary();
-        }
-      } catch (notifError) {
-        console.warn('Erro ao re-agendar notificações na inicialização:', notifError);
-      }
+      // Notificações agora são apenas agendadas quando a preferência é alterada pelo usuário.
+      // Removido o reagendamento forçado na inicialização para evitar notificações indesejadas no boot.
 
       await autoProcessOverdueTransactions(loadedTransactions, loadedAccounts);
     } catch (e) {
@@ -1431,7 +1425,7 @@ export function useStore() {
     const goal = goals.find(g => g.id === goalId);
     const baseAmount = goal ? (goal.savedAmount || 0) : 0;
 
-    const goalTxs = transactions.filter(tx => tx.goalId === goalId);
+    const goalTxs = transactions.filter(tx => tx.goalIds && tx.goalIds.includes(goalId));
     const txsAmount = goalTxs.reduce((sum, tx) => {
       // Considera todas as transações atreladas à meta como aporte (geralmente transferências ou despesas voltadas pra meta)
       return sum + (Number(tx.amount) || 0);

@@ -67,7 +67,7 @@ export default function AddTransactionScreen() {
   const [amount, setAmount] = useState(initialAmount ? formatCurrencyMask(String(Math.round(parseFloat(initialAmount) * 100))) : '');
   const [tag, setTag] = useState<string>('Outros');
   const [projectId, setProjectId] = useState<string | undefined>(undefined);
-  const [goalId, setGoalId] = useState<string | undefined>(undefined);
+  const [goalIds, setGoalIds] = useState<string[]>([]);
 
   const handleAmountChange = (text: string) => setAmount(formatCurrencyMask(text));
 
@@ -111,7 +111,7 @@ export default function AddTransactionScreen() {
       setPaid(transactionToEdit.paid);
       setPaid(transactionToEdit.paid);
       setProjectId(transactionToEdit.projectId);
-      setGoalId(transactionToEdit.goalId);
+      setGoalIds(transactionToEdit.goalIds || []);
       setInstallments(transactionToEdit.totalInstallments || 1);
       const d = new Date(transactionToEdit.date);
       setDate(`${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`);
@@ -281,7 +281,7 @@ export default function AddTransactionScreen() {
       accountId,
       tag,
       projectId: projectId || undefined,
-      goalId: goalId || undefined,
+      goalIds: goalIds.length > 0 ? goalIds : undefined,
       recurrence: finalRecurrence,
       paid,
       recurrenceStartDate: (!isInstallment && finalRecurrence !== 'unica') ? parseToISO(recurrenceStart) : undefined,
@@ -465,24 +465,33 @@ export default function AddTransactionScreen() {
 
           {goals && goals.length > 0 && (
             <View style={styles.field}>
-              <Text style={[styles.label, { color: colors.mutedForeground }]}>Meta Relacionada</Text>
+              <Text style={[styles.label, { color: colors.mutedForeground }]}>Metas Relacionadas</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexDirection: 'row' }}>
                 <TouchableOpacity
-                  style={[styles.tagChip, { borderColor: colors.border, backgroundColor: !goalId ? colors.border + '50' : 'transparent', marginRight: 8 }, !goalId && { borderColor: colors.mutedForeground }]}
-                  onPress={() => setGoalId(undefined)}
+                  style={[styles.tagChip, { borderColor: colors.border, backgroundColor: goalIds.length === 0 ? colors.border + '50' : 'transparent', marginRight: 8 }, goalIds.length === 0 && { borderColor: colors.mutedForeground }]}
+                  onPress={() => setGoalIds([])}
                 >
-                  <Text style={[styles.tagChipText, { color: !goalId ? colors.foreground : colors.mutedForeground }]}>Nenhuma</Text>
+                  <Text style={[styles.tagChipText, { color: goalIds.length === 0 ? colors.foreground : colors.mutedForeground }]}>Nenhuma</Text>
                 </TouchableOpacity>
-                {goals.map((g: any) => (
-                  <TouchableOpacity
-                    key={g.id}
-                    style={[styles.tagChip, { borderColor: colors.border, backgroundColor: goalId === g.id ? g.color + '20' : 'transparent', marginRight: 8 }, goalId === g.id && { borderColor: g.color }]}
-                    onPress={() => setGoalId(g.id)}
-                  >
-                    <Ionicons name="flag-outline" size={14} color={goalId === g.id ? g.color : colors.mutedForeground} />
-                    <Text style={[styles.tagChipText, { color: goalId === g.id ? g.color : colors.foreground }]}>{g.name}</Text>
-                  </TouchableOpacity>
-                ))}
+                {goals.map((g: any) => {
+                  const isSelected = goalIds.includes(g.id);
+                  return (
+                    <TouchableOpacity
+                      key={g.id}
+                      style={[styles.tagChip, { borderColor: colors.border, backgroundColor: isSelected ? g.color + '20' : 'transparent', marginRight: 8 }, isSelected && { borderColor: g.color }]}
+                      onPress={() => {
+                        if (isSelected) {
+                          setGoalIds(goalIds.filter(id => id !== g.id));
+                        } else {
+                          setGoalIds([...goalIds, g.id]);
+                        }
+                      }}
+                    >
+                      <Ionicons name="flag-outline" size={14} color={isSelected ? g.color : colors.mutedForeground} />
+                      <Text style={[styles.tagChipText, { color: isSelected ? g.color : colors.foreground }]}>{g.name}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </ScrollView>
             </View>
           )}

@@ -1,9 +1,10 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { Transaction, Account } from '@/constants/types';
 
 const DAILY_REMINDER_STORAGE_KEY = '@horizonte_daily_reminder_id';
+const EXPENSE_REMINDER_STORAGE_KEY = '@horizonte_expense_reminder_id';
+const CREDIT_CARD_REMINDER_STORAGE_KEY = '@horizonte_credit_card_reminder_id';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -45,48 +46,89 @@ export async function requestPermissions() {
 }
 
 /**
- * Agenda um lembrete diário unificado
+ * Funções auxiliares genéricas para agendar e cancelar
  */
-export async function scheduleDailyFinanceSummary(hour = 9, minute = 0) {
+async function scheduleReminder(key: string, title: string, body: string, hour: number, minute: number) {
   if (Platform.OS === 'web') return;
 
   try {
-    // Cancela apenas o lembrete diário anterior (se existir)
-    const previousId = await AsyncStorage.getItem(DAILY_REMINDER_STORAGE_KEY);
+    const previousId = await AsyncStorage.getItem(key);
     if (previousId) {
       await Notifications.cancelScheduledNotificationAsync(previousId);
     }
 
     const notificationId = await Notifications.scheduleNotificationAsync({
-      content: {
-        title: 'Horizonte 💰',
-        body: 'Hora de cuidar do seu dinheiro! Confira suas contas e pendências de hoje.',
-        sound: true,
-      },
+      content: { title, body, sound: true },
       trigger: {
-        hour: hour,
-        minute: minute,
+        hour,
+        minute,
         repeats: true,
-        channelId: 'default',
       },
     });
 
-    // Salva o ID para poder cancelar na próxima vez
-    await AsyncStorage.setItem(DAILY_REMINDER_STORAGE_KEY, notificationId);
+    await AsyncStorage.setItem(key, notificationId);
   } catch (error) {
-    console.warn('Erro ao agendar notificação diária:', error);
+    console.warn(`Erro ao agendar notificação (${title}):`, error);
+  }
+}
+
+async function cancelReminder(key: string) {
+  if (Platform.OS === 'web') return;
+  const previousId = await AsyncStorage.getItem(key);
+  if (previousId) {
+    await Notifications.cancelScheduledNotificationAsync(previousId);
+    await AsyncStorage.removeItem(key);
   }
 }
 
 /**
- * Cancela o lembrete diário unificado
+ * Lembrete Diário
  */
-export async function cancelDailyFinanceSummary() {
-  if (Platform.OS === 'web') return;
-  const previousId = await AsyncStorage.getItem(DAILY_REMINDER_STORAGE_KEY);
-  if (previousId) {
-    await Notifications.cancelScheduledNotificationAsync(previousId);
-    await AsyncStorage.removeItem(DAILY_REMINDER_STORAGE_KEY);
-  }
+export async function scheduleDailyReminder(hour = 9, minute = 0) {
+  await scheduleReminder(
+    DAILY_REMINDER_STORAGE_KEY,
+    'Horizonte 💰',
+    'Hora de cuidar do seu dinheiro! Confira suas contas e pendências de hoje.',
+    hour,
+    minute
+  );
+}
+
+export async function cancelDailyReminder() {
+  await cancelReminder(DAILY_REMINDER_STORAGE_KEY);
+}
+
+/**
+ * Lembrete de Despesas
+ */
+export async function scheduleExpenseReminder(hour = 20, minute = 0) {
+  await scheduleReminder(
+    EXPENSE_REMINDER_STORAGE_KEY,
+    'Registro de Despesas 📝',
+    'Não se esqueça de registrar os gastos que você teve hoje!',
+    hour,
+    minute
+  );
+}
+
+export async function cancelExpenseReminder() {
+  await cancelReminder(EXPENSE_REMINDER_STORAGE_KEY);
+}
+
+/**
+ * Alerta de Cartão de Crédito
+ */
+export async function scheduleCreditCardAlert(hour = 10, minute = 0) {
+  await scheduleReminder(
+    CREDIT_CARD_REMINDER_STORAGE_KEY,
+    'Faturas de Cartão 💳',
+    'Fique de olho no fechamento e vencimento das suas faturas de cartão de crédito.',
+    hour,
+    minute
+  );
+}
+
+export async function cancelCreditCardAlert() {
+  await cancelReminder(CREDIT_CARD_REMINDER_STORAGE_KEY);
 }
 
