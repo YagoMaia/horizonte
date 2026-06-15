@@ -508,6 +508,19 @@ export function useStore() {
       return total;
     };
 
+    const getCreditBillTransactionsForMonth = (targetMonth: number, targetYear: number) => {
+      return transactions.filter(tx => {
+        if (!tx.paid && tx.type !== 'receita' && creditCardIds.includes(tx.accountId)) {
+          const account = accounts.find(a => a.id === tx.accountId);
+          if (account) {
+            const invoice = getInvoiceForTx(tx.date, account);
+            return invoice.viewMonth === targetMonth && invoice.viewYear === targetYear;
+          }
+        }
+        return false;
+      });
+    };
+
     // Cartão representativo para mapear datas de compra → mês real da fatura
     const representativeCard = accounts.find(a => a.type === 'cartao_credito') || { closingDay: 25, dueDay: 5 };
 
@@ -528,7 +541,8 @@ export function useStore() {
           suggestedMethod: 'CARTAO_1X',
           suggestedMessage: 'Compre no Crédito hoje em 1x. Seu fluxo de caixa cobre a fatura.',
           bestFutureMonth: invoiceMonth1x,
-          currentAvailable
+          currentAvailable,
+          creditData: { maxCreditSpend, creditSafetyMargin, currentMonthBill: invoiceBill1x, installmentValue: price, installments: 1, effectiveMaxCreditSpend, billTransactions: getCreditBillTransactionsForMonth(invoiceMonth1x, invoiceYear1x) }
         };
       }
     }
@@ -587,7 +601,7 @@ export function useStore() {
           suggestedMessage: `Pode comprar hoje parcelado em ${installments}x de R$ ${installmentValue.toFixed(2)} com total segurança.`,
           bestFutureMonth: currentMonth,
           currentAvailable,
-          creditData: { maxCreditSpend, creditSafetyMargin, currentMonthBill, installmentValue, installments, effectiveMaxCreditSpend }
+          creditData: { maxCreditSpend, creditSafetyMargin, currentMonthBill, installmentValue, installments, effectiveMaxCreditSpend, billTransactions: getCreditBillTransactionsForMonth(currentMonth, currentYear) }
         };
       } else if (startOffsetThatWorked > 0 && bestFutureMonthForInstallments !== undefined) {
         const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
@@ -597,7 +611,7 @@ export function useStore() {
           suggestedMessage: `Aguarde para comprar no cartão em ${monthNames[bestFutureMonthForInstallments]} de ${bestFutureYearForInstallments}. Assim, as parcelas de ${installments}x ficarão seguras.`,
           bestFutureMonth: bestFutureMonthForInstallments,
           currentAvailable,
-          creditData: { maxCreditSpend, creditSafetyMargin, currentMonthBill: getCreditBillForMonth(bestFutureMonthForInstallments, bestFutureYearForInstallments), installmentValue, installments, effectiveMaxCreditSpend }
+          creditData: { maxCreditSpend, creditSafetyMargin, currentMonthBill: getCreditBillForMonth(bestFutureMonthForInstallments, bestFutureYearForInstallments), installmentValue, installments, effectiveMaxCreditSpend, billTransactions: getCreditBillTransactionsForMonth(bestFutureMonthForInstallments, bestFutureYearForInstallments) }
         };
       } else {
         return {
@@ -606,7 +620,7 @@ export function useStore() {
           suggestedMessage: `Parcelamento recusado. O valor de ${installments}x estoura o seu Teto do Cartão mensal (já descontada a margem) ou o seu fluxo de caixa não comporta essas parcelas nem mesmo no futuro.`,
           bestFutureMonth: undefined,
           currentAvailable,
-          creditData: { maxCreditSpend, creditSafetyMargin, currentMonthBill, installmentValue, installments, effectiveMaxCreditSpend }
+          creditData: { maxCreditSpend, creditSafetyMargin, currentMonthBill, installmentValue, installments, effectiveMaxCreditSpend, billTransactions: getCreditBillTransactionsForMonth(currentMonth, currentYear) }
         };
       }
     }

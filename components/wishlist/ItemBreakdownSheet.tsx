@@ -10,7 +10,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/hooks/useTheme';
-import { WishlistItem } from '@/constants/types';
+import { WishlistItem, Transaction } from '@/constants/types';
 
 interface BreakdownData {
   initialBalance: number;
@@ -34,6 +34,8 @@ interface ItemBreakdownSheetProps {
     currentMonthBill: number;
     installmentValue: number;
     installments: number;
+    effectiveMaxCreditSpend?: number;
+    billTransactions?: Transaction[];
   } | null;
 }
 
@@ -143,12 +145,26 @@ export function ItemBreakdownSheet({
                         </Text>
                         {creditData.creditSafetyMargin > 0 && creditData.maxCreditSpend !== Infinity && (
                           <Text style={[styles.explanationText, { color: colors.mutedForeground }]}>
-                            • Margem de Segurança (Reservado): <Text style={{ fontWeight: '600', color: colors.foreground }}>{formatMoney(creditData.creditSafetyMargin)}</Text> (Teto Útil: {formatMoney(creditData.effectiveMaxCreditSpend)})
+                            • Margem de Segurança (Reservado): <Text style={{ fontWeight: '600', color: colors.foreground }}>{formatMoney(creditData.creditSafetyMargin)}</Text>
+                          </Text>
+                        )}
+                        {creditData.maxCreditSpend !== Infinity && creditData.effectiveMaxCreditSpend !== undefined && (
+                          <Text style={[styles.explanationText, { color: colors.mutedForeground }]}>
+                            • Teto Útil (Disponível): <Text style={{ fontWeight: '600', color: colors.foreground }}>{formatMoney(creditData.effectiveMaxCreditSpend)}</Text>
                           </Text>
                         )}
                         <Text style={[styles.explanationText, { color: colors.mutedForeground }]}>
                           • Fatura Mensal Já Comprometida: <Text style={{ fontWeight: '600', color: colors.foreground }}>{formatMoney(creditData.currentMonthBill)}</Text>
                         </Text>
+                        {creditData.billTransactions && creditData.billTransactions.length > 0 && (
+                          <View style={{ marginLeft: 16, marginTop: 4, marginBottom: 4, paddingLeft: 8, borderLeftWidth: 1, borderLeftColor: colors.border }}>
+                            {creditData.billTransactions.map(tx => (
+                              <Text key={tx.id} style={{ fontSize: 13, color: colors.mutedForeground }}>
+                                {tx.description || 'Lançamento sem nome'}: <Text style={{ fontWeight: '500', color: colors.foreground }}>{formatMoney(tx.amount)}</Text>
+                              </Text>
+                            ))}
+                          </View>
+                        )}
                         {creditData.currentMonthBill + creditData.installmentValue > creditData.maxCreditSpend && (
                           <Text style={[styles.explanationText, { color: colors.destructive, fontWeight: '600', marginTop: 4 }]}>
                             A parcela de {formatMoney(creditData.installmentValue)} somada à sua fatura ({formatMoney(creditData.currentMonthBill)}) supera o seu Teto de {formatMoney(creditData.maxCreditSpend)}.
