@@ -172,6 +172,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+    flex: 1,
   },
   iconContainer: {
     width: 36,
@@ -179,15 +180,18 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
+    flexShrink: 0,
   },
   itemLabel: {
     fontSize: 16,
     fontWeight: '500',
+    flexShrink: 1,
   },
   itemActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 16,
+    gap: 12,
+    flexShrink: 0,
   },
   arrows: {
     flexDirection: 'row',

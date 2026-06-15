@@ -19,7 +19,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useStoreContext } from "@/context/StoreContext";
 import { formatCurrency, formatDateShort } from "@/lib/utils";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { MarqueeText } from "../MarqueeText";
+import { TagManagementModal } from "../TagManagementModal";
 import { useRouter } from "expo-router";
 
 const MONTH_NAMES = [
@@ -1216,13 +1216,16 @@ export function HorizonteScreen() {
                       />
                     </View>
                     <View style={styles.modalTxInfo}>
-                      <MarqueeText
-                        text={tx.description}
+                      <Text
+                        numberOfLines={1}
+                        ellipsizeMode="tail"
                         style={[
                           styles.modalTxDesc,
                           { color: colors.foreground },
                         ]}
-                      />
+                      >
+                        {tx.description}
+                      </Text>
                       {isCredito && (
                         <View
                           style={[
