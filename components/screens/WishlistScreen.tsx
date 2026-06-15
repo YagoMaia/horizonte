@@ -423,11 +423,14 @@ export function WishlistScreen() {
             <View style={[styles.modalBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <Text style={[styles.modalTitle, { color: colors.foreground }]}>Orçamento Base Zero</Text>
               <Text style={[styles.modalSubtitle, { color: colors.mutedForeground }]}>
-                Configure os valores que serão subtraídos do saldo disponível antes de calcular o que pode ser comprado.
+                Configure os valores essenciais que você deseja preservar na sua conta antes de simulá-la para novas compras.
               </Text>
 
               <View style={styles.modalField}>
-                <Text style={[styles.modalLabel, { color: colors.mutedForeground }]}>Gasto livre do dia a dia (R$)</Text>
+                <Text style={[styles.modalLabel, { color: colors.foreground }]}>Orçamento p/ Gastos Diários (R$)</Text>
+                <Text style={{ color: colors.mutedForeground, fontSize: 12, marginBottom: 8, marginTop: -4 }}>
+                  Valor total no mês que você deseja reservar para cobrir as despesas do seu dia a dia.
+                </Text>
                 <TextInput
                   style={[styles.modalInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.secondary }]}
                   value={settingsDailyAllowance}
@@ -439,7 +442,10 @@ export function WishlistScreen() {
               </View>
 
               <View style={styles.modalField}>
-                <Text style={[styles.modalLabel, { color: colors.mutedForeground }]}>Reserva / Margem de segurança (R$)</Text>
+                <Text style={[styles.modalLabel, { color: colors.foreground }]}>Reserva Mensal / Meta (R$)</Text>
+                <Text style={{ color: colors.mutedForeground, fontSize: 12, marginBottom: 8, marginTop: -4 }}>
+                  Valor que você deseja proteger e guardar a cada mês simulado.
+                </Text>
                 <TextInput
                   style={[styles.modalInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.secondary }]}
                   value={settingsSafetyMargin}
@@ -519,12 +525,16 @@ export function WishlistScreen() {
         <View style={styles.overlay}>
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
             <View style={[styles.modalBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <Text style={[styles.modalTitle, { color: colors.foreground }]}>Configurações do Simulador</Text>
+              <Text style={[styles.modalTitle, { color: colors.foreground }]}>Limites do Cartão</Text>
               <Text style={[styles.modalSubtitle, { color: colors.mutedForeground }]}>
-                Defina o valor máximo que você aceita pagar por mês na soma das suas faturas de cartão de crédito.
+                Defina os seus limites pessoais para evitar que as faturas de cartão de crédito fiquem impagáveis.
               </Text>
 
               <View style={styles.modalField}>
+                <Text style={[styles.modalLabel, { color: colors.foreground }]}>Teto Máximo da Fatura (R$)</Text>
+                <Text style={{ color: colors.mutedForeground, fontSize: 12, marginBottom: 8, marginTop: -4 }}>
+                  O simulador não aprovará a compra se o total da fatura mensal ficar maior que esse valor.
+                </Text>
                 <TextInput
                   style={[styles.modalInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.secondary }]}
                   value={tempMaxSpend}
@@ -536,7 +546,10 @@ export function WishlistScreen() {
               </View>
 
               <View style={styles.modalField}>
-                <Text style={[styles.modalLabel, { color: colors.mutedForeground, marginTop: 10 }]}>Margem de Segurança da Fatura (R$)</Text>
+                <Text style={[styles.modalLabel, { color: colors.foreground, marginTop: 10 }]}>Reserva para Imprevistos (R$)</Text>
+                <Text style={{ color: colors.mutedForeground, fontSize: 12, marginBottom: 8, marginTop: -4 }}>
+                  Uma folga financeira no seu teto para garantir espaço caso aconteça alguma emergência no cartão.
+                </Text>
                 <TextInput
                   style={[styles.modalInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.secondary }]}
                   value={tempCreditSafetyMargin}
