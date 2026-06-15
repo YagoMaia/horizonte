@@ -148,11 +148,6 @@ export function ItemBreakdownSheet({
                             • Margem de Segurança (Reservado): <Text style={{ fontWeight: '600', color: colors.foreground }}>{formatMoney(creditData.creditSafetyMargin)}</Text>
                           </Text>
                         )}
-                        {creditData.maxCreditSpend !== Infinity && creditData.effectiveMaxCreditSpend !== undefined && (
-                          <Text style={[styles.explanationText, { color: colors.mutedForeground }]}>
-                            • Teto Útil (Disponível): <Text style={{ fontWeight: '600', color: colors.foreground }}>{formatMoney(creditData.effectiveMaxCreditSpend)}</Text>
-                          </Text>
-                        )}
                         <Text style={[styles.explanationText, { color: colors.mutedForeground }]}>
                           • Fatura Mensal Já Comprometida: <Text style={{ fontWeight: '600', color: colors.foreground }}>{formatMoney(creditData.currentMonthBill)}</Text>
                         </Text>

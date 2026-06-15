@@ -214,9 +214,9 @@ export function WishlistScreen() {
           </View>
           <View style={[styles.budgetDivider, { backgroundColor: colors.primary + '30' }]} />
           <View style={styles.budgetItem}>
-            <Text style={[styles.budgetLabel, { color: colors.mutedForeground }]}>Teto Útil (Cartão)</Text>
-            <Text style={[styles.budgetValue, { color: effectiveMax === 'Sem Teto' ? colors.mutedForeground : colors.primary }]}>
-              {effectiveMax}
+            <Text style={[styles.budgetLabel, { color: colors.mutedForeground }]}>Total Pendente</Text>
+            <Text style={[styles.budgetValue, { color: pendingTotal > availableCash ? colors.destructive : colors.success }]}>
+              R$ {pendingTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
             </Text>
           </View>
         </View>
@@ -294,7 +294,8 @@ export function WishlistScreen() {
         <Text style={[styles.addBtnText, { color: colors.primary }]}>Adicionar novo desejo</Text>
       </TouchableOpacity>
     </View>
-  );
+    );
+  };
 
   const renderEmpty = () => (
     <View style={styles.emptyState}>
