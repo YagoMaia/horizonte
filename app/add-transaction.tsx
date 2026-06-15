@@ -98,9 +98,11 @@ export default function AddTransactionScreen() {
   useEffect(() => {
     if (isCreditCardSelected && type !== 'despesa') {
       setType('despesa');
-      setPaid(false);
+      if (!isEditing) {
+        setPaid(false);
+      }
     }
-  }, [isCreditCardSelected, type]);
+  }, [isCreditCardSelected, type, isEditing]);
 
   useEffect(() => {
     if (transactionToEdit) {
@@ -110,12 +112,23 @@ export default function AddTransactionScreen() {
       setAccountId(transactionToEdit.accountId);
       setRecurrence(transactionToEdit.recurrence);
       setPaid(transactionToEdit.paid);
-      setPaid(transactionToEdit.paid);
+      setTag((transactionToEdit as any).tag || 'Outros');
       setProjectId(transactionToEdit.projectId);
       setGoalIds(transactionToEdit.goalIds || []);
       setInstallments(transactionToEdit.totalInstallments || 1);
       const d = new Date(transactionToEdit.date);
       setDate(`${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`);
+      // Inicializar campos de recorrência para edição
+      if (transactionToEdit.recurrenceStartDate) {
+        const rs = new Date(transactionToEdit.recurrenceStartDate);
+        setRecurrenceStart(`${String(rs.getDate()).padStart(2, '0')}/${String(rs.getMonth() + 1).padStart(2, '0')}/${rs.getFullYear()}`);
+      } else {
+        setRecurrenceStart(`${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`);
+      }
+      if (transactionToEdit.recurrenceEndDate) {
+        const re = new Date(transactionToEdit.recurrenceEndDate);
+        setRecurrenceEnd(`${String(re.getDate()).padStart(2, '0')}/${String(re.getMonth() + 1).padStart(2, '0')}/${re.getFullYear()}`);
+      }
     } else {
       setType(initialType ?? 'despesa');
       setAccountId(initialAccountId ?? (accounts && accounts.length > 0 ? accounts[0].id : ''));

@@ -1250,7 +1250,22 @@ export function useStore() {
           finalTransactions = finalTransactions.map(t => t.id === mutantNew.id ? mutantNew : t);
         }
       } else {
-        finalTransactions = finalTransactions.map(t => t.id === updatedTx.id ? updatedTx : t);
+        // Merge: preservar campos de família e metadados do oldTx que não vêm do formulário
+        const targetAccount = accounts.find(a => a.id === (updatedTx.accountId || oldTx.accountId));
+        const isCreditCard = targetAccount?.type === 'cartao_credito';
+        const mergedTx = {
+          ...oldTx,
+          ...updatedTx,
+          // Preservar metadados de família
+          groupId: oldTx.groupId,
+          groupIndex: oldTx.groupIndex,
+          notificationId: (oldTx as any).notificationId,
+          // Para cartão de crédito, preservar o status paid original
+          paid: isCreditCard ? oldTx.paid : updatedTx.paid,
+          // Preservar a data original se não foi explicitamente alterada
+          date: updatedTx.date || oldTx.date,
+        };
+        finalTransactions = finalTransactions.map(t => t.id === mergedTx.id ? mergedTx : t);
       }
 
       await saveTransactions(finalTransactions);
