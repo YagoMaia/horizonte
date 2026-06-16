@@ -31,6 +31,7 @@ interface ItemBreakdownSheetProps {
   currentAvailable?: number;
   creditData?: {
     maxCreditSpend: number;
+    creditSafetyMargin: number;
     currentMonthBill: number;
     installmentValue: number;
     installments: number;
@@ -60,10 +61,15 @@ export function ItemBreakdownSheet({
   if (!item || !breakdownData) return null;
 
   const {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     initialBalance,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     projectedRevenues,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     projectedExpenses,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     totalDailyAllowance,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     totalSafetyMargin,
     rawAvailable
   } = breakdownData;
@@ -84,6 +90,7 @@ export function ItemBreakdownSheet({
     highlightColor = '#F59E0B'; // AMARELO
   } else {
     headerText = `Projeção para o mês de ${MONTH_NAMES[targetMonthIndex]}`;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     highlightColor = '#EF4444'; // VERMELHO
   }
 

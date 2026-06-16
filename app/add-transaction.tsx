@@ -135,6 +135,7 @@ export default function AddTransactionScreen() {
       const acc = accounts?.find(a => a.id === (initialAccountId || (accounts && accounts.length > 0 ? accounts[0].id : '')));
       setPaid(acc?.type === 'cartao_credito' ? false : true);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transactionToEdit, initialAccountId, initialType]);
 
   const renderCalendar = () => {

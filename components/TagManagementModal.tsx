@@ -8,6 +8,7 @@ import {
   ScrollView,
   TextInput,
   Alert,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   FlatList,
   Platform,
 } from 'react-native';

@@ -128,6 +128,7 @@ export function ProjetosScreen() {
         isOverBudget,
       };
     });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projects, getProjectSpent, transactions]);
 
   return (

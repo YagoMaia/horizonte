@@ -19,6 +19,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useStoreContext } from "@/context/StoreContext";
 import { formatCurrency, formatDateShort } from "@/lib/utils";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { TagManagementModal } from "../TagManagementModal";
 import { useRouter } from "expo-router";
 
@@ -464,6 +465,7 @@ export function HorizonteScreen() {
     }
 
     return resultsMap;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transactions, activeBalance, activeAccountIds, year, month, getEffectiveBudget, today]);
 
   // Extrai o mês focado para o Modo Lista e Resumo

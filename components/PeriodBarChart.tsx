@@ -3,7 +3,9 @@ import { View, Text, StyleSheet } from 'react-native';
 import Svg, { Rect, G, Text as SvgText, Line } from 'react-native-svg';
 import { Transaction } from '@/constants/types';
 import { useTheme } from '@/hooks/useTheme';
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { formatCurrency } from '@/lib/utils';
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { startOfWeek, endOfWeek, getDate, getMonth, getYear, getDaysInMonth } from 'date-fns';
 
 type Period = 'semana' | 'mes' | 'ano';

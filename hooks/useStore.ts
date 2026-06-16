@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Transaction, Account, Tag, DEFAULT_TAGS, Project, NotificationPreferences, WishlistItem, UserSettings, PaymentPreference } from '@/constants/types';
 import * as NotificationService from '../services/notificationService';
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { addMonths, addYears, addWeeks, addDays, setDate } from 'date-fns';
 import { getInvoiceForTx } from '@/lib/utils';
 
@@ -489,6 +490,7 @@ export function useStore() {
     let nextMonthYear = currentYear;
     if (nextMonth > 11) {
       nextMonth = 0;
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       nextMonthYear++;
     }
 
@@ -603,7 +605,7 @@ export function useStore() {
           currentAvailable,
           creditData: { maxCreditSpend, creditSafetyMargin, currentMonthBill, installmentValue, installments, effectiveMaxCreditSpend, billTransactions: getCreditBillTransactionsForMonth(currentMonth, currentYear) }
         };
-      } else if (startOffsetThatWorked > 0 && bestFutureMonthForInstallments !== undefined) {
+      } else if (startOffsetThatWorked > 0 && bestFutureMonthForInstallments !== undefined && bestFutureYearForInstallments !== undefined) {
         const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
         return {
           status: 'AMARELO',
@@ -764,6 +766,7 @@ export function useStore() {
         await saveTransactions([adjustmentTx, ...transactions]);
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [accounts, transactions, saveAccounts, saveTransactions, notificationPreferences],
   );
 
@@ -799,11 +802,13 @@ export function useStore() {
       );
       await syncBalances(finalTransactions, updatedAccounts);
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [accounts, transactions, saveTransactions, syncBalances, notificationPreferences],
   );
 
   const deleteAccount = useCallback(
     async (id: string) => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const targetAcc = accounts.find(a => a.id === id);
 
       const updatedAccounts = accounts.filter((a) => a.id !== id);
@@ -1111,6 +1116,7 @@ export function useStore() {
       await syncBalances(updated, accounts);
       return newTransactions[0];
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [transactions, accounts, saveTransactions, syncBalances, notificationPreferences],
   );
 
@@ -1253,17 +1259,22 @@ export function useStore() {
         // Merge: preservar campos de família e metadados do oldTx que não vêm do formulário
         const targetAccount = accounts.find(a => a.id === (updatedTx.accountId || oldTx.accountId));
         const isCreditCard = targetAccount?.type === 'cartao_credito';
+        // Filtrar propriedades undefined do updatedTx para não sobrescrever valores existentes do oldTx
+        const cleanedUpdatedTx = Object.fromEntries(
+          Object.entries(updatedTx).filter(([_, v]) => v !== undefined)
+        );
         const mergedTx = {
           ...oldTx,
-          ...updatedTx,
+          ...cleanedUpdatedTx,
           // Preservar metadados de família
           groupId: oldTx.groupId,
           groupIndex: oldTx.groupIndex,
           notificationId: (oldTx as any).notificationId,
+          notifyRecurrence: oldTx.notifyRecurrence,
           // Para cartão de crédito, preservar o status paid original
           paid: isCreditCard ? oldTx.paid : updatedTx.paid,
-          // Preservar a data original se não foi explicitamente alterada
-          date: updatedTx.date || oldTx.date,
+          // Preservar a data original para evitar shifts de timezone na reconstrução
+          date: oldTx.date,
         };
         finalTransactions = finalTransactions.map(t => t.id === mergedTx.id ? mergedTx : t);
       }

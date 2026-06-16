@@ -1,6 +1,6 @@
 import { renderHook, act } from '@testing-library/react-native';
 import { useStore } from '../hooks/useStore';
-import { Account, Project, Transaction } from '../constants/types';
+import { Account } from '../constants/types';
 
 // Mock do AsyncStorage
 jest.mock('@react-native-async-storage/async-storage', () => ({

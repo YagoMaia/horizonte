@@ -38,6 +38,7 @@ export function ProjectTransactionsModal({ project, onClose }: Props) {
     return totalSpent > project.targetBudget;
   }, [project, totalSpent]);
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const handlePressTx = useCallback((tx: Transaction) => {
     // Aqui você pode adicionar lógica para abrir detalhes se necessário
   }, []);

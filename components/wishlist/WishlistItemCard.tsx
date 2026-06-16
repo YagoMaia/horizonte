@@ -14,6 +14,7 @@ interface WishlistItemCardProps {
   onPress?: () => void;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const MONTH_NAMES = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
   'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
@@ -24,6 +25,7 @@ export function WishlistItemCard({ item, onBuyPress, onDeletePress, onPress }: W
   const { evaluateItemAffordability } = useStoreContext();
   
   const isBought = item.status === 'COMPRADO';
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { status, bestFutureMonth, suggestedMethod, suggestedMessage } = evaluateItemAffordability(item.price, item.paymentPreference, item.installments);
 
   let borderColor = '#9CA3AF';

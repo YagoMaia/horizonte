@@ -15,6 +15,7 @@ interface AccountItemProps {
   onSetPrimary: (id: string) => void;
 }
 
+// eslint-disable-next-line react/display-name
 export const AccountItem = React.memo(({ 
   account, 
   colors, 

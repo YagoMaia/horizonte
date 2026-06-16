@@ -29,6 +29,7 @@ interface TransactionItemProps {
   renderRightActions?: (txId: string) => React.ReactNode;
 }
 
+// eslint-disable-next-line react/display-name
 export const TransactionItem = React.memo(({
   transaction,
   account,

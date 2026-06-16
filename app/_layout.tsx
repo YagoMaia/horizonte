@@ -10,7 +10,6 @@ import { StoreProvider } from '@/context/StoreContext'
 import { ThemeProvider, useThemeContext } from '@/context/ThemeContext'
 import * as NotificationService from '../services/notificationService'
 
-import { TransitionSpecs, HeaderStyleInterpolators } from '@react-navigation/stack';
 
 function AppContent() {
   const { isDark, colors } = useThemeContext()
@@ -36,20 +35,7 @@ function AppContent() {
     },
   };
 
-  const fastTransitionSpec = {
-    open: {
-      animation: 'timing',
-      config: {
-        duration: 250, // 👈 Reduzido de 400-500ms (padrão) para 250ms
-      },
-    },
-    close: {
-      animation: 'timing',
-      config: {
-        duration: 200,
-      },
-    },
-  };
+
 
   return (
     <NavThemeProvider value={customNavTheme}>
@@ -65,7 +51,7 @@ function AppContent() {
             presentation: 'modal', 
             animation: 'slide_from_bottom',
             gestureEnabled: true,
-            transitionSpec: fastTransitionSpec as any,
+            animationDuration: 250,
           }} 
         />
         <Stack.Screen 
@@ -74,7 +60,7 @@ function AppContent() {
             presentation: 'modal', 
             animation: 'slide_from_bottom',
             gestureEnabled: true,
-            transitionSpec: fastTransitionSpec as any,
+            animationDuration: 250,
           }} 
         />
       </Stack>

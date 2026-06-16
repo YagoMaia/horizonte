@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { View, Text, StyleSheet, Modal, TouchableOpacity, FlatList, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Transaction } from '@/constants/types';

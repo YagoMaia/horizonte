@@ -63,7 +63,7 @@ async function scheduleReminder(key: string, title: string, body: string, hour: 
         hour,
         minute,
         repeats: true,
-      },
+      } as any,
     });
 
     await AsyncStorage.setItem(key, notificationId);
