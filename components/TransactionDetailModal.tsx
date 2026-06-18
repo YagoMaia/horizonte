@@ -13,7 +13,7 @@ import { Ionicons } from '@expo/vector-icons'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useTheme } from '@/hooks/useTheme'
 import { useStoreContext } from '@/context/StoreContext'
-import { Transaction } from '@/constants/types'
+import { Transaction, SavingsGoal } from '@/constants/types'
 import { formatCurrency, formatDate, getTransactionVisuals } from '@/lib/utils'
 import { ConfirmDeleteModal } from './ConfirmDeleteModal'
 
@@ -21,6 +21,7 @@ interface TransactionDetailModalProps {
   transaction: Transaction | null
   onClose: () => void
   onEdit?: (transaction: Transaction) => void
+  goals?: SavingsGoal[]
 }
 
 const RECURRENCE_LABELS: Record<string, string> = {
@@ -31,7 +32,7 @@ const RECURRENCE_LABELS: Record<string, string> = {
   anual: 'Anual',
 }
 
-export function TransactionDetailModal({ transaction, onClose, onEdit }: TransactionDetailModalProps) {
+export function TransactionDetailModal({ transaction, onClose, onEdit, goals }: TransactionDetailModalProps) {
   const { colors } = useTheme()
   const { accounts, deleteTransaction } = useStoreContext()
   const insets = useSafeAreaInsets()
@@ -41,6 +42,18 @@ export function TransactionDetailModal({ transaction, onClose, onEdit }: Transac
 
   const account = accounts.find(a => a.id === transaction.accountId)
   const visuals = getTransactionVisuals(transaction.type, colors)
+
+  let destinationName = ''
+  if (transaction.type === 'transferencia' && transaction.targetAccountId) {
+    if (transaction.targetAccountId.startsWith('goal_')) {
+      const goalId = transaction.targetAccountId.replace('goal_', '')
+      const goal = goals?.find(g => g.id === goalId)
+      destinationName = goal ? `Meta: ${goal.name}` : 'Meta removida'
+    } else {
+      const destAccount = accounts.find(a => a.id === transaction.targetAccountId)
+      destinationName = destAccount ? destAccount.name : 'Conta removida'
+    }
+  }
 
   const handleDelete = async () => {
     await deleteTransaction(transaction.id)
@@ -122,6 +135,9 @@ export function TransactionDetailModal({ transaction, onClose, onEdit }: Transac
                 transaction.type === 'despesa' ? 'Despesa' : 'Transferência'
             } colors={colors} />
             <DetailRow label="Conta" value={account?.name ?? '—'} colors={colors} />
+            {destinationName !== '' && (
+              <DetailRow label="Destino" value={destinationName} colors={colors} />
+            )}
             <DetailRow label="Recorrência" value={RECURRENCE_LABELS[transaction.recurrence] ?? '—'} colors={colors} />
             <DetailRow label="Lembrete" value={transaction.reminderEnabled ? 'Ativado' : 'Desativado'} colors={colors} />
             {transaction.notes && (

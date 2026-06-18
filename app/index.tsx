@@ -1,5 +1,5 @@
 // app/index.tsx
-import React, { useState, useCallback } from 'react'
+import React, { useState, useCallback, useEffect } from 'react'
 import {
   View,
   Text,
@@ -28,7 +28,7 @@ import { useSavingsGoals } from '@/hooks/useSavingsGoals'
 export default function HomePage() {
   const { colors } = useTheme()
   const store = useStoreContext()
-  const { goals, deposits } = useSavingsGoals()
+  const { goals, deposits, processOverdueRecurrences } = useSavingsGoals()
   const [activeTab, setActiveTab] = useState<TabType>('saldos')
   const [modalVisible, setModalVisible] = useState(false)
   
@@ -53,6 +53,13 @@ export default function HomePage() {
       }
     }
   }, [defaultValues.accountId, defaultValues.type]);
+
+  // Process recurring goal deposits on app startup (after store loads)
+  useEffect(() => {
+    if (!store.loading) {
+      processOverdueRecurrences(store.addTransaction);
+    }
+  }, [store.loading, store.addTransaction, processOverdueRecurrences]);
 
   if (store.loading) {
     return (
@@ -177,6 +184,7 @@ export default function HomePage() {
         accounts={store.accounts}
         initialAccountId={defaultValues.accountId}
         initialType={defaultValues.type}
+        goals={goals}
       />
     </SafeAreaView>
   )

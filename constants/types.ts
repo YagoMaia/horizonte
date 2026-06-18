@@ -87,3 +87,25 @@ export interface UpdateGoalInput {
   icon: string
   color: string
 }
+
+export interface GoalRecurrence {
+  id: string                    // Unique identifier
+  goalId: string                // Reference to SavingsGoal.id
+  amount: number                // Monthly deposit amount (positive)
+  accountId: string             // Source account to debit
+  dayOfMonth: number            // Day to process (1–28)
+  startDate: string             // ISO date — first eligible processing date
+  endDate?: string | null       // ISO date or null (no end)
+  lastProcessedDate?: string | null // ISO date of last successful processing
+  active: boolean               // false = cancelled
+  createdAt: string
+}
+
+export interface CreateGoalRecurrenceInput {
+  goalId: string
+  amount: number
+  accountId: string
+  dayOfMonth: number
+  startDate: string
+  endDate?: string | null
+}

@@ -23,6 +23,7 @@ import { GoalFormModal } from '../GoalFormModal';
 import { GoalDepositModal } from '../GoalDepositModal';
 import { GoalWithdrawModal } from '../GoalWithdrawModal';
 import { ConfirmDeleteModal } from '../ConfirmDeleteModal';
+import { GoalRecurrenceModal } from '../GoalRecurrenceModal';
 
 interface GoalDetailScreenProps {
   goal: SavingsGoal;
@@ -33,16 +34,23 @@ interface GoalDetailScreenProps {
 export function GoalDetailScreen({ goal: initialGoal, onBack, deposits: initialDeposits }: GoalDetailScreenProps) {
   const { colors } = useTheme();
   const { accounts, addTransaction } = useStoreContext();
-  const { goals, deposits: allDeposits, addDeposit, addWithdrawal, updateGoal, deleteGoal } = useSavingsGoals();
+  const { goals, deposits: allDeposits, recurrences, addDeposit, addWithdrawal, updateGoal, deleteGoal, createRecurrence, cancelRecurrence } = useSavingsGoals();
 
   // Use live data from hook if available, fallback to props
   const goal = goals.find((g) => g.id === initialGoal.id) || initialGoal;
   const deposits = allDeposits.filter((d) => d.goalId === goal.id);
 
+  // Active recurrence for this goal (at most one)
+  const activeRecurrence = useMemo(
+    () => recurrences.find((r) => r.goalId === goal.id && r.active) ?? null,
+    [recurrences, goal.id]
+  );
+
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDepositModal, setShowDepositModal] = useState(false);
   const [showWithdrawModal, setShowWithdrawModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showRecurrenceModal, setShowRecurrenceModal] = useState(false);
 
   // Derived values
   const progress = calculateProgress(goal.accumulatedAmount, goal.targetAmount);
@@ -74,6 +82,29 @@ export function GoalDetailScreen({ goal: initialGoal, onBack, deposits: initialD
       recurrence: 'unica',
       paymentMethod: 'debito',
     });
+  };
+
+  const handleCreateRecurrence = async (
+    amount: number,
+    accountId: string,
+    dayOfMonth: number,
+    _hasEndDate: boolean,
+    endDate?: string
+  ) => {
+    await createRecurrence({
+      goalId: goal.id,
+      amount,
+      accountId,
+      dayOfMonth,
+      startDate: new Date().toISOString(),
+      endDate: endDate ?? null,
+    });
+  };
+
+  const handleCancelRecurrence = async () => {
+    if (activeRecurrence) {
+      await cancelRecurrence(activeRecurrence.id);
+    }
   };
 
   const handleWithdraw = async (amount: number, accountId: string) => {
@@ -262,6 +293,49 @@ export function GoalDetailScreen({ goal: initialGoal, onBack, deposits: initialD
           </TouchableOpacity>
         </View>
 
+        {/* Recurring deposit card */}
+        <TouchableOpacity
+          style={[
+            styles.recurrenceCard,
+            {
+              backgroundColor: activeRecurrence ? colors.primary + '10' : colors.card,
+              borderColor: activeRecurrence ? colors.primary + '40' : colors.border,
+            },
+          ]}
+          onPress={() => setShowRecurrenceModal(true)}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.recurrenceIconWrap, { backgroundColor: activeRecurrence ? colors.primary + '20' : colors.border + '60' }]}>
+            <Ionicons
+              name={activeRecurrence ? 'repeat' : 'repeat-outline'}
+              size={20}
+              color={activeRecurrence ? colors.primary : colors.mutedForeground}
+            />
+          </View>
+          <View style={{ flex: 1 }}>
+            {activeRecurrence ? (
+              <>
+                <Text style={[styles.recurrenceTitle, { color: colors.primary }]}>
+                  Aporte mensal ativo
+                </Text>
+                <Text style={[styles.recurrenceSub, { color: colors.mutedForeground }]}>
+                  {formatCurrency(activeRecurrence.amount)} todo dia {activeRecurrence.dayOfMonth}
+                </Text>
+              </>
+            ) : (
+              <>
+                <Text style={[styles.recurrenceTitle, { color: colors.foreground }]}>
+                  Configurar aporte mensal
+                </Text>
+                <Text style={[styles.recurrenceSub, { color: colors.mutedForeground }]}>
+                  Automatize depósitos periódicos nesta meta
+                </Text>
+              </>
+            )}
+          </View>
+          <Ionicons name="chevron-forward" size={16} color={colors.mutedForeground} />
+        </TouchableOpacity>
+
         {/* Deposit history */}
         <View style={styles.historySection}>
           <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
@@ -326,6 +400,16 @@ export function GoalDetailScreen({ goal: initialGoal, onBack, deposits: initialD
         onConfirm={handleDelete}
         confirmText="Excluir"
         cancelText="Cancelar"
+      />
+
+      <GoalRecurrenceModal
+        visible={showRecurrenceModal}
+        onClose={() => setShowRecurrenceModal(false)}
+        onConfirm={handleCreateRecurrence}
+        onCancel={activeRecurrence ? handleCancelRecurrence : undefined}
+        accounts={accounts}
+        goalName={goal.name}
+        existingRecurrence={activeRecurrence}
       />
     </View>
   );
@@ -485,6 +569,29 @@ const styles = StyleSheet.create({
   actionBtnText: {
     fontSize: 13,
     fontWeight: '600',
+  },
+  recurrenceCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  recurrenceIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  recurrenceTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  recurrenceSub: {
+    fontSize: 12,
+    marginTop: 2,
   },
   historySection: {
     gap: 12,

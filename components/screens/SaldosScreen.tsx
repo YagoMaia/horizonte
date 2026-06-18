@@ -1,5 +1,6 @@
 // components/screens/SaldosScreen.tsx
 import React, { useMemo, useState, useRef } from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   View,
   Text,
@@ -34,6 +35,7 @@ import { RecurrenceActionModal } from '../RecurrenceActionModal';
 import { ConfirmDeleteModal } from '../ConfirmDeleteModal';
 import { SearchBar } from '../SearchBar';
 import { useTransactionSearch } from '@/hooks/useTransactionSearch';
+import { useSavingsGoals } from '@/hooks/useSavingsGoals';
 
 const MONTHS = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -51,6 +53,8 @@ export function SaldosScreen() {
     deleteTransaction,
     loading,
   } = useStoreContext();
+  const { goals } = useSavingsGoals();
+  const insets = useSafeAreaInsets();
 
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -578,9 +582,9 @@ export function SaldosScreen() {
         />
       </View>
 
-      <TransactionDetailModal transaction={isEditing ? null : selectedTx} onClose={() => setSelectedTx(null)} onEdit={() => setIsEditing(true)} />
+      <TransactionDetailModal transaction={isEditing ? null : selectedTx} onClose={() => setSelectedTx(null)} onEdit={() => setIsEditing(true)} goals={goals} />
       {isEditing && selectedTx && (
-        <AddTransactionModal visible={isEditing} onClose={() => { setIsEditing(false); setSelectedTx(null); }} onAdd={addTransaction} onUpdate={updateTransaction} accounts={accounts} transactionToEdit={selectedTx} />
+        <AddTransactionModal visible={isEditing} onClose={() => { setIsEditing(false); setSelectedTx(null); }} onAdd={addTransaction} onUpdate={updateTransaction} accounts={accounts} transactionToEdit={selectedTx} goals={goals} />
       )}
 
       {/* Modal de Filtros (Simplificado sem o switch de previstos) */}

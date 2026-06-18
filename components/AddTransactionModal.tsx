@@ -20,6 +20,7 @@ import {
   TransactionType,
   RecurrenceType,
   Account,
+  SavingsGoal,
 } from '@/constants/types';
 import { RecurrenceActionModal } from './RecurrenceActionModal';
 
@@ -43,8 +44,8 @@ interface AddTransactionModalProps {
   visible: boolean;
   onClose: () => void;
   onAdd: (tx: any) => void;
-  onUpdate?: (tx: any, mode: 'single' | 'future' | 'all') => void;
   accounts: Account[];
+  goals?: SavingsGoal[];
   transactionToEdit?: Transaction | null;
   initialAccountId?: string;
   initialType?: TransactionType;
@@ -62,9 +63,9 @@ const RECURRENCE_OPTIONS: { value: RecurrenceType; label: string }[] = [
 export function AddTransactionModal({
   visible,
   onClose,
-  onAdd,
   onUpdate,
   accounts,
+  goals,
   transactionToEdit,
   initialAccountId,
   initialType,
@@ -690,10 +691,45 @@ export function AddTransactionModal({
                       </TouchableOpacity>
                     ))}
                 </View>
+                
+                {/* Goals Destination */}
+                {goals && goals.length > 0 && (
+                  <View style={{ marginTop: 12 }}>
+                    <Text style={{ fontSize: 12, fontWeight: '600', color: colors.foreground, marginBottom: 8 }}>Metas</Text>
+                    <View style={styles.chipRow}>
+                      {goals.map((goal) => {
+                        const goalTargetId = `goal_${goal.id}`;
+                        return (
+                          <TouchableOpacity
+                            key={goalTargetId}
+                            style={[
+                              styles.chip,
+                              {
+                                borderColor: goal.color,
+                                backgroundColor: targetAccountId === goalTargetId ? goal.color : 'transparent',
+                              },
+                            ]}
+                            onPress={() => setTargetAccountId(goalTargetId)}
+                          >
+                            <Text
+                              style={[
+                                styles.chipText,
+                                { color: targetAccountId === goalTargetId ? '#FFF' : goal.color },
+                              ]}
+                            >
+                              {goal.name}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </View>
+                )}
+
                 {accounts.filter(
                   (acc) =>
                     acc.id !== accountId && acc.type !== 'cartao_credito',
-                ).length === 0 && (
+                ).length === 0 && (!goals || goals.length === 0) && (
                     <Text style={{ fontSize: 11, color: colors.destructive }}>
                       Não tem outras contas disponíveis para receber a
                       transferência.
