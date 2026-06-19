@@ -44,6 +44,7 @@ interface AddTransactionModalProps {
   visible: boolean;
   onClose: () => void;
   onAdd: (tx: any) => void;
+  onUpdate?: (tx: any, mode: 'single' | 'future' | 'all') => void;
   accounts: Account[];
   goals?: SavingsGoal[];
   transactionToEdit?: Transaction | null;
@@ -63,6 +64,7 @@ const RECURRENCE_OPTIONS: { value: RecurrenceType; label: string }[] = [
 export function AddTransactionModal({
   visible,
   onClose,
+  onAdd,
   onUpdate,
   accounts,
   goals,

@@ -53,7 +53,7 @@ export function SaldosScreen() {
     deleteTransaction,
     loading,
   } = useStoreContext();
-  const { goals } = useSavingsGoals();
+  const { goals, addDeposit } = useSavingsGoals();
   const insets = useSafeAreaInsets();
 
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
@@ -584,7 +584,21 @@ export function SaldosScreen() {
 
       <TransactionDetailModal transaction={isEditing ? null : selectedTx} onClose={() => setSelectedTx(null)} onEdit={() => setIsEditing(true)} goals={goals} />
       {isEditing && selectedTx && (
-        <AddTransactionModal visible={isEditing} onClose={() => { setIsEditing(false); setSelectedTx(null); }} onAdd={addTransaction} onUpdate={updateTransaction} accounts={accounts} transactionToEdit={selectedTx} goals={goals} />
+        <AddTransactionModal 
+          visible={isEditing} 
+          onClose={() => { setIsEditing(false); setSelectedTx(null); }} 
+          onAdd={async (tx) => {
+            await addTransaction(tx);
+            if (tx.type === 'transferencia' && tx.targetAccountId?.startsWith('goal_')) {
+              const goalId = tx.targetAccountId.replace('goal_', '');
+              await addDeposit(goalId, tx.amount, tx.accountId);
+            }
+          }} 
+          onUpdate={updateTransaction} 
+          accounts={accounts} 
+          transactionToEdit={selectedTx} 
+          goals={goals} 
+        />
       )}
 
       {/* Modal de Filtros (Simplificado sem o switch de previstos) */}

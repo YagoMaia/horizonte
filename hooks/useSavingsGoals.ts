@@ -270,7 +270,6 @@ export function useSavingsGoals(): UseSavingsGoalsReturn {
         setDeposits(newDeposits);
       } catch (e) {
         // Revert: don't update in-memory state on write failure
-        console.error('Erro ao registrar depósito:', e);
         throw new Error('Não foi possível registrar o depósito. Tente novamente.');
       }
     }),

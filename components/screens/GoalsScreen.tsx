@@ -13,16 +13,20 @@ import { useTheme } from '@/hooks/useTheme';
 import { useSavingsGoals } from '@/hooks/useSavingsGoals';
 import { calculateProgress } from '@/lib/goalUtils';
 import { formatCurrency } from '@/lib/utils';
-import { SavingsGoal, CreateGoalInput } from '@/constants/types';
+import { SavingsGoal, GoalDeposit, GoalRecurrence, CreateGoalInput } from '@/constants/types';
 import { GoalFormModal } from '../GoalFormModal';
 
 interface GoalsScreenProps {
   onGoalPress: (goal: SavingsGoal) => void;
+  goals: SavingsGoal[];
+  loading: boolean;
+  error: string | null;
+  createGoal: (input: CreateGoalInput) => Promise<void>;
+  retry: () => Promise<void>;
 }
 
-export function GoalsScreen({ onGoalPress }: GoalsScreenProps) {
+export function GoalsScreen({ onGoalPress, goals, loading, error, createGoal, retry }: GoalsScreenProps) {
   const { colors } = useTheme();
-  const { goals, loading, error, createGoal, retry } = useSavingsGoals();
   const [formModalVisible, setFormModalVisible] = useState(false);
 
   const handleCreateGoal = async (input: CreateGoalInput) => {

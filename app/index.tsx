@@ -28,7 +28,8 @@ import { useSavingsGoals } from '@/hooks/useSavingsGoals'
 export default function HomePage() {
   const { colors } = useTheme()
   const store = useStoreContext()
-  const { goals, deposits, processOverdueRecurrences } = useSavingsGoals()
+  const savingsGoalsProps = useSavingsGoals()
+  const { goals, deposits, processOverdueRecurrences, addDeposit } = savingsGoalsProps
   const [activeTab, setActiveTab] = useState<TabType>('saldos')
   const [modalVisible, setModalVisible] = useState(false)
   
@@ -89,12 +90,25 @@ export default function HomePage() {
               goal={selectedGoal}
               onBack={() => setSelectedGoal(null)}
               deposits={goalDeposits}
+              goals={savingsGoalsProps.goals}
+              recurrences={savingsGoalsProps.recurrences}
+              addDeposit={savingsGoalsProps.addDeposit}
+              addWithdrawal={savingsGoalsProps.addWithdrawal}
+              updateGoal={savingsGoalsProps.updateGoal}
+              deleteGoal={savingsGoalsProps.deleteGoal}
+              createRecurrence={savingsGoalsProps.createRecurrence}
+              cancelRecurrence={savingsGoalsProps.cancelRecurrence}
             />
           )
         }
         return (
           <GoalsScreen
             onGoalPress={(goal) => setSelectedGoal(goal)}
+            goals={savingsGoalsProps.goals}
+            loading={savingsGoalsProps.loading}
+            error={savingsGoalsProps.error}
+            createGoal={savingsGoalsProps.createGoal}
+            retry={savingsGoalsProps.retry}
           />
         )
       case 'relatorios': return <ReportsScreen />
@@ -180,7 +194,19 @@ export default function HomePage() {
       <AddTransactionModal
         visible={modalVisible}
         onClose={() => setModalVisible(false)}
-        onAdd={store.addTransaction}
+        onAdd={async (tx) => {
+          try {
+            await store.addTransaction(tx);
+            
+            if (tx.type === 'transferencia' && tx.targetAccountId?.startsWith('goal_')) {
+              const goalId = tx.targetAccountId.replace('goal_', '');
+              
+              await addDeposit(goalId, tx.amount, tx.accountId);
+            }
+          } catch (error) {
+            console.error('[DEBUG] index.tsx onAdd -> ERROR:', error);
+          }
+        }}
         accounts={store.accounts}
         initialAccountId={defaultValues.accountId}
         initialType={defaultValues.type}

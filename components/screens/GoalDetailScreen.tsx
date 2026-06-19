@@ -9,8 +9,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/hooks/useTheme';
-import { SavingsGoal, GoalDeposit, CreateGoalInput, Account } from '@/constants/types';
-import { useSavingsGoals } from '@/hooks/useSavingsGoals';
+import { SavingsGoal, GoalDeposit, GoalRecurrence, CreateGoalInput, Account } from '@/constants/types';
 import { useStoreContext } from '@/context/StoreContext';
 import {
   calculateProgress,
@@ -28,13 +27,20 @@ import { GoalRecurrenceModal } from '../GoalRecurrenceModal';
 interface GoalDetailScreenProps {
   goal: SavingsGoal;
   onBack: () => void;
+  goals: SavingsGoal[];
   deposits: GoalDeposit[];
+  recurrences: GoalRecurrence[];
+  addDeposit: (goalId: string, amount: number, accountId?: string) => Promise<void>;
+  addWithdrawal: (goalId: string, amount: number, accountId?: string) => Promise<void>;
+  updateGoal: (goalId: string, data: Partial<SavingsGoal>) => Promise<void>;
+  deleteGoal: (goalId: string) => Promise<void>;
+  createRecurrence: (goalId: string, amount: number, accountId: string, frequency: 'semanal' | 'mensal') => Promise<void>;
+  cancelRecurrence: (recurrenceId: string) => Promise<void>;
 }
 
-export function GoalDetailScreen({ goal: initialGoal, onBack, deposits: initialDeposits }: GoalDetailScreenProps) {
+export function GoalDetailScreen({ goal: initialGoal, onBack, goals, deposits: allDeposits, recurrences, addDeposit, addWithdrawal, updateGoal, deleteGoal, createRecurrence, cancelRecurrence }: GoalDetailScreenProps) {
   const { colors } = useTheme();
   const { accounts, addTransaction } = useStoreContext();
-  const { goals, deposits: allDeposits, recurrences, addDeposit, addWithdrawal, updateGoal, deleteGoal, createRecurrence, cancelRecurrence } = useSavingsGoals();
 
   // Use live data from hook if available, fallback to props
   const goal = goals.find((g) => g.id === initialGoal.id) || initialGoal;
