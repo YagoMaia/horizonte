@@ -124,8 +124,18 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
   );
 
   const [selectedCardId, setSelectedCardId] = useState<string | null>(
-    creditCards.length > 0 ? 'all' : null,
+    creditCards.length > 1 ? 'all' : (creditCards.length === 1 ? creditCards[0].id : null),
   );
+
+  useEffect(() => {
+    if (creditCards.length === 1 && selectedCardId === 'all') {
+      setSelectedCardId(creditCards[0].id);
+    } else if (creditCards.length > 1 && selectedCardId === null) {
+      setSelectedCardId('all');
+    } else if (creditCards.length === 0 && selectedCardId !== null) {
+      setSelectedCardId(null);
+    }
+  }, [creditCards, selectedCardId]);
 
   const selectedCard = useMemo(() => {
     if (selectedCardId === 'all') return ALL_CARDS_VIRTUAL_ACCOUNT;
@@ -478,13 +488,15 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
       {/* Card selector carousel */}
       <View style={[styles.carouselContainer, { borderBottomColor: colors.border, backgroundColor: colors.card }]}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.carouselContent}>
-          <TouchableOpacity
-            onPress={() => setSelectedCardId('all')}
-            style={[styles.cardSelectorItem, { backgroundColor: selectedCardId === 'all' ? colors.primary : 'transparent', borderColor: selectedCardId === 'all' ? colors.primary : colors.border }]}
-          >
-            <Ionicons name="albums" size={16} color={selectedCardId === 'all' ? '#FFF' : colors.foreground} style={{ marginRight: 6 }} />
-            <Text style={{ fontSize: 13, fontWeight: '600', color: selectedCardId === 'all' ? '#FFF' : colors.foreground }}>Todos</Text>
-          </TouchableOpacity>
+          {creditCards.length > 1 && (
+            <TouchableOpacity
+              onPress={() => setSelectedCardId('all')}
+              style={[styles.cardSelectorItem, { backgroundColor: selectedCardId === 'all' ? colors.primary : 'transparent', borderColor: selectedCardId === 'all' ? colors.primary : colors.border }]}
+            >
+              <Ionicons name="albums" size={16} color={selectedCardId === 'all' ? '#FFF' : colors.foreground} style={{ marginRight: 6 }} />
+              <Text style={{ fontSize: 13, fontWeight: '600', color: selectedCardId === 'all' ? '#FFF' : colors.foreground }}>Todos</Text>
+            </TouchableOpacity>
+          )}
 
           {creditCards.map((card: Account) => {
             const isSelected = card.id === selectedCardId;
