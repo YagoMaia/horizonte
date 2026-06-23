@@ -30,6 +30,7 @@ export interface UseSavingsGoalsReturn {
   updateGoal: (id: string, input: UpdateGoalInput) => Promise<void>;
   deleteGoal: (id: string) => Promise<void>;
   addDeposit: (goalId: string, amount: number, accountId?: string) => Promise<void>;
+  deleteDeposit: (depositId: string) => Promise<void>;
   addWithdrawal: (goalId: string, amount: number, accountId?: string) => Promise<void>;
 
   // Recurrence CRUD
@@ -274,6 +275,35 @@ export function useSavingsGoals(): UseSavingsGoalsReturn {
       }
     }),
     [goals, deposits, recurrences, sortGoals, persist, withWriteLock],
+  );
+
+  // Delete a deposit
+  const deleteDeposit = useCallback(
+    (depositId: string) => withWriteLock(async () => {
+      const deposit = deposits.find((d) => d.id === depositId);
+      if (!deposit) {
+        throw new Error('Depósito não encontrado.');
+      }
+
+      const newDeposits = deposits.filter((d) => d.id !== depositId);
+      const newGoals = sortGoals(
+        goals.map((g) =>
+          g.id === deposit.goalId
+            ? { ...g, accumulatedAmount: g.accumulatedAmount - deposit.amount, updatedAt: new Date().toISOString() }
+            : g
+        )
+      );
+      const newData: StorageData = { goals: newGoals, deposits: newDeposits, recurrences };
+
+      try {
+        await persist(newData);
+        setGoals(newGoals);
+        setDeposits(newDeposits);
+      } catch (e) {
+        throw new Error('Não foi possível excluir o depósito. Tente novamente.');
+      }
+    }),
+    [deposits, goals, recurrences, sortGoals, persist, withWriteLock],
   );
 
   // Add a withdrawal from a goal (stored as negative deposit)
@@ -534,6 +564,7 @@ export function useSavingsGoals(): UseSavingsGoalsReturn {
     updateGoal,
     deleteGoal,
     addDeposit,
+    deleteDeposit,
     addWithdrawal,
     createRecurrence,
     cancelRecurrence,

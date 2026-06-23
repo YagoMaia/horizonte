@@ -53,7 +53,7 @@ export function SaldosScreen() {
     deleteTransaction,
     loading,
   } = useStoreContext();
-  const { goals, addDeposit } = useSavingsGoals();
+  const { goals, addDeposit, deposits, deleteDeposit } = useSavingsGoals();
   const insets = useSafeAreaInsets();
 
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
@@ -719,8 +719,24 @@ export function SaldosScreen() {
         title="Excluir lançamento?"
         description={`Tem certeza que deseja excluir "${simpleDeleteData?.description}"? Esta ação não pode ser desfeita.`}
         onClose={() => setSimpleDeleteData(null)}
-        onConfirm={() => {
+        onConfirm={async () => {
           if (simpleDeleteData) {
+            // Se for uma transferência para uma meta, tenta excluir o depósito correspondente
+            if (simpleDeleteData.type === 'transferencia' && simpleDeleteData.targetAccountId?.startsWith('goal_')) {
+              const goalId = simpleDeleteData.targetAccountId.replace('goal_', '');
+              // Encontra um depósito na meta com o mesmo valor e conta origem (usando a aproximação como heurística)
+              const matchingDeposit = deposits.find(
+                (d) => d.goalId === goalId && d.amount === simpleDeleteData.amount && d.accountId === simpleDeleteData.accountId
+              );
+              if (matchingDeposit) {
+                try {
+                  await deleteDeposit(matchingDeposit.id);
+                  console.log('[DEBUG] SaldosScreen auto-deleted matching deposit', matchingDeposit.id);
+                } catch (e) {
+                  console.error('[DEBUG] Failed to delete matching deposit', e);
+                }
+              }
+            }
             deleteTransaction(simpleDeleteData.id, 'single');
             setSimpleDeleteData(null);
           }

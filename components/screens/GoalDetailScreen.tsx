@@ -6,10 +6,11 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/hooks/useTheme';
-import { SavingsGoal, GoalDeposit, GoalRecurrence, CreateGoalInput, Account } from '@/constants/types';
+import { SavingsGoal, GoalDeposit, GoalRecurrence, CreateGoalInput, Account, UpdateGoalInput, CreateGoalRecurrenceInput } from '@/constants/types';
 import { useStoreContext } from '@/context/StoreContext';
 import {
   calculateProgress,
@@ -32,13 +33,14 @@ interface GoalDetailScreenProps {
   recurrences: GoalRecurrence[];
   addDeposit: (goalId: string, amount: number, accountId?: string) => Promise<void>;
   addWithdrawal: (goalId: string, amount: number, accountId?: string) => Promise<void>;
-  updateGoal: (goalId: string, data: Partial<SavingsGoal>) => Promise<void>;
+  deleteDeposit: (depositId: string) => Promise<void>;
+  updateGoal: (goalId: string, data: UpdateGoalInput) => Promise<void>;
   deleteGoal: (goalId: string) => Promise<void>;
-  createRecurrence: (goalId: string, amount: number, accountId: string, frequency: 'semanal' | 'mensal') => Promise<void>;
+  createRecurrence: (input: CreateGoalRecurrenceInput) => Promise<any>;
   cancelRecurrence: (recurrenceId: string) => Promise<void>;
 }
 
-export function GoalDetailScreen({ goal: initialGoal, onBack, goals, deposits: allDeposits, recurrences, addDeposit, addWithdrawal, updateGoal, deleteGoal, createRecurrence, cancelRecurrence }: GoalDetailScreenProps) {
+export function GoalDetailScreen({ goal: initialGoal, onBack, goals, deposits: allDeposits, recurrences, addDeposit, addWithdrawal, deleteDeposit, updateGoal, deleteGoal, createRecurrence, cancelRecurrence }: GoalDetailScreenProps) {
   const { colors } = useTheme();
   const { accounts, addTransaction } = useStoreContext();
 
@@ -164,6 +166,31 @@ export function GoalDetailScreen({ goal: initialGoal, onBack, goals, deposits: a
             {formatDate(item.date)}
           </Text>
         </View>
+        <TouchableOpacity
+          style={{ padding: 8, marginLeft: 'auto' }}
+          onPress={() => {
+            Alert.alert(
+              'Excluir registro',
+              'Tem certeza que deseja remover este registro da meta?',
+              [
+                { text: 'Cancelar', style: 'cancel' },
+                {
+                  text: 'Excluir',
+                  style: 'destructive',
+                  onPress: async () => {
+                    try {
+                      await deleteDeposit(item.id);
+                    } catch (e: any) {
+                      Alert.alert('Erro', e.message || 'Falha ao excluir registro.');
+                    }
+                  },
+                },
+              ]
+            );
+          }}
+        >
+          <Ionicons name="trash-outline" size={20} color={colors.destructive} />
+        </TouchableOpacity>
       </View>
     );
   };

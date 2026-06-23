@@ -21,7 +21,7 @@ interface GoalsScreenProps {
   goals: SavingsGoal[];
   loading: boolean;
   error: string | null;
-  createGoal: (input: CreateGoalInput) => Promise<void>;
+  createGoal: (input: CreateGoalInput) => Promise<SavingsGoal>;
   retry: () => Promise<void>;
 }
 

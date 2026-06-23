@@ -94,6 +94,7 @@ export default function HomePage() {
               recurrences={savingsGoalsProps.recurrences}
               addDeposit={savingsGoalsProps.addDeposit}
               addWithdrawal={savingsGoalsProps.addWithdrawal}
+              deleteDeposit={savingsGoalsProps.deleteDeposit}
               updateGoal={savingsGoalsProps.updateGoal}
               deleteGoal={savingsGoalsProps.deleteGoal}
               createRecurrence={savingsGoalsProps.createRecurrence}
