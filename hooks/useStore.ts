@@ -216,7 +216,7 @@ export function useStore() {
       const closingDay = targetAccount?.closingDay || 25;
       const dueDay = targetAccount?.dueDay || 5;
 
-      if (isCreditCard) {
+      if (isCreditCard && (!tx.recurrence || tx.recurrence === 'unica')) {
         const baseDate = new Date(tx.date);
 
         const installmentsCount =

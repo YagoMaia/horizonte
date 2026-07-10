@@ -11,6 +11,10 @@
       "backgroundColor": "#1E1E1E"
     },
     "scheme": "horizonte",
+    "notification": {
+      "icon": "./assets/images/notification-icon.png",
+      "color": "#FF7043"
+    },
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": false,

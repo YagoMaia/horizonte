@@ -175,16 +175,26 @@ export function HorizonteScreen() {
     
     // Transações já pagas que aconteceram do início do mês de partida até hoje
     // Precisamos retroceder o saldo até o dia 01 do mês de partida
+    // IDs de contas ativas que NÃO são cartão de crédito (afetam o saldo real)
+    const activeCashAccountIds = new Set(
+      accounts
+        .filter(a => activeAccountIds.includes(a.id) && a.type !== 'cartao_credito')
+        .map(a => a.id)
+    );
+
     const txsToUndo = transactions.filter((tx) => {
       if (!tx.paid) return false;
+      // Transações de cartão de crédito não afetam o saldo das contas bancárias diretamente.
+      // O impacto no caixa vem das faturas virtuais (creditExpense) ou do pagamento da fatura (paymentMethod='debito').
+      if (tx.paymentMethod === 'credito') return false;
       const d = new Date(tx.date);
       const isFromStartMonthOnwards = d.getFullYear() > startYear || (d.getFullYear() === startYear && d.getMonth() >= startMonth);
       return isFromStartMonthOnwards;
     });
 
     txsToUndo.forEach((tx) => {
-      const isFromActiveAccount = activeAccountIds.includes(tx.accountId);
-      const isToActiveAccount = tx.type === 'transferencia' && tx.targetAccountId && activeAccountIds.includes(tx.targetAccountId);
+      const isFromActiveAccount = activeCashAccountIds.has(tx.accountId);
+      const isToActiveAccount = tx.type === 'transferencia' && tx.targetAccountId && activeCashAccountIds.has(tx.targetAccountId);
 
       if (tx.type === 'receita' && isFromActiveAccount) openingBalance -= tx.amount;
       else if (tx.type === 'despesa' && isFromActiveAccount) openingBalance += tx.amount;
@@ -293,8 +303,8 @@ export function HorizonteScreen() {
         const income = effectiveDayTxs
           .filter((t) => {
             if (t.isVirtual) return t.type === 'receita';
-            if (t.type === 'receita' && activeAccountIds.includes(t.accountId)) return true;
-            if (t.type === 'transferencia' && t.targetAccountId && activeAccountIds.includes(t.targetAccountId) && !activeAccountIds.includes(t.accountId)) return true;
+            if (t.type === 'receita' && activeCashAccountIds.has(t.accountId)) return true;
+            if (t.type === 'transferencia' && t.targetAccountId && activeCashAccountIds.has(t.targetAccountId) && !activeCashAccountIds.has(t.accountId)) return true;
             return false;
           })
           .reduce((s, t) => s + t.amount, 0);
@@ -302,14 +312,14 @@ export function HorizonteScreen() {
         const expense = effectiveDayTxs
           .filter((t) => {
             if (t.isVirtual) return false;
-            if (t.type === 'despesa' && activeAccountIds.includes(t.accountId)) return true;
+            if (t.type === 'despesa' && activeCashAccountIds.has(t.accountId)) return true;
             return false;
           })
           .reduce((s, t) => s + t.amount, 0);
 
         // Transferências impactam o saldo mas não são classificadas como "gasto"
         const transferOut = effectiveDayTxs
-          .filter((t) => t.type === 'transferencia' && activeAccountIds.includes(t.accountId) && (!t.targetAccountId || !activeAccountIds.includes(t.targetAccountId)))
+          .filter((t) => t.type === 'transferencia' && activeCashAccountIds.has(t.accountId) && (!t.targetAccountId || !activeCashAccountIds.has(t.targetAccountId)))
           .reduce((s, t) => s + t.amount, 0);
 
         // Faturas de cartão de crédito (transações virtuais de fatura)
@@ -391,6 +401,8 @@ export function HorizonteScreen() {
   const totalExpense = days.reduce((s, d) => s + d.expense, 0);
   const totalTransferOut = days.reduce((s, d) => s + (d.transferOut || 0), 0);
   const totalCreditExpense = days.reduce((s, d) => s + (d.creditExpense || 0), 0);
+  // Saídas totais = gastos diretos + faturas de cartão de crédito
+  const totalExpenseWithCredit = totalExpense + totalCreditExpense;
   const endBalance =
     days.length > 0 ? days[days.length - 1].balance : activeBalance;
   const currentDailyPlan =
@@ -635,7 +647,7 @@ export function HorizonteScreen() {
           <Text
             style={[styles.summaryValue, { color: colors.destructive }]}
           >
-            -{formatShort(totalExpense)}
+            -{formatShort(totalExpenseWithCredit)}
           </Text>
         </View>
         <View
@@ -644,50 +656,6 @@ export function HorizonteScreen() {
             { backgroundColor: colors.border },
           ]}
         />
-        {/* {totalTransferOut > 0 && (
-          <>
-            <View style={styles.summaryItem}>
-              <Text
-                style={[styles.summaryLabel, { color: colors.mutedForeground }]}
-              >
-                Transferências
-              </Text>
-              <Text
-                style={[styles.summaryValue, { color: colors.warning }]}
-              >
-                -{formatShort(totalTransferOut)}
-              </Text>
-            </View>
-            <View
-              style={[
-                styles.summaryDivider,
-                { backgroundColor: colors.border },
-              ]}
-            />
-          </>
-        )}
-        {totalCreditExpense > 0 && (
-          <>
-            <View style={styles.summaryItem}>
-              <Text
-                style={[styles.summaryLabel, { color: colors.mutedForeground }]}
-              >
-                Crédito
-              </Text>
-              <Text
-                style={[styles.summaryValue, { color: colors.destructive }]}
-              >
-                -{formatShort(totalCreditExpense)}
-              </Text>
-            </View>
-            <View
-              style={[
-                styles.summaryDivider,
-                { backgroundColor: colors.border },
-              ]}
-            />
-          </>
-        )} */}
         <View style={styles.summaryItem}>
           <Text
             style={[styles.summaryLabel, { color: colors.mutedForeground }]}
@@ -719,11 +687,13 @@ export function HorizonteScreen() {
               : idx % 2 === 0
                 ? colors.card
                 : colors.background;
+            // Gasto total do dia = gastos diretos + fatura de crédito no vencimento
+            const gastoTotalDia = d.expense + (d.creditExpense || 0);
             const economizou =
-              currentBudget > 0 && d.dailyPlan > 0 && d.expense < d.dailyPlan;
+              currentBudget > 0 && d.dailyPlan > 0 && gastoTotalDia < d.dailyPlan;
             const excedeu =
-              currentBudget > 0 && d.isPast && d.expense > d.dailyPlan;
-            const valorDiferenca = Math.abs(d.dailyPlan - d.expense);
+              currentBudget > 0 && d.isPast && gastoTotalDia > d.dailyPlan;
+            const valorDiferenca = Math.abs(d.dailyPlan - gastoTotalDia);
             const mostrarBadge = currentBudget > 0 && (d.isPast || d.isToday);
 
             const saldoBg =

@@ -780,7 +780,7 @@ export function AddTransactionModal({
               />
             </View>
 
-            {isCreditCardSelected && !isEditing && (
+            {isCreditCardSelected && !isEditing && recurrence === 'unica' && (
               <View style={styles.field}>
                 <Text style={[styles.label, { color: colors.mutedForeground }]}>
                   Parcelamento
@@ -832,7 +832,7 @@ export function AddTransactionModal({
               </View>
             )}
 
-            {!isCreditCardSelected && (
+            {(!isCreditCardSelected || installments === 1) && (
               <>
                 <View style={styles.field}>
                   <Text

@@ -100,7 +100,7 @@ interface SimulationResult {
   amount: number;
   installments: number;
   installmentValue: number;
-  impactedMonths: Array<{ month: number; year: number; value: number }>;
+  impactedMonths: Array<{ month: number; year: number; value: number; originalInvoiceTotal: number }>;
   currentBalance: number;
   balanceAfterDebit: number;
 }
@@ -392,7 +392,7 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
         amount,
         installments: 1,
         installmentValue: amount,
-        impactedMonths: [{ month: now.getMonth(), year: now.getFullYear(), value: amount }],
+        impactedMonths: [{ month: now.getMonth(), year: now.getFullYear(), value: amount, originalInvoiceTotal: 0 }],
         currentBalance,
         balanceAfterDebit: currentBalance - amount,
       });
@@ -404,16 +404,30 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
         return;
       }
 
-      const impacted: Array<{ month: number; year: number; value: number }> = [];
+      const impacted: Array<{ month: number; year: number; value: number; originalInvoiceTotal: number }> = [];
       for (let i = 0; i < installments; i++) {
         const purchaseDate = new Date();
         purchaseDate.setMonth(purchaseDate.getMonth() + i);
         const inv = getInvoiceForTx(purchaseDate.toISOString(), card);
+
+        // Calcular o total existente para essa fatura específica
+        const invoiceTotalExistent = transactions
+          .filter((tx: Transaction) => {
+            if (tx.accountId !== card.id || tx.paymentMethod !== 'credito') return false;
+            return getInvoiceForTx(tx.date, card).value === inv.value;
+          })
+          .reduce((sum: number, tx: Transaction) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount), 0);
+
         const existing = impacted.find(m => m.month === inv.viewMonth && m.year === inv.viewYear);
         if (existing) {
           existing.value += installmentValue;
         } else {
-          impacted.push({ month: inv.viewMonth, year: inv.viewYear, value: installmentValue });
+          impacted.push({
+            month: inv.viewMonth,
+            year: inv.viewYear,
+            value: installmentValue,
+            originalInvoiceTotal: invoiceTotalExistent,
+          });
         }
       }
 
@@ -946,19 +960,28 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
                       <Text style={[styles.simImpactTitle, { color: colors.mutedForeground }]}>
                         IMPACTO NAS FATURAS ({simResult.installments}x de {formatCurrency(simResult.installmentValue)})
                       </Text>
-                      {simResult.impactedMonths.map((m, i) => (
-                        <View key={i} style={[styles.simImpactRow, { borderBottomColor: colors.border }]}>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                            <View style={[styles.simMonthDot, { backgroundColor: colors.primary }]} />
-                            <Text style={[styles.simImpactMonth, { color: colors.foreground }]}>
-                              {MONTH_NAMES[m.month]} {m.year}
+                      {simResult.impactedMonths.map((m, i) => {
+                        const originalTotal = m.originalInvoiceTotal || 0;
+                        const projectedTotal = originalTotal + m.value;
+                        return (
+                          <View key={i} style={[styles.simImpactRow, { borderBottomColor: colors.border, alignItems: 'center' }]}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                              <View style={[styles.simMonthDot, { backgroundColor: colors.primary }]} />
+                              <View>
+                                <Text style={[styles.simImpactMonth, { color: colors.foreground }]}>
+                                  {MONTH_NAMES[m.month]} {m.year}
+                                </Text>
+                                <Text style={{ fontSize: 11, color: colors.mutedForeground, marginTop: 2 }}>
+                                  Atual: {formatCurrency(originalTotal)} • Parc: +{formatCurrency(m.value)}
+                                </Text>
+                              </View>
+                            </View>
+                            <Text style={[styles.simImpactValue, { color: colors.destructive, fontWeight: '700' }]}>
+                              {formatCurrency(projectedTotal)}
                             </Text>
                           </View>
-                          <Text style={[styles.simImpactValue, { color: colors.destructive }]}>
-                            +{formatCurrency(m.value)}
-                          </Text>
-                        </View>
-                      ))}
+                        );
+                      })}
                     </>
                   )}
 
