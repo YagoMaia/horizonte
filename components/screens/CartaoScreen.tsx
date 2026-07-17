@@ -26,6 +26,7 @@ import { Account, Transaction } from '@/constants/types';
 
 import { AddTransactionModal } from '../AddTransactionModal';
 import { ConfirmDeleteModal } from '../ConfirmDeleteModal';
+import { convertTransactionsToCSV, exportCSV } from '@/lib/exportUtils';
 
 const MONTH_NAMES = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -297,6 +298,25 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
   }, [selectedCard, transactions, monthOffset]);
 
   const debitAccounts = useMemo(() => accounts.filter((a: Account) => a.type !== 'cartao_credito'), [accounts]);
+
+  const handleExportCSV = async () => {
+    try {
+      if (invoiceTransactions.length === 0) {
+        Alert.alert('Aviso', 'Não há transações nesta fatura para exportar.');
+        return;
+      }
+      const cardName = selectedCard ? selectedCard.name : 'Cartao';
+      // Mantém a capitalização original (ex: Nubank) e substitui espaços por underscore
+      const formattedCardName = cardName.trim().replace(/\s+/g, '_');
+      const todayStr = new Date().toISOString().split('T')[0];
+      const fileName = `${formattedCardName}_${todayStr}.csv`;
+      
+      const csvContent = convertTransactionsToCSV(invoiceTransactions);
+      await exportCSV(csvContent, fileName);
+    } catch (error: any) {
+      Alert.alert('Erro', error?.message || 'Ocorreu um erro ao exportar a fatura.');
+    }
+  };
 
   const handlePayInvoice = () => {
     if (debitAccounts.length === 0) {
@@ -674,12 +694,24 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
               <Text style={[styles.itemCount, { color: colors.mutedForeground }]}>{invoiceTransactions.length} itens</Text>
             </View>
 
-            {invoiceTransactions.length > 0 && !isAll && (
-              <TouchableOpacity style={styles.deleteAllBtn} onPress={handleDeleteAllFromInvoice}>
-                <Ionicons name="trash-outline" size={16} color={colors.destructive} />
-                <Text style={[styles.deleteAllText, { color: colors.destructive }]}>Excluir Todos</Text>
-              </TouchableOpacity>
-            )}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              {invoiceTransactions.length > 0 && (
+                <TouchableOpacity
+                  style={[styles.exportBtn, { backgroundColor: colors.primary + '15' }]}
+                  onPress={handleExportCSV}
+                >
+                  <Ionicons name="download-outline" size={16} color={colors.primary} />
+                  <Text style={[styles.exportText, { color: colors.primary }]}>Exportar</Text>
+                </TouchableOpacity>
+              )}
+
+              {invoiceTransactions.length > 0 && !isAll && (
+                <TouchableOpacity style={styles.deleteAllBtn} onPress={handleDeleteAllFromInvoice}>
+                  <Ionicons name="trash-outline" size={16} color={colors.destructive} />
+                  <Text style={[styles.deleteAllText, { color: colors.destructive }]}>Excluir Todos</Text>
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
 
           <View style={[styles.txContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -779,6 +811,18 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setOptionsModalVisible(false)}>
           <View style={[styles.optionsMenu, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Text style={[styles.optionsTitle, { color: colors.foreground }]}>{selectedTx?.description}</Text>
+            <TouchableOpacity style={styles.optionBtn} onPress={() => {
+              if (selectedTx) {
+                updateTransaction({ ...selectedTx, paid: !selectedTx.paid });
+                setOptionsModalVisible(false);
+              }
+            }}>
+              <Ionicons name={selectedTx?.paid ? 'close-circle-outline' : 'checkmark-circle-outline'} size={20} color={selectedTx?.paid ? colors.destructive : colors.success} />
+              <Text style={[styles.optionText, { color: selectedTx?.paid ? colors.destructive : colors.success }]}>
+                {selectedTx?.paid ? 'Desmarcar Pagamento' : 'Marcar como Pago'}
+              </Text>
+            </TouchableOpacity>
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
             <TouchableOpacity style={styles.optionBtn} onPress={handleEdit}>
               <Ionicons name="pencil-outline" size={20} color={colors.primary} /><Text style={[styles.optionText, { color: colors.foreground }]}>Editar Lançamento</Text>
             </TouchableOpacity>
@@ -1136,6 +1180,8 @@ const styles = StyleSheet.create({
   itemCount: { fontSize: 12, marginTop: 2 },
   deleteAllBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,59,48,0.1)', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12 },
   deleteAllText: { fontSize: 12, fontWeight: '700' },
+  exportBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12 },
+  exportText: { fontSize: 12, fontWeight: '700' },
   txContainer: { borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
   emptyTxText: { padding: 24, textAlign: 'center', fontSize: 14 },
   txItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: StyleSheet.hairlineWidth },

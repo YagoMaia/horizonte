@@ -243,7 +243,7 @@ export function useStore() {
             // Isso garante que cada parcela caia na fatura correta baseado no closingDay
             const purchaseDay = baseDate.getDate();
             let targetInvM = baseM + i;
-            let monthForDate = targetInvM - (dueDay < closingDay ? 1 : 0);
+            let monthForDate = targetInvM - (dueDay < closingDay ? 1 : 0) - (baseDate.getDate() >= closingDay ? 1 : 0);
 
             // Calcula o ano e mês corretos considerando overflow
             let targetYear = baseY + Math.floor((monthForDate - 1) / 12);

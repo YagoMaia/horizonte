@@ -508,6 +508,18 @@ export function SaldosScreen() {
     const account = accounts.find((a) => a.id === tx.accountId);
     const visuals = getTransactionVisuals(tx.type, colors);
 
+    let destName = '';
+    if (tx.type === 'transferencia' && tx.targetAccountId) {
+      if (tx.targetAccountId.startsWith('goal_')) {
+        const goalId = tx.targetAccountId.replace('goal_', '');
+        const goal = goals.find((g) => g.id === goalId);
+        destName = goal ? `Meta: ${goal.name}` : 'Meta';
+      } else {
+        const destAcc = accounts.find((a) => a.id === tx.targetAccountId);
+        destName = destAcc ? destAcc.name : 'Conta';
+      }
+    }
+
     return (
       <Swipeable
         ref={(ref) => { if (ref) rowRefs.set(tx.id, ref); }}
@@ -527,7 +539,10 @@ export function SaldosScreen() {
           </View>
           <View style={styles.txInfo}>
             <Text style={[styles.txDesc, { color: colors.foreground }]} numberOfLines={1}>{tx.description}</Text>
-            <Text style={[styles.txMetaText, { color: colors.mutedForeground }]}>{formatDateShort(tx.date)} • {account?.name}</Text>
+            <Text style={[styles.txMetaText, { color: colors.mutedForeground }]}>
+              {formatDateShort(tx.date)} • {account?.name}
+              {destName ? ` ➔ ${destName}` : ''}
+            </Text>
           </View>
           <Text style={[styles.txAmount, { color: visuals.color }]}>
             {visuals.prefix}{formatCurrency(tx.amount)}

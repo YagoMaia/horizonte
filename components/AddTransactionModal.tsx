@@ -128,7 +128,7 @@ export function AddTransactionModal({
   }, [accountId, accounts]);
 
   React.useEffect(() => {
-    if (isCreditCardSelected && type !== 'despesa') {
+    if (isCreditCardSelected && type === 'transferencia') {
       setType('despesa');
       setPaid(false);
     }
@@ -178,6 +178,7 @@ export function AddTransactionModal({
         setPaid(transactionToEdit.paid);
         setReminderEnabled(transactionToEdit.reminderEnabled || false);
         setInstallments(transactionToEdit.totalInstallments || 1);
+        setTargetAccountId(transactionToEdit.targetAccountId || '');
         const d = new Date(transactionToEdit.date);
         setDate(
           `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`,
@@ -605,18 +606,21 @@ export function AddTransactionModal({
                 styles.typeSelector,
                 {
                   backgroundColor: colors.secondary,
-                  opacity: isCreditCardSelected ? 0.5 : 1,
+                  opacity: 1, // now always 1 because we only disable transferencia
                 },
               ]}
-              pointerEvents={isCreditCardSelected ? 'none' : 'auto'}
             >
               {(
                 ['receita', 'despesa', 'transferencia'] as TransactionType[]
-              ).map((t) => (
+              ).map((t) => {
+                const isDisabled = isCreditCardSelected && t === 'transferencia';
+                return (
                 <TouchableOpacity
                   key={t}
+                  disabled={isDisabled}
                   style={[
                     styles.typeBtn,
+                    { opacity: isDisabled ? 0.3 : 1 },
                     type === t && {
                       backgroundColor:
                         t === 'receita'
@@ -638,7 +642,7 @@ export function AddTransactionModal({
                     {t.toUpperCase()}
                   </Text>
                 </TouchableOpacity>
-              ))}
+              )})}
             </View>
             {isCreditCardSelected && (
               <Text
@@ -649,7 +653,7 @@ export function AddTransactionModal({
                   marginTop: -15,
                 }}
               >
-                * Cartões aceitam apenas despesas
+                * Receitas em cartões funcionam como estornos
               </Text>
             )}
 
