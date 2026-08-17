@@ -21,7 +21,7 @@ const LEFT_TABS: { id: TabType; label: string; icon: string }[] = [
 
 const RIGHT_TABS: { id: TabType; label: string; icon: string }[] = [
   { id: 'totais', label: 'Totais', icon: 'bar-chart-outline' },
- 
+  { id: 'orcamento', label: 'Orçamento', icon: 'pie-chart-outline' },
   { id: 'metas', label: 'Metas', icon: 'trophy-outline' },
   { id: 'menu', label: 'Menu', icon: 'menu-outline' },
 ]

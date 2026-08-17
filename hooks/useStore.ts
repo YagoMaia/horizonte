@@ -1,7 +1,7 @@
 // hooks/useStore.ts
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Transaction, Account } from '@/constants/types';
+import { Transaction, Account, RecurringExpense, BudgetAllocation } from '@/constants/types';
 import { 
   scheduleTransactionNotification, 
   scheduleCardClosingNotification, 
@@ -15,10 +15,16 @@ const STORAGE_KEYS = {
   ACCOUNTS: '@horizonte:accounts',
   MONTHLY_BUDGETS: '@horizonte:monthly_budgets',
   SHOW_PENDING: '@horizonte:show_pending',
+  RECURRING_EXPENSES: '@horizonte:recurring_expenses',
+  BUDGET_ALLOCATION: '@horizonte:budget_allocation',
 };
 
-const DEFAULT_ACCOUNTS: Account[] = [];
-const DEFAULT_TRANSACTIONS: Transaction[] = [];
+const DEFAULT_BUDGET_ALLOCATION: BudgetAllocation = {
+  investimento: 50,
+  fixo: 25,
+  variavel: 15,
+  outros: 10,
+};
 
 export function useStore() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -26,6 +32,8 @@ export function useStore() {
   const [monthlyBudgets, setMonthlyBudgets] = useState<Record<string, number>>({});
   const [showPending, setShowPendingState] = useState<boolean>(true);
   const [loading, setLoading] = useState(true);
+  const [recurringExpenses, setRecurringExpenses] = useState<RecurringExpense[]>([]);
+  const [budgetAllocation, setBudgetAllocationState] = useState<BudgetAllocation>(DEFAULT_BUDGET_ALLOCATION);
 
   // Mutex para serializar operações de escrita e evitar race conditions
   const writeLock = useRef<Promise<void>>(Promise.resolve());
@@ -118,20 +126,24 @@ export function useStore() {
 
   const loadData = useCallback(async () => {
     try {
-      const [txRaw, accRaw, budgetsRaw, showPendingRaw] =
+      const [txRaw, accRaw, budgetsRaw, showPendingRaw, recurringExpensesRaw, budgetAllocationRaw] =
         await Promise.all([
           AsyncStorage.getItem(STORAGE_KEYS.TRANSACTIONS),
           AsyncStorage.getItem(STORAGE_KEYS.ACCOUNTS),
           AsyncStorage.getItem(STORAGE_KEYS.MONTHLY_BUDGETS),
           AsyncStorage.getItem(STORAGE_KEYS.SHOW_PENDING),
+          AsyncStorage.getItem(STORAGE_KEYS.RECURRING_EXPENSES),
+          AsyncStorage.getItem(STORAGE_KEYS.BUDGET_ALLOCATION),
         ]);
 
-      const loadedTransactions = txRaw ? JSON.parse(txRaw) : DEFAULT_TRANSACTIONS;
-      const loadedAccounts = accRaw ? JSON.parse(accRaw) : DEFAULT_ACCOUNTS;
+      const loadedTransactions = txRaw ? JSON.parse(txRaw) : [];
+      const loadedAccounts = accRaw ? JSON.parse(accRaw) : [];
 
       setTransactions(loadedTransactions);
       setAccounts(loadedAccounts);
       setMonthlyBudgets(budgetsRaw ? JSON.parse(budgetsRaw) : {});
+      setRecurringExpenses(recurringExpensesRaw ? JSON.parse(recurringExpensesRaw) : []);
+      setBudgetAllocationState(budgetAllocationRaw ? JSON.parse(budgetAllocationRaw) : DEFAULT_BUDGET_ALLOCATION);
 
       if (showPendingRaw !== null) {
         setShowPendingState(JSON.parse(showPendingRaw));
@@ -195,11 +207,54 @@ export function useStore() {
       STORAGE_KEYS.ACCOUNTS,
       STORAGE_KEYS.MONTHLY_BUDGETS,
       STORAGE_KEYS.SHOW_PENDING,
+      STORAGE_KEYS.RECURRING_EXPENSES,
+      STORAGE_KEYS.BUDGET_ALLOCATION,
     ]);
-    setTransactions(DEFAULT_TRANSACTIONS);
-    setAccounts(DEFAULT_ACCOUNTS);
+    setTransactions([]);
+    setAccounts([]);
     setMonthlyBudgets({});
     setShowPendingState(true);
+    setRecurringExpenses([]);
+    setBudgetAllocationState(DEFAULT_BUDGET_ALLOCATION);
+  }, []);
+
+  // --- CRUD: GASTOS RECORRENTES ---
+
+  const saveRecurringExpenses = useCallback(async (data: RecurringExpense[]) => {
+    await AsyncStorage.setItem(STORAGE_KEYS.RECURRING_EXPENSES, JSON.stringify(data));
+    setRecurringExpenses(data);
+  }, []);
+
+  const addRecurringExpense = useCallback(async (expense: Omit<RecurringExpense, 'id' | 'createdAt' | 'updatedAt'>) => {
+    const now = new Date().toISOString();
+    const newExpense: RecurringExpense = {
+      ...expense,
+      id: Date.now().toString(),
+      createdAt: now,
+      updatedAt: now,
+    };
+    const updated = [...recurringExpenses, newExpense];
+    await saveRecurringExpenses(updated);
+    return newExpense;
+  }, [recurringExpenses, saveRecurringExpenses]);
+
+  const updateRecurringExpense = useCallback(async (expense: RecurringExpense) => {
+    const updated = recurringExpenses.map((e) =>
+      e.id === expense.id ? { ...expense, updatedAt: new Date().toISOString() } : e
+    );
+    await saveRecurringExpenses(updated);
+  }, [recurringExpenses, saveRecurringExpenses]);
+
+  const deleteRecurringExpense = useCallback(async (id: string) => {
+    const updated = recurringExpenses.filter((e) => e.id !== id);
+    await saveRecurringExpenses(updated);
+  }, [recurringExpenses, saveRecurringExpenses]);
+
+  // --- ALOCAÇÃO ORÇAMENTÁRIA ---
+
+  const saveBudgetAllocation = useCallback(async (allocation: BudgetAllocation) => {
+    await AsyncStorage.setItem(STORAGE_KEYS.BUDGET_ALLOCATION, JSON.stringify(allocation));
+    setBudgetAllocationState(allocation);
   }, []);
 
   const addTransaction = useCallback(
@@ -826,5 +881,12 @@ export function useStore() {
     payCreditCardInvoice,
     anticipateCreditCardPayment,
     deleteMultipleTransactions,
+    // Orçamento
+    recurringExpenses,
+    addRecurringExpense,
+    updateRecurringExpense,
+    deleteRecurringExpense,
+    budgetAllocation,
+    saveBudgetAllocation,
   };
 }

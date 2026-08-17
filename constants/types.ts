@@ -1,6 +1,31 @@
 // constants/types.ts
 
-export type TabType = 'saldos' | 'totais' | 'horizonte' | 'contas' | 'menu' | 'cartao' | 'metas' | 'relatorios'
+export type TabType = 'saldos' | 'totais' | 'horizonte' | 'contas' | 'menu' | 'cartao' | 'metas' | 'relatorios' | 'orcamento'
+
+// Categoria para classificar o gasto recorrente no orçamento teórico
+export type RecurringExpenseCategory = 'fixo' | 'variavel' | 'investimento' | 'outros'
+
+export interface RecurringExpense {
+  id: string
+  name: string
+  amount: number
+  category: RecurringExpenseCategory
+  icon: string          // Ionicons name
+  color: string         // Hex color
+  dueDay?: number       // Dia do vencimento (1–31), opcional
+  active: boolean
+  notes?: string
+  createdAt: string
+  updatedAt: string
+}
+
+// Percentuais configuráveis da divisão teórica do orçamento
+export interface BudgetAllocation {
+  investimento: number  // default 50
+  fixo: number          // default 25
+  variavel: number      // default 15
+  outros: number        // default 10
+}
 
 export type TransactionType = 'receita' | 'despesa' | 'transferencia'
 
