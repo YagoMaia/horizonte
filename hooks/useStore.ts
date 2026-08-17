@@ -1,7 +1,7 @@
 // hooks/useStore.ts
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Transaction, Account, RecurringExpense, BudgetAllocation } from '@/constants/types';
+import { Transaction, Account, RecurringExpense, BudgetAllocation, RecurringExpenseCategory } from '@/constants/types';
 import { 
   scheduleTransactionNotification, 
   scheduleCardClosingNotification, 
@@ -17,6 +17,7 @@ const STORAGE_KEYS = {
   SHOW_PENDING: '@horizonte:show_pending',
   RECURRING_EXPENSES: '@horizonte:recurring_expenses',
   BUDGET_ALLOCATION: '@horizonte:budget_allocation',
+  RECURRING_OVERRIDES: '@horizonte:recurring_overrides', // categorias dos itens auto-detectados
 };
 
 const DEFAULT_BUDGET_ALLOCATION: BudgetAllocation = {
@@ -34,6 +35,8 @@ export function useStore() {
   const [loading, setLoading] = useState(true);
   const [recurringExpenses, setRecurringExpenses] = useState<RecurringExpense[]>([]);
   const [budgetAllocation, setBudgetAllocationState] = useState<BudgetAllocation>(DEFAULT_BUDGET_ALLOCATION);
+  // Record<groupId, categoria> — sobrescreve a classificação automática
+  const [recurringOverrides, setRecurringOverrides] = useState<Record<string, RecurringExpenseCategory>>({});
 
   // Mutex para serializar operações de escrita e evitar race conditions
   const writeLock = useRef<Promise<void>>(Promise.resolve());
@@ -126,7 +129,7 @@ export function useStore() {
 
   const loadData = useCallback(async () => {
     try {
-      const [txRaw, accRaw, budgetsRaw, showPendingRaw, recurringExpensesRaw, budgetAllocationRaw] =
+      const [txRaw, accRaw, budgetsRaw, showPendingRaw, recurringExpensesRaw, budgetAllocationRaw, overridesRaw] =
         await Promise.all([
           AsyncStorage.getItem(STORAGE_KEYS.TRANSACTIONS),
           AsyncStorage.getItem(STORAGE_KEYS.ACCOUNTS),
@@ -134,6 +137,7 @@ export function useStore() {
           AsyncStorage.getItem(STORAGE_KEYS.SHOW_PENDING),
           AsyncStorage.getItem(STORAGE_KEYS.RECURRING_EXPENSES),
           AsyncStorage.getItem(STORAGE_KEYS.BUDGET_ALLOCATION),
+          AsyncStorage.getItem(STORAGE_KEYS.RECURRING_OVERRIDES),
         ]);
 
       const loadedTransactions = txRaw ? JSON.parse(txRaw) : [];
@@ -144,6 +148,7 @@ export function useStore() {
       setMonthlyBudgets(budgetsRaw ? JSON.parse(budgetsRaw) : {});
       setRecurringExpenses(recurringExpensesRaw ? JSON.parse(recurringExpensesRaw) : []);
       setBudgetAllocationState(budgetAllocationRaw ? JSON.parse(budgetAllocationRaw) : DEFAULT_BUDGET_ALLOCATION);
+      setRecurringOverrides(overridesRaw ? JSON.parse(overridesRaw) : {});
 
       if (showPendingRaw !== null) {
         setShowPendingState(JSON.parse(showPendingRaw));
@@ -209,6 +214,7 @@ export function useStore() {
       STORAGE_KEYS.SHOW_PENDING,
       STORAGE_KEYS.RECURRING_EXPENSES,
       STORAGE_KEYS.BUDGET_ALLOCATION,
+      STORAGE_KEYS.RECURRING_OVERRIDES,
     ]);
     setTransactions([]);
     setAccounts([]);
@@ -216,6 +222,7 @@ export function useStore() {
     setShowPendingState(true);
     setRecurringExpenses([]);
     setBudgetAllocationState(DEFAULT_BUDGET_ALLOCATION);
+    setRecurringOverrides({});
   }, []);
 
   // --- CRUD: GASTOS RECORRENTES ---
@@ -256,6 +263,14 @@ export function useStore() {
     await AsyncStorage.setItem(STORAGE_KEYS.BUDGET_ALLOCATION, JSON.stringify(allocation));
     setBudgetAllocationState(allocation);
   }, []);
+
+  // --- OVERRIDE DE CATEGORIA DE RECORRÊNCIA AUTO-DETECTADA ---
+
+  const saveRecurringOverride = useCallback(async (groupId: string, category: RecurringExpenseCategory) => {
+    const updated = { ...recurringOverrides, [groupId]: category };
+    await AsyncStorage.setItem(STORAGE_KEYS.RECURRING_OVERRIDES, JSON.stringify(updated));
+    setRecurringOverrides(updated);
+  }, [recurringOverrides]);
 
   const addTransaction = useCallback(
     (tx: any) => withWriteLock(async () => {
@@ -888,5 +903,7 @@ export function useStore() {
     deleteRecurringExpense,
     budgetAllocation,
     saveBudgetAllocation,
+    recurringOverrides,
+    saveRecurringOverride,
   };
 }

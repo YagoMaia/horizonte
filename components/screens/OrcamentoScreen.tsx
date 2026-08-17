@@ -7,51 +7,63 @@ import {
   ScrollView,
   TouchableOpacity,
   Modal,
-  TextInput,
-  Alert,
   Pressable,
-  KeyboardAvoidingView,
-  Platform,
 } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { useTheme } from '@/hooks/useTheme'
 import { useStoreContext } from '@/context/StoreContext'
-import { RecurringExpense, RecurringExpenseCategory, BudgetAllocation } from '@/constants/types'
+import { RecurringExpenseCategory, BudgetAllocation } from '@/constants/types'
+import { AllocationEditorModal } from './orcamento/AllocationEditorModal'
 
 // ────────────────────────────────────────────────────────────────────────────────
 // Dados estáticos auxiliares
 // ────────────────────────────────────────────────────────────────────────────────
 
-const CATEGORY_META: Record<
+export const CATEGORY_META: Record<
   RecurringExpenseCategory,
-  { label: string; icon: string; defaultColor: string }
+  { label: string; icon: string; color: string }
 > = {
-  fixo:        { label: 'Fixo',        icon: 'home-outline',          defaultColor: '#1976D2' },
-  variavel:    { label: 'Variável',    icon: 'swap-horizontal-outline', defaultColor: '#F57C00' },
-  investimento:{ label: 'Investimento',icon: 'trending-up-outline',   defaultColor: '#388E3C' },
-  outros:      { label: 'Outros',      icon: 'ellipsis-horizontal-outline', defaultColor: '#7B1FA2' },
+  investimento: { label: 'Investimento', icon: 'trending-up-outline',        color: '#388E3C' },
+  fixo:         { label: 'Fixo',         icon: 'home-outline',               color: '#1976D2' },
+  variavel:     { label: 'Variável',     icon: 'swap-horizontal-outline',    color: '#F57C00' },
+  outros:       { label: 'Outros',       icon: 'ellipsis-horizontal-outline', color: '#7B1FA2' },
 }
 
 const ALLOCATION_META: Record<
   keyof BudgetAllocation,
   { label: string; color: string; icon: string }
 > = {
-  investimento: { label: 'Investimentos', color: '#388E3C', icon: 'trending-up-outline' },
-  fixo:         { label: 'Gastos Fixos',  color: '#1976D2', icon: 'home-outline' },
+  investimento: { label: 'Investimentos',    color: '#388E3C', icon: 'trending-up-outline' },
+  fixo:         { label: 'Gastos Fixos',     color: '#1976D2', icon: 'home-outline' },
   variavel:     { label: 'Gastos Variáveis', color: '#F57C00', icon: 'swap-horizontal-outline' },
-  outros:       { label: 'Outras Demandas', color: '#7B1FA2', icon: 'ellipsis-horizontal-outline' },
+  outros:       { label: 'Outras Demandas',  color: '#7B1FA2', icon: 'ellipsis-horizontal-outline' },
 }
 
-const ICON_OPTIONS = [
-  'home-outline', 'car-outline', 'heart-outline', 'phone-portrait-outline',
-  'wifi-outline', 'water-outline', 'flash-outline', 'restaurant-outline',
-  'fitness-outline', 'musical-notes-outline', 'book-outline', 'school-outline',
-  'trending-up-outline', 'shield-outline', 'medical-outline', 'paw-outline',
-  'basket-outline', 'shirt-outline', 'bus-outline', 'airplane-outline',
-  'tv-outline', 'game-controller-outline', 'umbrella-outline', 'gift-outline',
-]
+const RECURRENCE_LABEL: Record<string, string> = {
+  mensal:          'Mensal',
+  anual:           'Anual',
+  semanal:         'Semanal',
+  diaria:          'Diária',
+  quinto_dia_util: '5º dia útil',
+}
 
-const CATEGORIES: RecurringExpenseCategory[] = ['fixo', 'variavel', 'investimento', 'outros']
+const CATEGORIES: RecurringExpenseCategory[] = ['investimento', 'fixo', 'variavel', 'outros']
+
+// ────────────────────────────────────────────────────────────────────────────────
+// Tipos
+// ────────────────────────────────────────────────────────────────────────────────
+
+interface DetectedItem {
+  groupId: string
+  description: string
+  amount: number
+  recurrence: string
+  type: 'despesa' | 'transferencia'
+  sourceAccountName: string
+  targetAccountName?: string   // para transferências
+  autoCategory: RecurringExpenseCategory
+  category: RecurringExpenseCategory // final (auto ou override do usuário)
+}
 
 // ────────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -60,321 +72,70 @@ const CATEGORIES: RecurringExpenseCategory[] = ['fixo', 'variavel', 'investiment
 const fmt = (v: number) =>
   v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
-function allocationSum(alloc: BudgetAllocation): number {
-  return alloc.investimento + alloc.fixo + alloc.variavel + alloc.outros
-}
-
 // ────────────────────────────────────────────────────────────────────────────────
-// Subcomponente: ExpenseFormModal
+// Subcomponente: CategoryPickerModal
 // ────────────────────────────────────────────────────────────────────────────────
 
-interface ExpenseFormModalProps {
+interface CategoryPickerProps {
   visible: boolean
-  editing: RecurringExpense | null
+  item: DetectedItem | null
   onClose: () => void
-  onSave: (expense: Omit<RecurringExpense, 'id' | 'createdAt' | 'updatedAt'>) => void
+  onSelect: (groupId: string, category: RecurringExpenseCategory) => void
   colors: any
 }
 
-function ExpenseFormModal({ visible, editing, onClose, onSave, colors }: ExpenseFormModalProps) {
-  const [name, setName] = useState(editing?.name ?? '')
-  const [amount, setAmount] = useState(editing ? String(editing.amount) : '')
-  const [category, setCategory] = useState<RecurringExpenseCategory>(editing?.category ?? 'fixo')
-  const [icon, setIcon] = useState(editing?.icon ?? 'home-outline')
-  const [dueDay, setDueDay] = useState(editing?.dueDay ? String(editing.dueDay) : '')
-  const [notes, setNotes] = useState(editing?.notes ?? '')
-  const [active, setActive] = useState(editing?.active ?? true)
-  const [showIcons, setShowIcons] = useState(false)
-
-  // Sync state when editing changes
-  React.useEffect(() => {
-    if (editing) {
-      setName(editing.name)
-      setAmount(String(editing.amount))
-      setCategory(editing.category)
-      setIcon(editing.icon)
-      setDueDay(editing.dueDay ? String(editing.dueDay) : '')
-      setNotes(editing.notes ?? '')
-      setActive(editing.active)
-    } else {
-      setName('')
-      setAmount('')
-      setCategory('fixo')
-      setIcon('home-outline')
-      setDueDay('')
-      setNotes('')
-      setActive(true)
-    }
-    setShowIcons(false)
-  }, [editing, visible])
-
-  const handleSave = () => {
-    const parsedAmount = parseFloat(amount.replace(',', '.'))
-    if (!name.trim()) { Alert.alert('Atenção', 'Informe um nome para o gasto.'); return }
-    if (isNaN(parsedAmount) || parsedAmount <= 0) { Alert.alert('Atenção', 'Informe um valor válido.'); return }
-    const parsedDay = dueDay ? parseInt(dueDay, 10) : undefined
-    if (parsedDay !== undefined && (parsedDay < 1 || parsedDay > 31)) {
-      Alert.alert('Atenção', 'Dia de vencimento deve ser entre 1 e 31.'); return
-    }
-    onSave({
-      name: name.trim(),
-      amount: parsedAmount,
-      category,
-      icon,
-      color: CATEGORY_META[category].defaultColor,
-      dueDay: parsedDay,
-      notes: notes.trim() || undefined,
-      active,
-    })
-    onClose()
-  }
+function CategoryPickerModal({ visible, item, onClose, onSelect, colors }: CategoryPickerProps) {
+  if (!item) return null
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        style={styles.modalOverlay}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <Pressable style={styles.modalBackdrop} onPress={onClose} />
-        <View style={[styles.formSheet, { backgroundColor: colors.card }]}>
-          {/* Header */}
-          <View style={styles.formHeader}>
-            <Text style={[styles.formTitle, { color: colors.foreground }]}>
-              {editing ? 'Editar Gasto' : 'Novo Gasto Recorrente'}
-            </Text>
-            <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <Ionicons name="close" size={22} color={colors.mutedForeground} />
-            </TouchableOpacity>
-          </View>
-
-          <ScrollView showsVerticalScrollIndicator={false}>
-            {/* Nome */}
-            <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Nome *</Text>
-            <TextInput
-              style={[styles.textInput, { backgroundColor: colors.secondary, color: colors.foreground, borderColor: colors.border }]}
-              value={name}
-              onChangeText={setName}
-              placeholder="Ex: Aluguel, Netflix..."
-              placeholderTextColor={colors.mutedForeground}
-            />
-
-            {/* Valor */}
-            <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Valor Mensal *</Text>
-            <TextInput
-              style={[styles.textInput, { backgroundColor: colors.secondary, color: colors.foreground, borderColor: colors.border }]}
-              value={amount}
-              onChangeText={setAmount}
-              placeholder="0,00"
-              placeholderTextColor={colors.mutedForeground}
-              keyboardType="decimal-pad"
-            />
-
-            {/* Categoria */}
-            <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Categoria *</Text>
-            <View style={styles.categoryGrid}>
-              {CATEGORIES.map((cat) => {
-                const meta = CATEGORY_META[cat]
-                const selected = category === cat
-                return (
-                  <TouchableOpacity
-                    key={cat}
-                    style={[
-                      styles.categoryChip,
-                      {
-                        backgroundColor: selected ? meta.defaultColor + '20' : colors.secondary,
-                        borderColor: selected ? meta.defaultColor : colors.border,
-                        borderWidth: selected ? 1.5 : 1,
-                      },
-                    ]}
-                    onPress={() => { setCategory(cat); setIcon(meta.icon) }}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons name={meta.icon as any} size={16} color={selected ? meta.defaultColor : colors.mutedForeground} />
-                    <Text style={[styles.categoryChipText, { color: selected ? meta.defaultColor : colors.mutedForeground }]}>
-                      {meta.label}
-                    </Text>
-                  </TouchableOpacity>
-                )
-              })}
-            </View>
-
-            {/* Ícone */}
-            <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Ícone</Text>
-            <TouchableOpacity
-              style={[styles.iconPicker, { backgroundColor: colors.secondary, borderColor: colors.border }]}
-              onPress={() => setShowIcons((v) => !v)}
-              activeOpacity={0.7}
-            >
-              <Ionicons name={icon as any} size={22} color={CATEGORY_META[category].defaultColor} />
-              <Text style={[styles.iconPickerText, { color: colors.foreground }]}>{icon.replace(/-outline$/, '').replace(/-/g, ' ')}</Text>
-              <Ionicons name={showIcons ? 'chevron-up' : 'chevron-down'} size={16} color={colors.mutedForeground} />
-            </TouchableOpacity>
-            {showIcons && (
-              <View style={[styles.iconGrid, { backgroundColor: colors.secondary, borderColor: colors.border }]}>
-                {ICON_OPTIONS.map((ic) => (
-                  <TouchableOpacity
-                    key={ic}
-                    style={[styles.iconOption, icon === ic && { backgroundColor: CATEGORY_META[category].defaultColor + '25', borderRadius: 8 }]}
-                    onPress={() => { setIcon(ic); setShowIcons(false) }}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons name={ic as any} size={22} color={icon === ic ? CATEGORY_META[category].defaultColor : colors.mutedForeground} />
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
-
-            {/* Dia de vencimento */}
-            <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Dia de Vencimento (opcional)</Text>
-            <TextInput
-              style={[styles.textInput, { backgroundColor: colors.secondary, color: colors.foreground, borderColor: colors.border }]}
-              value={dueDay}
-              onChangeText={setDueDay}
-              placeholder="Ex: 10"
-              placeholderTextColor={colors.mutedForeground}
-              keyboardType="number-pad"
-              maxLength={2}
-            />
-
-            {/* Notas */}
-            <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Observações (opcional)</Text>
-            <TextInput
-              style={[styles.textInput, styles.textArea, { backgroundColor: colors.secondary, color: colors.foreground, borderColor: colors.border }]}
-              value={notes}
-              onChangeText={setNotes}
-              placeholder="Detalhes sobre este gasto..."
-              placeholderTextColor={colors.mutedForeground}
-              multiline
-              numberOfLines={3}
-            />
-
-            {/* Ativo */}
-            <TouchableOpacity
-              style={[styles.toggleRow, { borderColor: colors.border }]}
-              onPress={() => setActive((v) => !v)}
-              activeOpacity={0.7}
-            >
-              <Text style={[styles.toggleLabel, { color: colors.foreground }]}>Ativo no orçamento</Text>
-              <View style={[styles.toggle, { backgroundColor: active ? '#388E3C' : colors.muted }]}>
-                <View style={[styles.toggleKnob, { transform: [{ translateX: active ? 18 : 2 }] }]} />
-              </View>
-            </TouchableOpacity>
-
-            {/* Botão salvar */}
-            <TouchableOpacity
-              style={[styles.saveBtn, { backgroundColor: CATEGORY_META[category].defaultColor }]}
-              onPress={handleSave}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.saveBtnText}>
-                {editing ? 'Salvar Alterações' : 'Adicionar Gasto'}
-              </Text>
-            </TouchableOpacity>
-          </ScrollView>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
-  )
-}
-
-// ────────────────────────────────────────────────────────────────────────────────
-// Subcomponente: AllocationEditorModal
-// ────────────────────────────────────────────────────────────────────────────────
-
-interface AllocationEditorProps {
-  visible: boolean
-  allocation: BudgetAllocation
-  onClose: () => void
-  onSave: (a: BudgetAllocation) => void
-  colors: any
-}
-
-function AllocationEditorModal({ visible, allocation, onClose, onSave, colors }: AllocationEditorProps) {
-  const [investimento, setInvestimento] = useState(String(allocation.investimento))
-  const [fixo, setFixo] = useState(String(allocation.fixo))
-  const [variavel, setVariavel] = useState(String(allocation.variavel))
-  const [outros, setOutros] = useState(String(allocation.outros))
-
-  React.useEffect(() => {
-    if (visible) {
-      setInvestimento(String(allocation.investimento))
-      setFixo(String(allocation.fixo))
-      setVariavel(String(allocation.variavel))
-      setOutros(String(allocation.outros))
-    }
-  }, [visible, allocation])
-
-  const total = useMemo(() => {
-    const sum = [investimento, fixo, variavel, outros]
-      .map((v) => parseFloat(v) || 0)
-      .reduce((a, b) => a + b, 0)
-    return Math.round(sum * 10) / 10
-  }, [investimento, fixo, variavel, outros])
-
-  const handleSave = () => {
-    const vals = {
-      investimento: parseFloat(investimento) || 0,
-      fixo: parseFloat(fixo) || 0,
-      variavel: parseFloat(variavel) || 0,
-      outros: parseFloat(outros) || 0,
-    }
-    if (Math.abs(total - 100) > 0.1) {
-      Alert.alert('Atenção', `A soma dos percentuais deve ser 100%. Atual: ${total}%`)
-      return
-    }
-    onSave(vals)
-    onClose()
-  }
-
-  const renderField = (label: string, value: string, setter: (v: string) => void, color: string) => (
-    <View style={styles.allocRow} key={label}>
-      <Text style={[styles.allocRowLabel, { color: colors.foreground }]}>{label}</Text>
-      <View style={[styles.allocInputWrap, { borderColor: color, borderWidth: 1.5, backgroundColor: color + '12' }]}>
-        <TextInput
-          style={[styles.allocInput, { color: color }]}
-          value={value}
-          onChangeText={setter}
-          keyboardType="decimal-pad"
-          maxLength={5}
-        />
-        <Text style={[styles.allocPercent, { color: color }]}>%</Text>
-      </View>
-    </View>
-  )
-
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <Pressable style={styles.modalBackdrop} onPress={onClose} />
-        <View style={[styles.formSheet, { backgroundColor: colors.card }]}>
-          <View style={styles.formHeader}>
-            <Text style={[styles.formTitle, { color: colors.foreground }]}>Configurar Divisão</Text>
-            <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <Ionicons name="close" size={22} color={colors.mutedForeground} />
-            </TouchableOpacity>
-          </View>
-          <Text style={[styles.allocHint, { color: colors.mutedForeground }]}>
-            Defina como deseja dividir seus ganhos. A soma deve ser exatamente 100%.
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={pickerStyles.overlay} onPress={onClose}>
+        <View style={[pickerStyles.sheet, { backgroundColor: colors.card }]}>
+          <Text style={[pickerStyles.title, { color: colors.foreground }]}>
+            Reclassificar gasto
           </Text>
-          {renderField('Investimentos', investimento, setInvestimento, '#388E3C')}
-          {renderField('Gastos Fixos', fixo, setFixo, '#1976D2')}
-          {renderField('Gastos Variáveis', variavel, setVariavel, '#F57C00')}
-          {renderField('Outras Demandas', outros, setOutros, '#7B1FA2')}
-          <View style={[styles.allocTotal, { borderColor: Math.abs(total - 100) > 0.1 ? '#D32F2F' : '#388E3C' }]}>
-            <Text style={[styles.allocTotalLabel, { color: colors.mutedForeground }]}>Total</Text>
-            <Text style={[styles.allocTotalValue, { color: Math.abs(total - 100) > 0.1 ? '#D32F2F' : '#388E3C' }]}>
-              {total}%
-            </Text>
-          </View>
-          <TouchableOpacity
-            style={[styles.saveBtn, { backgroundColor: Math.abs(total - 100) > 0.1 ? colors.muted : '#388E3C' }]}
-            onPress={handleSave}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.saveBtnText}>Salvar Divisão</Text>
+          <Text style={[pickerStyles.subtitle, { color: colors.mutedForeground }]} numberOfLines={1}>
+            {item.description}
+          </Text>
+
+          {CATEGORIES.map((cat) => {
+            const meta = CATEGORY_META[cat]
+            const isSelected = item.category === cat
+            return (
+              <TouchableOpacity
+                key={cat}
+                style={[
+                  pickerStyles.option,
+                  {
+                    backgroundColor: isSelected ? meta.color + '18' : colors.secondary,
+                    borderColor: isSelected ? meta.color : colors.border,
+                    borderWidth: isSelected ? 1.5 : 1,
+                  },
+                ]}
+                onPress={() => {
+                  onSelect(item.groupId, cat)
+                  onClose()
+                }}
+                activeOpacity={0.7}
+              >
+                <View style={[pickerStyles.optionIcon, { backgroundColor: meta.color + '20' }]}>
+                  <Ionicons name={meta.icon as any} size={18} color={meta.color} />
+                </View>
+                <Text style={[pickerStyles.optionLabel, { color: isSelected ? meta.color : colors.foreground }]}>
+                  {meta.label}
+                </Text>
+                {isSelected && (
+                  <Ionicons name="checkmark-circle" size={18} color={meta.color} />
+                )}
+              </TouchableOpacity>
+            )
+          })}
+
+          <TouchableOpacity style={[pickerStyles.cancelBtn, { borderColor: colors.border }]} onPress={onClose}>
+            <Text style={[pickerStyles.cancelText, { color: colors.mutedForeground }]}>Cancelar</Text>
           </TouchableOpacity>
         </View>
-      </KeyboardAvoidingView>
+      </Pressable>
     </Modal>
   )
 }
@@ -386,32 +147,108 @@ function AllocationEditorModal({ visible, allocation, onClose, onSave, colors }:
 export function OrcamentoScreen() {
   const { colors } = useTheme()
   const store = useStoreContext()
-  const { recurringExpenses, addRecurringExpense, updateRecurringExpense, deleteRecurringExpense,
-          budgetAllocation, saveBudgetAllocation, monthlyIncome } = store
+  const {
+    transactions,
+    accounts,
+    budgetAllocation,
+    saveBudgetAllocation,
+    monthlyIncome,
+    recurringOverrides,
+    saveRecurringOverride,
+  } = store
 
-  const [formVisible, setFormVisible] = useState(false)
-  const [editingExpense, setEditingExpense] = useState<RecurringExpense | null>(null)
   const [allocVisible, setAllocVisible] = useState(false)
+  const [pickerItem, setPickerItem] = useState<DetectedItem | null>(null)
   const [filterCategory, setFilterCategory] = useState<RecurringExpenseCategory | 'all'>('all')
 
-  // Totais por categoria (apenas ativos)
+  // ── Auto-detecção de transações recorrentes ──────────────────────────────────
+  const detectedItems = useMemo((): DetectedItem[] => {
+    const seen = new Set<string>()
+    const items: DetectedItem[] = []
+
+    // Ordena pelo groupIndex para garantir pegar o item original (index 0) primeiro
+    const sorted = [...transactions].sort((a, b) => {
+      const ia = a.groupIndex ?? 0
+      const ib = b.groupIndex ?? 0
+      return ia - ib
+    })
+
+    for (const tx of sorted) {
+      // Só transações recorrentes (não únicas)
+      if (tx.recurrence === 'unica' || !tx.recurrence) continue
+      // Só despesas e transferências (receitas são a renda, não gasto)
+      if (tx.type === 'receita') continue
+
+      // Chave única por grupo de recorrência
+      const key = tx.groupId || tx.id.split('-')[0]
+      if (seen.has(key)) continue
+      seen.add(key)
+
+      // Conta de origem
+      const sourceAcc = accounts.find(a => a.id === tx.accountId)
+      const sourceAccountName = sourceAcc?.name ?? 'Conta'
+
+      // Classificação automática por tipo e destino
+      let autoCategory: RecurringExpenseCategory = 'fixo'
+      let targetAccountName: string | undefined
+
+      if (tx.type === 'transferencia') {
+        const destId = tx.targetAccountId ?? tx.toAccountId
+        if (destId?.startsWith('goal_')) {
+          // Transferência para meta de poupança
+          autoCategory = 'investimento'
+          targetAccountName = 'Meta de Poupança'
+        } else {
+          const destAcc = accounts.find(a => a.id === destId)
+          targetAccountName = destAcc?.name
+          if (destAcc?.type === 'investimento') {
+            autoCategory = 'investimento'
+          } else {
+            // Transferência entre contas correntes/poupança → outros
+            autoCategory = 'outros'
+          }
+        }
+      }
+      // despesa → padrão 'fixo', usuário pode mudar para 'variavel'
+
+      const category = recurringOverrides[key] ?? autoCategory
+
+      items.push({
+        groupId: key,
+        description: tx.description,
+        amount: tx.amount,
+        recurrence: tx.recurrence,
+        type: tx.type as 'despesa' | 'transferencia',
+        sourceAccountName,
+        targetAccountName,
+        autoCategory,
+        category,
+      })
+    }
+
+    return items
+  }, [transactions, accounts, recurringOverrides])
+
+  // ── Totais por categoria ─────────────────────────────────────────────────────
   const totals = useMemo(() => {
-    const active = recurringExpenses.filter((e) => e.active)
     return CATEGORIES.reduce((acc, cat) => {
-      acc[cat] = active.filter((e) => e.category === cat).reduce((s, e) => s + e.amount, 0)
+      acc[cat] = detectedItems
+        .filter(i => i.category === cat)
+        .reduce((s, i) => s + i.amount, 0)
       return acc
     }, {} as Record<RecurringExpenseCategory, number>)
-  }, [recurringExpenses])
+  }, [detectedItems])
 
-  const totalFixed = useMemo(
+  const totalCommitted = useMemo(
     () => Object.values(totals).reduce((a, b) => a + b, 0),
     [totals],
   )
 
-  // Renda de referência: usa monthlyIncome do store ou totalFixed (fallback)
-  const referenceIncome = monthlyIncome > 0 ? monthlyIncome : totalFixed
+  // ── Renda de referência ──────────────────────────────────────────────────────
+  // Prefere a receita real do mês; se não houver, usa total comprometido como estimativa
+  const referenceIncome = monthlyIncome > 0 ? monthlyIncome : totalCommitted
 
-  // Alocação teórica
+  // ── Alocação teórica em R$ ───────────────────────────────────────────────────
   const theoreticalAlloc = useMemo((): Record<keyof BudgetAllocation, number> => ({
     investimento: (referenceIncome * budgetAllocation.investimento) / 100,
     fixo:         (referenceIncome * budgetAllocation.fixo) / 100,
@@ -419,36 +256,24 @@ export function OrcamentoScreen() {
     outros:       (referenceIncome * budgetAllocation.outros) / 100,
   }), [referenceIncome, budgetAllocation])
 
-  const filteredExpenses = useMemo(() =>
+  // ── Filtro de lista ──────────────────────────────────────────────────────────
+  const filteredItems = useMemo(() =>
     filterCategory === 'all'
-      ? recurringExpenses
-      : recurringExpenses.filter((e) => e.category === filterCategory),
-  [recurringExpenses, filterCategory])
+      ? detectedItems
+      : detectedItems.filter(i => i.category === filterCategory),
+  [detectedItems, filterCategory])
 
-  const handleDelete = useCallback((expense: RecurringExpense) => {
-    Alert.alert(
-      'Remover Gasto',
-      `Deseja remover "${expense.name}" dos seus gastos recorrentes?`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        { text: 'Remover', style: 'destructive', onPress: () => deleteRecurringExpense(expense.id) },
-      ],
-    )
-  }, [deleteRecurringExpense])
-
-  const handleSaveExpense = useCallback(async (data: Omit<RecurringExpense, 'id' | 'createdAt' | 'updatedAt'>) => {
-    if (editingExpense) {
-      await updateRecurringExpense({ ...editingExpense, ...data, updatedAt: new Date().toISOString() })
-    } else {
-      await addRecurringExpense(data)
-    }
-    setEditingExpense(null)
-  }, [editingExpense, addRecurringExpense, updateRecurringExpense])
+  const handleCategorySelect = useCallback(
+    (groupId: string, category: RecurringExpenseCategory) => {
+      saveRecurringOverride(groupId, category)
+    },
+    [saveRecurringOverride],
+  )
 
   return (
     <ScrollView
       style={[styles.container, { backgroundColor: colors.background }]}
-      contentContainerStyle={styles.contentContainer}
+      contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
     >
       {/* ── Cabeçalho ── */}
@@ -456,7 +281,7 @@ export function OrcamentoScreen() {
         <View>
           <Text style={[styles.screenTitle, { color: colors.foreground }]}>Orçamento Mensal</Text>
           <Text style={[styles.screenSubtitle, { color: colors.mutedForeground }]}>
-            Divisão teórica dos seus ganhos
+            Baseado nas suas recorrências
           </Text>
         </View>
         <TouchableOpacity
@@ -474,86 +299,82 @@ export function OrcamentoScreen() {
           <Ionicons name="cash-outline" size={20} color="#388E3C" />
           <View style={{ marginLeft: 10 }}>
             <Text style={[styles.incomeLabel, { color: colors.mutedForeground }]}>
-              {monthlyIncome > 0 ? 'Receitas do mês' : 'Total de gastos fixos'}
+              {monthlyIncome > 0 ? 'Receitas do mês (real)' : 'Total comprometido (estimado)'}
             </Text>
             <Text style={[styles.incomeValue, { color: colors.foreground }]}>
               {fmt(referenceIncome)}
             </Text>
           </View>
         </View>
-        <View style={[styles.incomeBadge, { backgroundColor: monthlyIncome > 0 ? '#388E3C20' : '#F57C0020' }]}>
+        <View style={[styles.incomeBadge, {
+          backgroundColor: monthlyIncome > 0 ? '#388E3C20' : '#F57C0020',
+        }]}>
           <Text style={[styles.incomeBadgeText, { color: monthlyIncome > 0 ? '#388E3C' : '#F57C00' }]}>
             {monthlyIncome > 0 ? 'Real' : 'Estimado'}
           </Text>
         </View>
       </View>
 
-      {/* ── Painel de divisão teórica ── */}
+      {/* ── Divisão teórica ── */}
       <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <View style={styles.sectionCardHeader}>
           <Text style={[styles.sectionCardTitle, { color: colors.foreground }]}>Divisão Teórica</Text>
           <TouchableOpacity
             onPress={() => setAllocVisible(true)}
-            style={styles.editAllocBtn}
+            style={styles.editBtn}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <Ionicons name="pencil-outline" size={14} color={colors.mutedForeground} />
-            <Text style={[styles.editAllocBtnText, { color: colors.mutedForeground }]}>Editar</Text>
+            <Ionicons name="pencil-outline" size={13} color={colors.mutedForeground} />
+            <Text style={[styles.editBtnText, { color: colors.mutedForeground }]}>Editar %</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Barra visual */}
+        {/* Barra empilhada */}
         <View style={styles.stackedBar}>
           {(Object.keys(budgetAllocation) as (keyof BudgetAllocation)[]).map((key) => (
             <View
               key={key}
-              style={[
-                styles.stackedBarSegment,
-                {
-                  flex: budgetAllocation[key],
-                  backgroundColor: ALLOCATION_META[key].color,
-                },
-              ]}
+              style={[styles.stackedBarSegment, {
+                flex: budgetAllocation[key],
+                backgroundColor: ALLOCATION_META[key].color,
+              }]}
             />
           ))}
         </View>
 
-        {/* Legenda */}
+        {/* Linhas de detalhe */}
         {(Object.keys(budgetAllocation) as (keyof BudgetAllocation)[]).map((key) => {
           const meta = ALLOCATION_META[key]
-          const theorical = theoreticalAlloc[key]
-          const actual = key === 'fixo' ? totals.fixo : key === 'variavel' ? totals.variavel : key === 'investimento' ? totals.investimento : totals.outros
-          const diff = theorical - actual
-          const isOk = actual <= theorical
+          const theoretical = theoreticalAlloc[key]
+          const actual = totals[key as RecurringExpenseCategory] ?? 0
+          const diff = theoretical - actual
+          const isOk = actual <= theoretical
+
           return (
             <View key={key} style={[styles.allocItem, { borderBottomColor: colors.border }]}>
               <View style={[styles.allocDot, { backgroundColor: meta.color }]} />
-              <View style={styles.allocItemCenter}>
-                <Text style={[styles.allocItemLabel, { color: colors.foreground }]}>{meta.label}</Text>
-                <View style={styles.allocItemBarWrap}>
-                  <View style={[styles.allocItemBar, { backgroundColor: colors.muted }]}>
-                    <View
-                      style={[
-                        styles.allocItemBarFill,
-                        {
-                          backgroundColor: meta.color,
-                          width: `${Math.min(actual / Math.max(theorical, 1) * 100, 100)}%` as any,
-                        },
-                      ]}
-                    />
-                  </View>
+              <View style={styles.allocCenter}>
+                <Text style={[styles.allocLabel, { color: colors.foreground }]}>{meta.label}</Text>
+                {/* Mini barra de progresso */}
+                <View style={[styles.miniBar, { backgroundColor: colors.muted }]}>
+                  <View style={[styles.miniBarFill, {
+                    backgroundColor: meta.color,
+                    width: `${Math.min(actual / Math.max(theoretical, 1) * 100, 100)}%` as any,
+                  }]} />
                 </View>
               </View>
-              <View style={styles.allocItemRight}>
-                <Text style={[styles.allocItemPct, { color: meta.color }]}>
+              <View style={styles.allocRight}>
+                <Text style={[styles.allocPct, { color: meta.color }]}>
                   {budgetAllocation[key]}%
                 </Text>
-                <Text style={[styles.allocItemVal, { color: colors.foreground }]}>
-                  {fmt(theorical)}
+                <Text style={[styles.allocVal, { color: colors.foreground }]}>
+                  {fmt(theoretical)}
                 </Text>
                 {referenceIncome > 0 && (
-                  <Text style={[styles.allocItemDiff, { color: isOk ? '#388E3C' : '#D32F2F' }]}>
-                    {isOk ? `+${fmt(diff)} livre` : `${fmt(Math.abs(diff))} acima`}
+                  <Text style={[styles.allocDiff, { color: isOk ? '#388E3C' : '#D32F2F' }]}>
+                    {isOk
+                      ? diff > 0 ? `+${fmt(diff)} livre` : 'No limite'
+                      : `${fmt(Math.abs(diff))} acima`}
                   </Text>
                 )}
               </View>
@@ -562,62 +383,56 @@ export function OrcamentoScreen() {
         })}
       </View>
 
-      {/* ── Resumo dos gastos recorrentes ── */}
+      {/* ── Resumo comprometido ── */}
       <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <Text style={[styles.sectionCardTitle, { color: colors.foreground }]}>Resumo de Gastos Fixos</Text>
+        <Text style={[styles.sectionCardTitle, { color: colors.foreground }]}>Comprometido por Categoria</Text>
         {CATEGORIES.map((cat) => {
           const meta = CATEGORY_META[cat]
           return (
             <View key={cat} style={[styles.summaryRow, { borderBottomColor: colors.border }]}>
-              <View style={[styles.summaryIcon, { backgroundColor: meta.defaultColor + '18' }]}>
-                <Ionicons name={meta.icon as any} size={16} color={meta.defaultColor} />
+              <View style={[styles.summaryIcon, { backgroundColor: meta.color + '18' }]}>
+                <Ionicons name={meta.icon as any} size={16} color={meta.color} />
               </View>
               <Text style={[styles.summaryLabel, { color: colors.foreground }]}>{meta.label}</Text>
-              <Text style={[styles.summaryValue, { color: meta.defaultColor }]}>{fmt(totals[cat])}</Text>
+              <Text style={[styles.summaryValue, { color: meta.color }]}>{fmt(totals[cat])}</Text>
             </View>
           )
         })}
         <View style={[styles.summaryTotalRow, { borderTopColor: colors.border }]}>
-          <Text style={[styles.summaryTotalLabel, { color: colors.foreground }]}>Total Recorrente</Text>
-          <Text style={[styles.summaryTotalValue, { color: colors.foreground }]}>{fmt(totalFixed)}</Text>
+          <Text style={[styles.summaryTotalLabel, { color: colors.foreground }]}>Total recorrente</Text>
+          <Text style={[styles.summaryTotalValue, { color: colors.foreground }]}>{fmt(totalCommitted)}</Text>
         </View>
       </View>
 
-      {/* ── Lista de gastos ── */}
+      {/* ── Lista de recorrências detectadas ── */}
       <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <View style={styles.listHeader}>
-          <Text style={[styles.sectionCardTitle, { color: colors.foreground }]}>Gastos Recorrentes</Text>
-          <TouchableOpacity
-            style={[styles.addExpenseBtn, { backgroundColor: colors.primary }]}
-            onPress={() => { setEditingExpense(null); setFormVisible(true) }}
-            activeOpacity={0.85}
-          >
-            <Ionicons name="add" size={16} color="#FFF" />
-            <Text style={styles.addExpenseBtnText}>Adicionar</Text>
-          </TouchableOpacity>
+          <View>
+            <Text style={[styles.sectionCardTitle, { color: colors.foreground }]}>Recorrências Detectadas</Text>
+            <Text style={[styles.listSubtitle, { color: colors.mutedForeground }]}>
+              Toque na categoria para reclassificar
+            </Text>
+          </View>
         </View>
 
-        {/* Filtros por categoria */}
+        {/* Filtros */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll}>
           {(['all', ...CATEGORIES] as const).map((cat) => {
             const selected = filterCategory === cat
             const meta = cat !== 'all' ? CATEGORY_META[cat] : null
-            const color = meta ? meta.defaultColor : colors.primary
+            const color = meta ? meta.color : colors.primary
             return (
               <TouchableOpacity
                 key={cat}
-                style={[
-                  styles.filterChip,
-                  {
-                    backgroundColor: selected ? color + '20' : colors.secondary,
-                    borderColor: selected ? color : colors.border,
-                    borderWidth: selected ? 1.5 : 1,
-                  },
-                ]}
+                style={[styles.filterChip, {
+                  backgroundColor: selected ? color + '20' : colors.secondary,
+                  borderColor: selected ? color : colors.border,
+                  borderWidth: selected ? 1.5 : 1,
+                }]}
                 onPress={() => setFilterCategory(cat as any)}
                 activeOpacity={0.7}
               >
-                {meta && <Ionicons name={meta.icon as any} size={12} color={selected ? color : colors.mutedForeground} />}
+                {meta && <Ionicons name={meta.icon as any} size={11} color={selected ? color : colors.mutedForeground} />}
                 <Text style={[styles.filterChipText, { color: selected ? color : colors.mutedForeground }]}>
                   {cat === 'all' ? 'Todos' : meta!.label}
                 </Text>
@@ -627,76 +442,73 @@ export function OrcamentoScreen() {
         </ScrollView>
 
         {/* Itens */}
-        {filteredExpenses.length === 0 ? (
+        {filteredItems.length === 0 ? (
           <View style={styles.emptyState}>
-            <Ionicons name="receipt-outline" size={36} color={colors.mutedForeground} />
-            <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
-              Nenhum gasto recorrente{filterCategory !== 'all' ? ` em "${CATEGORY_META[filterCategory as RecurringExpenseCategory].label}"` : ''}.
+            <Ionicons name="repeat-outline" size={40} color={colors.mutedForeground} />
+            <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
+              Nenhuma recorrência encontrada
             </Text>
-            <TouchableOpacity
-              style={[styles.emptyAddBtn, { borderColor: colors.primary }]}
-              onPress={() => { setEditingExpense(null); setFormVisible(true) }}
-            >
-              <Text style={[styles.emptyAddBtnText, { color: colors.primary }]}>+ Adicionar</Text>
-            </TouchableOpacity>
+            <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
+              Adicione transações com recorrência mensal, semanal ou anual na tela principal para que apareçam aqui automaticamente.
+            </Text>
           </View>
         ) : (
-          filteredExpenses.map((expense) => {
-            const meta = CATEGORY_META[expense.category]
+          filteredItems.map((item) => {
+            const meta = CATEGORY_META[item.category]
+            const isOverridden = !!recurringOverrides[item.groupId]
             return (
-              <View
-                key={expense.id}
-                style={[styles.expenseItem, { borderBottomColor: colors.border, opacity: expense.active ? 1 : 0.45 }]}
-              >
-                <View style={[styles.expenseIcon, { backgroundColor: expense.color + '20' }]}>
-                  <Ionicons name={expense.icon as any} size={20} color={expense.color} />
+              <View key={item.groupId} style={[styles.expenseItem, { borderBottomColor: colors.border }]}>
+                {/* Ícone do tipo */}
+                <View style={[styles.itemIcon, { backgroundColor: meta.color + '18' }]}>
+                  <Ionicons
+                    name={item.type === 'transferencia' ? 'swap-horizontal-outline' : 'receipt-outline'}
+                    size={18}
+                    color={meta.color}
+                  />
                 </View>
-                <View style={styles.expenseDetails}>
-                  <View style={styles.expenseTopRow}>
-                    <Text style={[styles.expenseName, { color: colors.foreground }]} numberOfLines={1}>
-                      {expense.name}
-                    </Text>
-                    {!expense.active && (
-                      <View style={[styles.inactiveBadge, { backgroundColor: colors.muted }]}>
-                        <Text style={[styles.inactiveBadgeText, { color: colors.mutedForeground }]}>Inativo</Text>
-                      </View>
-                    )}
-                  </View>
-                  <View style={styles.expenseMetaRow}>
-                    <View style={[styles.catPill, { backgroundColor: meta.defaultColor + '18' }]}>
-                      <Text style={[styles.catPillText, { color: meta.defaultColor }]}>{meta.label}</Text>
+
+                {/* Detalhes */}
+                <View style={styles.itemDetails}>
+                  <Text style={[styles.itemName, { color: colors.foreground }]} numberOfLines={1}>
+                    {item.description}
+                  </Text>
+                  <View style={styles.itemMeta}>
+                    {/* Tipo de recorrência */}
+                    <View style={[styles.recurrencePill, { backgroundColor: colors.muted }]}>
+                      <Ionicons name="repeat-outline" size={10} color={colors.mutedForeground} />
+                      <Text style={[styles.recurrencePillText, { color: colors.mutedForeground }]}>
+                        {RECURRENCE_LABEL[item.recurrence] ?? item.recurrence}
+                      </Text>
                     </View>
-                    {expense.dueDay && (
-                      <Text style={[styles.dueDayText, { color: colors.mutedForeground }]}>
-                        Vence dia {expense.dueDay}
+                    {/* Conta de origem → destino */}
+                    {item.type === 'transferencia' && item.targetAccountName ? (
+                      <Text style={[styles.accountFlow, { color: colors.mutedForeground }]} numberOfLines={1}>
+                        {item.sourceAccountName} → {item.targetAccountName}
+                      </Text>
+                    ) : (
+                      <Text style={[styles.accountFlow, { color: colors.mutedForeground }]} numberOfLines={1}>
+                        {item.sourceAccountName}
                       </Text>
                     )}
                   </View>
-                  {expense.notes ? (
-                    <Text style={[styles.expenseNotes, { color: colors.mutedForeground }]} numberOfLines={1}>
-                      {expense.notes}
-                    </Text>
-                  ) : null}
                 </View>
-                <View style={styles.expenseRight}>
-                  <Text style={[styles.expenseAmount, { color: colors.foreground }]}>
-                    {fmt(expense.amount)}
+
+                {/* Valor + badge de categoria (tocável) */}
+                <View style={styles.itemRight}>
+                  <Text style={[styles.itemAmount, { color: colors.foreground }]}>
+                    {fmt(item.amount)}
                   </Text>
-                  <View style={styles.expenseActions}>
-                    <TouchableOpacity
-                      onPress={() => { setEditingExpense(expense); setFormVisible(true) }}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    >
-                      <Ionicons name="pencil-outline" size={16} color={colors.mutedForeground} />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={() => handleDelete(expense)}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                      style={{ marginLeft: 14 }}
-                    >
-                      <Ionicons name="trash-outline" size={16} color="#D32F2F" />
-                    </TouchableOpacity>
-                  </View>
+                  <TouchableOpacity
+                    style={[styles.catBadge, { backgroundColor: meta.color + '18', borderColor: meta.color }]}
+                    onPress={() => setPickerItem(item)}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name={meta.icon as any} size={10} color={meta.color} />
+                    <Text style={[styles.catBadgeText, { color: meta.color }]}>{meta.label}</Text>
+                    {isOverridden && (
+                      <Ionicons name="pencil" size={9} color={meta.color} />
+                    )}
+                  </TouchableOpacity>
                 </View>
               </View>
             )
@@ -704,15 +516,14 @@ export function OrcamentoScreen() {
         )}
       </View>
 
-      {/* Espaço final */}
       <View style={{ height: 32 }} />
 
       {/* Modais */}
-      <ExpenseFormModal
-        visible={formVisible}
-        editing={editingExpense}
-        onClose={() => { setFormVisible(false); setEditingExpense(null) }}
-        onSave={handleSaveExpense}
+      <CategoryPickerModal
+        visible={!!pickerItem}
+        item={pickerItem}
+        onClose={() => setPickerItem(null)}
+        onSelect={handleCategorySelect}
         colors={colors}
       />
       <AllocationEditorModal
@@ -732,50 +543,43 @@ export function OrcamentoScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  contentContainer: { padding: 16, paddingBottom: 32 },
+  content: { padding: 16, paddingBottom: 32 },
 
-  // Header
-  screenHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 },
+  screenHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 },
   screenTitle: { fontSize: 22, fontWeight: '700', letterSpacing: -0.3 },
   screenSubtitle: { fontSize: 13, marginTop: 2 },
   configBtn: { width: 38, height: 38, borderRadius: 10, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
 
-  // Income card
   incomeCard: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     borderRadius: 14, borderWidth: 1, padding: 14, marginBottom: 14,
   },
   incomeCardLeft: { flexDirection: 'row', alignItems: 'center' },
   incomeLabel: { fontSize: 12 },
-  incomeValue: { fontSize: 20, fontWeight: '700', letterSpacing: -0.4, marginTop: 1 },
+  incomeValue: { fontSize: 20, fontWeight: '700', letterSpacing: -0.4, marginTop: 2 },
   incomeBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
   incomeBadgeText: { fontSize: 12, fontWeight: '600' },
 
-  // Section cards
   sectionCard: { borderRadius: 14, borderWidth: 1, padding: 14, marginBottom: 14 },
   sectionCardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   sectionCardTitle: { fontSize: 15, fontWeight: '700' },
-  editAllocBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  editAllocBtnText: { fontSize: 12 },
+  editBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  editBtnText: { fontSize: 12 },
 
-  // Stacked bar
   stackedBar: { flexDirection: 'row', height: 8, borderRadius: 4, overflow: 'hidden', marginBottom: 16 },
   stackedBarSegment: { height: '100%' },
 
-  // Allocation items
   allocItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, gap: 10 },
-  allocDot: { width: 8, height: 8, borderRadius: 4 },
-  allocItemCenter: { flex: 1 },
-  allocItemLabel: { fontSize: 13, fontWeight: '500', marginBottom: 4 },
-  allocItemBarWrap: { width: '100%' },
-  allocItemBar: { height: 4, borderRadius: 2, width: '100%', overflow: 'hidden' },
-  allocItemBarFill: { height: '100%', borderRadius: 2 },
-  allocItemRight: { alignItems: 'flex-end', minWidth: 90 },
-  allocItemPct: { fontSize: 13, fontWeight: '700' },
-  allocItemVal: { fontSize: 13, fontWeight: '500', marginTop: 2 },
-  allocItemDiff: { fontSize: 11, marginTop: 1 },
+  allocDot: { width: 8, height: 8, borderRadius: 4, flexShrink: 0 },
+  allocCenter: { flex: 1 },
+  allocLabel: { fontSize: 13, fontWeight: '500', marginBottom: 4 },
+  miniBar: { height: 4, borderRadius: 2, overflow: 'hidden' },
+  miniBarFill: { height: '100%', borderRadius: 2 },
+  allocRight: { alignItems: 'flex-end', minWidth: 90 },
+  allocPct: { fontSize: 13, fontWeight: '700' },
+  allocVal: { fontSize: 13, fontWeight: '500', marginTop: 1 },
+  allocDiff: { fontSize: 11, marginTop: 1 },
 
-  // Summary
   summaryRow: {
     flexDirection: 'row', alignItems: 'center',
     paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, gap: 10,
@@ -783,99 +587,54 @@ const styles = StyleSheet.create({
   summaryIcon: { width: 32, height: 32, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
   summaryLabel: { flex: 1, fontSize: 13, fontWeight: '500' },
   summaryValue: { fontSize: 14, fontWeight: '700' },
-  summaryTotalRow: {
-    flexDirection: 'row', justifyContent: 'space-between',
-    paddingTop: 12, borderTopWidth: 1, marginTop: 4,
-  },
+  summaryTotalRow: { flexDirection: 'row', justifyContent: 'space-between', paddingTop: 12, borderTopWidth: 1, marginTop: 4 },
   summaryTotalLabel: { fontSize: 14, fontWeight: '700' },
   summaryTotalValue: { fontSize: 16, fontWeight: '800' },
 
-  // List
-  listHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  addExpenseBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20 },
-  addExpenseBtnText: { color: '#FFF', fontSize: 13, fontWeight: '600' },
-
-  // Filter scroll
-  filterScroll: { marginBottom: 12 },
+  listHeader: { marginBottom: 10 },
+  listSubtitle: { fontSize: 12, marginTop: 2 },
+  filterScroll: { marginBottom: 10 },
   filterChip: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
-    paddingHorizontal: 12, paddingVertical: 6,
-    borderRadius: 20, marginRight: 8,
+    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, marginRight: 8,
   },
   filterChipText: { fontSize: 12, fontWeight: '500' },
 
-  // Expense items
   expenseItem: {
-    flexDirection: 'row', alignItems: 'flex-start',
+    flexDirection: 'row', alignItems: 'center',
     paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, gap: 10,
   },
-  expenseIcon: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginTop: 2 },
-  expenseDetails: { flex: 1 },
-  expenseTopRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 },
-  expenseName: { fontSize: 14, fontWeight: '600', flex: 1 },
-  inactiveBadge: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 8 },
-  inactiveBadgeText: { fontSize: 10, fontWeight: '500' },
-  expenseMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  catPill: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 },
-  catPillText: { fontSize: 11, fontWeight: '600' },
-  dueDayText: { fontSize: 11 },
-  expenseNotes: { fontSize: 11, marginTop: 2 },
-  expenseRight: { alignItems: 'flex-end', justifyContent: 'space-between', paddingTop: 2 },
-  expenseAmount: { fontSize: 14, fontWeight: '700', marginBottom: 6 },
-  expenseActions: { flexDirection: 'row', alignItems: 'center' },
+  itemIcon: { width: 38, height: 38, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  itemDetails: { flex: 1 },
+  itemName: { fontSize: 14, fontWeight: '600', marginBottom: 4 },
+  itemMeta: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
+  recurrencePill: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 8 },
+  recurrencePillText: { fontSize: 10, fontWeight: '500' },
+  accountFlow: { fontSize: 11, flexShrink: 1 },
+  itemRight: { alignItems: 'flex-end', gap: 5 },
+  itemAmount: { fontSize: 14, fontWeight: '700' },
+  catBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10, borderWidth: 1,
+  },
+  catBadgeText: { fontSize: 11, fontWeight: '600' },
 
-  // Empty state
-  emptyState: { alignItems: 'center', paddingVertical: 32, gap: 8 },
-  emptyText: { fontSize: 14, textAlign: 'center' },
-  emptyAddBtn: { borderWidth: 1, borderRadius: 20, paddingHorizontal: 20, paddingVertical: 8, marginTop: 4 },
-  emptyAddBtnText: { fontSize: 14, fontWeight: '600' },
+  emptyState: { alignItems: 'center', paddingVertical: 28, gap: 8 },
+  emptyTitle: { fontSize: 15, fontWeight: '600' },
+  emptyText: { fontSize: 13, textAlign: 'center', lineHeight: 20 },
+})
 
-  // Modal
-  modalOverlay: { flex: 1, justifyContent: 'flex-end' },
-  modalBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.4)' },
-  formSheet: { borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, maxHeight: '92%' },
-  formHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  formTitle: { fontSize: 17, fontWeight: '700' },
-  fieldLabel: { fontSize: 12, fontWeight: '500', marginBottom: 6, marginTop: 12 },
-  textInput: {
-    borderWidth: 1, borderRadius: 10, paddingHorizontal: 14,
-    paddingVertical: Platform.OS === 'ios' ? 12 : 10, fontSize: 15,
+const pickerStyles = StyleSheet.create({
+  overlay: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.45)', padding: 24 },
+  sheet: { width: '100%', borderRadius: 20, padding: 20 },
+  title: { fontSize: 17, fontWeight: '700', marginBottom: 4 },
+  subtitle: { fontSize: 13, marginBottom: 16 },
+  option: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    padding: 14, borderRadius: 12, marginBottom: 8,
   },
-  textArea: { height: 80, textAlignVertical: 'top', paddingTop: 10 },
-  categoryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 4 },
-  categoryChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10,
-  },
-  categoryChipText: { fontSize: 13, fontWeight: '500' },
-  iconPicker: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    borderWidth: 1, borderRadius: 10, padding: 12,
-  },
-  iconPickerText: { flex: 1, fontSize: 14, textTransform: 'capitalize' },
-  iconGrid: { flexDirection: 'row', flexWrap: 'wrap', borderWidth: 1, borderRadius: 10, padding: 8, marginTop: 4, gap: 4 },
-  iconOption: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  toggleRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    borderWidth: 1, borderRadius: 10, padding: 14, marginTop: 12,
-  },
-  toggleLabel: { fontSize: 14, fontWeight: '500' },
-  toggle: { width: 44, height: 26, borderRadius: 13, justifyContent: 'center' },
-  toggleKnob: { width: 22, height: 22, borderRadius: 11, backgroundColor: '#FFF', shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 2, elevation: 2 },
-  saveBtn: { borderRadius: 14, paddingVertical: 14, alignItems: 'center', marginTop: 20, marginBottom: 8 },
-  saveBtnText: { color: '#FFF', fontSize: 15, fontWeight: '700' },
-
-  // Allocation editor
-  allocHint: { fontSize: 13, marginBottom: 16, lineHeight: 18 },
-  allocRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
-  allocRowLabel: { fontSize: 14, fontWeight: '500', flex: 1 },
-  allocInputWrap: { flexDirection: 'row', alignItems: 'center', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 },
-  allocInput: { fontSize: 18, fontWeight: '700', minWidth: 48, textAlign: 'right' },
-  allocPercent: { fontSize: 16, fontWeight: '600', marginLeft: 2 },
-  allocTotal: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    borderWidth: 1.5, borderRadius: 10, padding: 12, marginVertical: 8,
-  },
-  allocTotalLabel: { fontSize: 14, fontWeight: '600' },
-  allocTotalValue: { fontSize: 20, fontWeight: '800' },
+  optionIcon: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  optionLabel: { flex: 1, fontSize: 15, fontWeight: '600' },
+  cancelBtn: { marginTop: 4, borderTopWidth: 1, paddingTop: 14, alignItems: 'center' },
+  cancelText: { fontSize: 14, fontWeight: '500' },
 })
