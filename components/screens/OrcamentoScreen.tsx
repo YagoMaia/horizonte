@@ -194,18 +194,28 @@ export function OrcamentoScreen() {
   const monthLabel = `${MONTH_NAMES[selectedDate.month]} ${selectedDate.year}`
 
   // ── Receitas do mês selecionado ──────────────────────────────────────────────
-  // Meses passados/atual: só pagas. Meses futuros: inclui pendentes (projeção).
-  const selectedMonthIncome = useMemo(() => {
-    return transactions
-      .filter(tx => {
-        if (tx.type !== 'receita') return false
-        // Para meses futuros incluímos pendentes; para atual/passado só pagas
-        if (!isFutureMonth && !tx.paid) return false
-        const d = new Date(tx.date)
-        return d.getMonth() === selectedDate.month && d.getFullYear() === selectedDate.year
-      })
-      .reduce((sum, tx) => sum + tx.amount, 0)
-  }, [transactions, selectedDate, isFutureMonth])
+  // Calcula receitas pagas e a receber para o mês selecionado
+  const incomeSummary = useMemo(() => {
+    let paid = 0
+    let pending = 0
+
+    transactions.forEach(tx => {
+      if (tx.type !== 'receita') return
+      const d = new Date(tx.date)
+      if (d.getMonth() === selectedDate.month && d.getFullYear() === selectedDate.year) {
+        if (tx.paid) {
+          paid += tx.amount
+        } else {
+          pending += tx.amount
+        }
+      }
+    })
+
+    const total = paid + pending
+    return { paid, pending, total }
+  }, [transactions, selectedDate])
+
+  const selectedMonthIncome = incomeSummary.total
 
   // ── Auto-detecção de transações recorrentes ──────────────────────────────────
   const detectedItems = useMemo((): DetectedItem[] => {
@@ -369,8 +379,12 @@ export function OrcamentoScreen() {
           <Ionicons name="cash-outline" size={20} color="#388E3C" />
           <View style={{ marginLeft: 10 }}>
             <Text style={[styles.incomeLabel, { color: colors.mutedForeground }]}>
-              {selectedMonthIncome > 0
-                ? isFutureMonth ? 'Receitas previstas' : 'Receitas do mês'
+              {incomeSummary.total > 0
+                ? incomeSummary.pending > 0 && incomeSummary.paid > 0
+                  ? `Receitas (${fmt(incomeSummary.paid)} recebido · ${fmt(incomeSummary.pending)} a receber)`
+                  : incomeSummary.pending > 0
+                    ? 'Receitas previstas (a receber)'
+                    : 'Receitas do mês (recebido)'
                 : 'Total comprometido (estimado)'}
             </Text>
             <Text style={[styles.incomeValue, { color: colors.foreground }]}>
@@ -379,17 +393,17 @@ export function OrcamentoScreen() {
           </View>
         </View>
         <View style={[styles.incomeBadge, {
-          backgroundColor: selectedMonthIncome > 0
-            ? isFutureMonth ? '#F57C0020' : '#388E3C20'
+          backgroundColor: incomeSummary.total > 0
+            ? incomeSummary.pending === 0 ? '#388E3C20' : '#F57C0020'
             : '#73737320',
         }]}>
           <Text style={[styles.incomeBadgeText, {
-            color: selectedMonthIncome > 0
-              ? isFutureMonth ? '#F57C00' : '#388E3C'
+            color: incomeSummary.total > 0
+              ? incomeSummary.pending === 0 ? '#388E3C' : '#F57C00'
               : colors.mutedForeground,
           }]}>
-            {selectedMonthIncome > 0
-              ? isFutureMonth ? 'Previsto' : 'Real'
+            {incomeSummary.total > 0
+              ? incomeSummary.pending === 0 ? 'Realizado' : 'Previsto'
               : 'Estimado'}
           </Text>
         </View>
