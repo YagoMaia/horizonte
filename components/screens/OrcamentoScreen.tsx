@@ -161,6 +161,52 @@ export function OrcamentoScreen() {
   const [pickerItem, setPickerItem] = useState<DetectedItem | null>(null)
   const [filterCategory, setFilterCategory] = useState<RecurringExpenseCategory | 'all'>('all')
 
+  // ── Seletor de mês ───────────────────────────────────────────────────────────
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const d = new Date()
+    return { month: d.getMonth(), year: d.getFullYear() }
+  })
+
+  const now = new Date()
+  const isCurrentMonth =
+    selectedDate.month === now.getMonth() && selectedDate.year === now.getFullYear()
+  const isFutureMonth =
+    selectedDate.year > now.getFullYear() ||
+    (selectedDate.year === now.getFullYear() && selectedDate.month > now.getMonth())
+
+  const handlePrevMonth = () => {
+    setSelectedDate(prev => {
+      if (prev.month === 0) return { month: 11, year: prev.year - 1 }
+      return { month: prev.month - 1, year: prev.year }
+    })
+  }
+  const handleNextMonth = () => {
+    setSelectedDate(prev => {
+      if (prev.month === 11) return { month: 0, year: prev.year + 1 }
+      return { month: prev.month + 1, year: prev.year }
+    })
+  }
+
+  const MONTH_NAMES = [
+    'Janeiro','Fevereiro','Março','Abril','Maio','Junho',
+    'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro',
+  ]
+  const monthLabel = `${MONTH_NAMES[selectedDate.month]} ${selectedDate.year}`
+
+  // ── Receitas do mês selecionado ──────────────────────────────────────────────
+  // Meses passados/atual: só pagas. Meses futuros: inclui pendentes (projeção).
+  const selectedMonthIncome = useMemo(() => {
+    return transactions
+      .filter(tx => {
+        if (tx.type !== 'receita') return false
+        // Para meses futuros incluímos pendentes; para atual/passado só pagas
+        if (!isFutureMonth && !tx.paid) return false
+        const d = new Date(tx.date)
+        return d.getMonth() === selectedDate.month && d.getFullYear() === selectedDate.year
+      })
+      .reduce((sum, tx) => sum + tx.amount, 0)
+  }, [transactions, selectedDate, isFutureMonth])
+
   // ── Auto-detecção de transações recorrentes ──────────────────────────────────
   const detectedItems = useMemo((): DetectedItem[] => {
     const seen = new Set<string>()
@@ -245,8 +291,8 @@ export function OrcamentoScreen() {
   )
 
   // ── Renda de referência ──────────────────────────────────────────────────────
-  // Prefere a receita real do mês; se não houver, usa total comprometido como estimativa
-  const referenceIncome = monthlyIncome > 0 ? monthlyIncome : totalCommitted
+  // Prefere a receita real/projetada do mês; se zero, usa total comprometido
+  const referenceIncome = selectedMonthIncome > 0 ? selectedMonthIncome : totalCommitted
 
   // ── Alocação teórica em R$ ───────────────────────────────────────────────────
   const theoreticalAlloc = useMemo((): Record<keyof BudgetAllocation, number> => ({
@@ -276,14 +322,9 @@ export function OrcamentoScreen() {
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
     >
-      {/* ── Cabeçalho ── */}
+      {/* ── Cabeçalho com seletor de mês ── */}
       <View style={styles.screenHeader}>
-        <View>
-          <Text style={[styles.screenTitle, { color: colors.foreground }]}>Orçamento Mensal</Text>
-          <Text style={[styles.screenSubtitle, { color: colors.mutedForeground }]}>
-            Baseado nas suas recorrências
-          </Text>
-        </View>
+        <Text style={[styles.screenTitle, { color: colors.foreground }]}>Orçamento Mensal</Text>
         <TouchableOpacity
           style={[styles.configBtn, { backgroundColor: colors.secondary, borderColor: colors.border }]}
           onPress={() => setAllocVisible(true)}
@@ -293,13 +334,44 @@ export function OrcamentoScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* Navegador de mês */}
+      <View style={[styles.monthNav, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <TouchableOpacity onPress={handlePrevMonth} style={styles.monthNavBtn} activeOpacity={0.6}>
+          <Ionicons name="chevron-back" size={20} color={colors.foreground} />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.monthNavCenter}
+          onPress={() => setSelectedDate({ month: now.getMonth(), year: now.getFullYear() })}
+          activeOpacity={0.7}
+        >
+          <Text style={[styles.monthNavLabel, { color: colors.foreground }]}>{monthLabel}</Text>
+          {isCurrentMonth && (
+            <View style={[styles.currentMonthBadge, { backgroundColor: colors.primary + '20' }]}>
+              <Text style={[styles.currentMonthBadgeText, { color: colors.primary }]}>Mês atual</Text>
+            </View>
+          )}
+          {isFutureMonth && (
+            <View style={[styles.currentMonthBadge, { backgroundColor: '#F57C0020' }]}>
+              <Text style={[styles.currentMonthBadgeText, { color: '#F57C00' }]}>Projeção</Text>
+            </View>
+          )}
+        </TouchableOpacity>
+
+        <TouchableOpacity onPress={handleNextMonth} style={styles.monthNavBtn} activeOpacity={0.6}>
+          <Ionicons name="chevron-forward" size={20} color={colors.foreground} />
+        </TouchableOpacity>
+      </View>
+
       {/* ── Renda de referência ── */}
       <View style={[styles.incomeCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <View style={styles.incomeCardLeft}>
           <Ionicons name="cash-outline" size={20} color="#388E3C" />
           <View style={{ marginLeft: 10 }}>
             <Text style={[styles.incomeLabel, { color: colors.mutedForeground }]}>
-              {monthlyIncome > 0 ? 'Receitas do mês (real)' : 'Total comprometido (estimado)'}
+              {selectedMonthIncome > 0
+                ? isFutureMonth ? 'Receitas previstas' : 'Receitas do mês'
+                : 'Total comprometido (estimado)'}
             </Text>
             <Text style={[styles.incomeValue, { color: colors.foreground }]}>
               {fmt(referenceIncome)}
@@ -307,10 +379,18 @@ export function OrcamentoScreen() {
           </View>
         </View>
         <View style={[styles.incomeBadge, {
-          backgroundColor: monthlyIncome > 0 ? '#388E3C20' : '#F57C0020',
+          backgroundColor: selectedMonthIncome > 0
+            ? isFutureMonth ? '#F57C0020' : '#388E3C20'
+            : '#73737320',
         }]}>
-          <Text style={[styles.incomeBadgeText, { color: monthlyIncome > 0 ? '#388E3C' : '#F57C00' }]}>
-            {monthlyIncome > 0 ? 'Real' : 'Estimado'}
+          <Text style={[styles.incomeBadgeText, {
+            color: selectedMonthIncome > 0
+              ? isFutureMonth ? '#F57C00' : '#388E3C'
+              : colors.mutedForeground,
+          }]}>
+            {selectedMonthIncome > 0
+              ? isFutureMonth ? 'Previsto' : 'Real'
+              : 'Estimado'}
           </Text>
         </View>
       </View>
@@ -545,10 +625,21 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   content: { padding: 16, paddingBottom: 32 },
 
-  screenHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 },
+  screenHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   screenTitle: { fontSize: 22, fontWeight: '700', letterSpacing: -0.3 },
-  screenSubtitle: { fontSize: 13, marginTop: 2 },
   configBtn: { width: 38, height: 38, borderRadius: 10, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+
+  // Navegador de mês
+  monthNav: {
+    flexDirection: 'row', alignItems: 'center',
+    borderRadius: 14, borderWidth: 1, marginBottom: 14,
+    overflow: 'hidden',
+  },
+  monthNavBtn: { padding: 14 },
+  monthNavCenter: { flex: 1, alignItems: 'center', paddingVertical: 12, gap: 4 },
+  monthNavLabel: { fontSize: 16, fontWeight: '700' },
+  currentMonthBadge: { paddingHorizontal: 10, paddingVertical: 2, borderRadius: 20 },
+  currentMonthBadgeText: { fontSize: 11, fontWeight: '600' },
 
   incomeCard: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
