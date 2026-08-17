@@ -12,18 +12,17 @@ interface BottomNavigationProps {
   onAddClick: () => void
 }
 
-// 👉 Adicionamos 'cartao' aos LEFT_TABS e mantivemos o equilíbrio
+// 3 itens à esquerda + botão central + 3 itens à direita
 const LEFT_TABS: { id: TabType; label: string; icon: string }[] = [
-  { id: 'saldos', label: 'Saldos', icon: 'wallet-outline' },
-  { id: 'cartao', label: 'Cartão', icon: 'card-outline' },
-  { id: 'relatorios', label: 'Relatórios', icon: 'stats-chart-outline' },
+  { id: 'saldos',     label: 'Saldos',    icon: 'wallet-outline' },
+  { id: 'cartao',     label: 'Cartão',    icon: 'card-outline' },
+  { id: 'relatorios', label: 'Análises',  icon: 'stats-chart-outline' },
 ]
 
 const RIGHT_TABS: { id: TabType; label: string; icon: string }[] = [
-  { id: 'totais', label: 'Totais', icon: 'bar-chart-outline' },
   { id: 'orcamento', label: 'Orçamento', icon: 'pie-chart-outline' },
-  { id: 'metas', label: 'Metas', icon: 'trophy-outline' },
-  { id: 'menu', label: 'Menu', icon: 'menu-outline' },
+  { id: 'metas',     label: 'Metas',     icon: 'trophy-outline' },
+  { id: 'menu',      label: 'Menu',      icon: 'menu-outline' },
 ]
 
 export function BottomNavigation({ activeTab, onTabChange, onAddClick }: BottomNavigationProps) {

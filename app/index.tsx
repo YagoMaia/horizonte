@@ -15,7 +15,6 @@ import { TabType, Account, SavingsGoal } from '@/constants/types'
 import { BottomNavigation } from '@/components/BottomNavigation'
 import { AddTransactionModal } from '@/components/AddTransactionModal'
 import { SaldosScreen } from '@/components/screens/SaldosScreen'
-import { TotaisScreen } from '@/components/screens/TotaisScreen'
 import { HorizonteScreen } from '@/components/screens/HorizonteScreen'
 import { ContasScreen } from '@/components/screens/ContasScreen'
 import { MenuScreen } from '@/components/screens/MenuScreen'
@@ -74,7 +73,6 @@ export default function HomePage() {
   const renderScreen = () => {
     switch (activeTab) {
       case 'saldos': return <SaldosScreen />
-      case 'totais': return <TotaisScreen />
       case 'horizonte': return <HorizonteScreen />
       case 'contas': return <ContasScreen />
       case 'cartao': 

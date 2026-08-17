@@ -1,6 +1,6 @@
 // constants/types.ts
 
-export type TabType = 'saldos' | 'totais' | 'horizonte' | 'contas' | 'menu' | 'cartao' | 'metas' | 'relatorios' | 'orcamento'
+export type TabType = 'saldos' | 'horizonte' | 'contas' | 'menu' | 'cartao' | 'metas' | 'relatorios' | 'orcamento'
 
 // Categoria para classificar o gasto recorrente no orçamento teórico
 export type RecurringExpenseCategory = 'fixo' | 'variavel' | 'investimento' | 'outros'
