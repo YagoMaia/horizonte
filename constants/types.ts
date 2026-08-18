@@ -3,7 +3,7 @@
 export type TabType = 'saldos' | 'horizonte' | 'contas' | 'menu' | 'cartao' | 'metas' | 'relatorios' | 'orcamento'
 
 // Categoria para classificar o gasto recorrente no orçamento teórico
-export type RecurringExpenseCategory = 'fixo' | 'variavel' | 'investimento' | 'outros'
+export type RecurringExpenseCategory = 'fixo' | 'variavel' | 'investimento' | 'outros' | 'ignorado'
 
 export interface RecurringExpense {
   id: string

@@ -20,7 +20,7 @@ import { AllocationEditorModal } from './orcamento/AllocationEditorModal'
 // ────────────────────────────────────────────────────────────────────────────────
 
 export const CATEGORY_META: Record<
-  RecurringExpenseCategory,
+  Exclude<RecurringExpenseCategory, 'ignorado'>,
   { label: string; icon: string; color: string }
 > = {
   investimento: { label: 'Investimento', icon: 'trending-up-outline',        color: '#388E3C' },
@@ -47,17 +47,19 @@ const RECURRENCE_LABEL: Record<string, string> = {
   quinto_dia_util: '5º dia útil',
 }
 
-const CATEGORIES: RecurringExpenseCategory[] = ['investimento', 'fixo', 'variavel', 'outros']
+const CATEGORIES: Exclude<RecurringExpenseCategory, 'ignorado'>[] = ['investimento', 'fixo', 'variavel', 'outros']
 
 // ────────────────────────────────────────────────────────────────────────────────
 // Tipos
 // ────────────────────────────────────────────────────────────────────────────────
 
-interface DetectedItem {
-  groupId: string
+interface BudgetItem {
+  id: string
   description: string
   amount: number
-  recurrence: string
+  origin: 'recorrente' | 'avulso' | 'cartao'
+  recurrence?: string
+  date?: string
   type: 'despesa' | 'transferencia'
   sourceAccountName: string
   targetAccountName?: string   // para transferências
@@ -78,9 +80,9 @@ const fmt = (v: number) =>
 
 interface CategoryPickerProps {
   visible: boolean
-  item: DetectedItem | null
+  item: BudgetItem | null
   onClose: () => void
-  onSelect: (groupId: string, category: RecurringExpenseCategory) => void
+  onSelect: (id: string, category: RecurringExpenseCategory) => void
   colors: any
 }
 
@@ -92,7 +94,7 @@ function CategoryPickerModal({ visible, item, onClose, onSelect, colors }: Categ
       <Pressable style={pickerStyles.overlay} onPress={onClose}>
         <View style={[pickerStyles.sheet, { backgroundColor: colors.card }]}>
           <Text style={[pickerStyles.title, { color: colors.foreground }]}>
-            Reclassificar gasto
+            Classificar no Orçamento
           </Text>
           <Text style={[pickerStyles.subtitle, { color: colors.mutedForeground }]} numberOfLines={1}>
             {item.description}
@@ -113,7 +115,7 @@ function CategoryPickerModal({ visible, item, onClose, onSelect, colors }: Categ
                   },
                 ]}
                 onPress={() => {
-                  onSelect(item.groupId, cat)
+                  onSelect(item.id, cat)
                   onClose()
                 }}
                 activeOpacity={0.7}
@@ -130,6 +132,31 @@ function CategoryPickerModal({ visible, item, onClose, onSelect, colors }: Categ
               </TouchableOpacity>
             )
           })}
+
+          {/* Opção para ignorar/remover completamente do orçamento */}
+          <TouchableOpacity
+            style={[
+              pickerStyles.option,
+              {
+                backgroundColor: '#D32F2F12',
+                borderColor: '#D32F2F',
+                borderWidth: 1,
+                marginTop: 4,
+              },
+            ]}
+            onPress={() => {
+              onSelect(item.id, 'ignorado')
+              onClose()
+            }}
+            activeOpacity={0.7}
+          >
+            <View style={[pickerStyles.optionIcon, { backgroundColor: '#D32F2F20' }]}>
+              <Ionicons name="eye-off-outline" size={18} color="#D32F2F" />
+            </View>
+            <Text style={[pickerStyles.optionLabel, { color: '#D32F2F' }]}>
+              Ignorar no Orçamento
+            </Text>
+          </TouchableOpacity>
 
           <TouchableOpacity style={[pickerStyles.cancelBtn, { borderColor: colors.border }]} onPress={onClose}>
             <Text style={[pickerStyles.cancelText, { color: colors.mutedForeground }]}>Cancelar</Text>
@@ -158,8 +185,8 @@ export function OrcamentoScreen() {
   } = store
 
   const [allocVisible, setAllocVisible] = useState(false)
-  const [pickerItem, setPickerItem] = useState<DetectedItem | null>(null)
-  const [filterCategory, setFilterCategory] = useState<RecurringExpenseCategory | 'all'>('all')
+  const [pickerItem, setPickerItem] = useState<BudgetItem | null>(null)
+  const [filterCategory, setFilterCategory] = useState<Exclude<RecurringExpenseCategory, 'ignorado'> | 'all'>('all')
 
   // ── Seletor de mês ───────────────────────────────────────────────────────────
   const [selectedDate, setSelectedDate] = useState(() => {
@@ -217,12 +244,12 @@ export function OrcamentoScreen() {
 
   const selectedMonthIncome = incomeSummary.total
 
-  // ── Auto-detecção de transações recorrentes ──────────────────────────────────
-  const detectedItems = useMemo((): DetectedItem[] => {
-    const seen = new Set<string>()
-    const items: DetectedItem[] = []
+  // ── Composição dos gastos e transferências do mês ───────────────────────────
+  const detectedItems = useMemo((): BudgetItem[] => {
+    const items: BudgetItem[] = []
+    const seenRecurring = new Set<string>()
 
-    // Ordena pelo groupIndex para garantir pegar o item original (index 0) primeiro
+    // 1. Recorrências ativas (Fixos, Assinaturas, Transferências programadas)
     const sorted = [...transactions].sort((a, b) => {
       const ia = a.groupIndex ?? 0
       const ib = b.groupIndex ?? 0
@@ -230,28 +257,22 @@ export function OrcamentoScreen() {
     })
 
     for (const tx of sorted) {
-      // Só transações recorrentes (não únicas)
       if (tx.recurrence === 'unica' || !tx.recurrence) continue
-      // Só despesas e transferências (receitas são a renda, não gasto)
       if (tx.type === 'receita') continue
 
-      // Chave única por grupo de recorrência
       const key = tx.groupId || tx.id.split('-')[0]
-      if (seen.has(key)) continue
-      seen.add(key)
+      if (seenRecurring.has(key)) continue
+      seenRecurring.add(key)
 
-      // Conta de origem
       const sourceAcc = accounts.find(a => a.id === tx.accountId)
       const sourceAccountName = sourceAcc?.name ?? 'Conta'
 
-      // Classificação automática por tipo e destino
       let autoCategory: RecurringExpenseCategory = 'fixo'
       let targetAccountName: string | undefined
 
       if (tx.type === 'transferencia') {
         const destId = tx.targetAccountId ?? tx.toAccountId
         if (destId?.startsWith('goal_')) {
-          // Transferência para meta de poupança
           autoCategory = 'investimento'
           targetAccountName = 'Meta de Poupança'
         } else {
@@ -260,19 +281,25 @@ export function OrcamentoScreen() {
           if (destAcc?.type === 'investimento') {
             autoCategory = 'investimento'
           } else {
-            // Transferência entre contas correntes/poupança → outros
-            autoCategory = 'outros'
+            // Transferência entre contas correntes/carteiras próprias é neutra:
+            // Só entra se o usuário mudou explicitamente para fixo, variavel ou investimento
+            const explicit = recurringOverrides[key]
+            if (!explicit || explicit === 'outros' || explicit === 'ignorado') {
+              continue
+            }
+            autoCategory = explicit
           }
         }
       }
-      // despesa → padrão 'fixo', usuário pode mudar para 'variavel'
 
       const category = recurringOverrides[key] ?? autoCategory
+      if (category === 'ignorado') continue
 
       items.push({
-        groupId: key,
+        id: key,
         description: tx.description,
         amount: tx.amount,
+        origin: 'recorrente',
         recurrence: tx.recurrence,
         type: tx.type as 'despesa' | 'transferencia',
         sourceAccountName,
@@ -282,8 +309,100 @@ export function OrcamentoScreen() {
       })
     }
 
+    // 2. Gastos avulsos e compras no cartão de crédito do mês selecionado
+    for (const tx of transactions) {
+      if (tx.type === 'receita') continue
+      // Ignora recorrências (já processadas acima)
+      if (tx.recurrence && tx.recurrence !== 'unica') continue
+      // Ignora lançamento de pagamento de fatura para não duplicar com as compras no cartão
+      if (tx.description?.startsWith('Pagamento Fatura')) continue
+
+      const sourceAcc = accounts.find(a => a.id === tx.accountId)
+      const sourceAccountName = sourceAcc?.name ?? 'Conta'
+      const isCard = tx.paymentMethod === 'credito' || sourceAcc?.type === 'cartao_credito'
+
+      if (isCard) {
+        // Verifica se a compra cai na fatura do mês selecionado
+        const closingDay = sourceAcc?.closingDay || 25
+        const dueDay = sourceAcc?.dueDay || 5
+        const d = new Date(tx.date)
+        let m = d.getMonth() + 1
+        let y = d.getFullYear()
+        if (d.getDate() >= closingDay) m += 1
+        if (dueDay < closingDay) m += 1
+        while (m > 12) {
+          m -= 12
+          y += 1
+        }
+        const invoiceMonth = m - 1
+        const invoiceYear = y
+
+        if (invoiceMonth === selectedDate.month && invoiceYear === selectedDate.year) {
+          const autoCategory: RecurringExpenseCategory = 'variavel'
+          const category = recurringOverrides[tx.id] ?? autoCategory
+          if (category === 'ignorado') continue
+
+          items.push({
+            id: tx.id,
+            description: tx.description,
+            amount: tx.amount,
+            origin: 'cartao',
+            date: tx.date,
+            type: tx.type as 'despesa' | 'transferencia',
+            sourceAccountName,
+            autoCategory,
+            category,
+          })
+        }
+      } else {
+        // Transação avulsa comum no débito/pix/dinheiro ou transferência
+        const d = new Date(tx.date)
+        if (d.getMonth() === selectedDate.month && d.getFullYear() === selectedDate.year) {
+          let autoCategory: RecurringExpenseCategory = 'variavel'
+          let targetAccountName: string | undefined
+
+          if (tx.type === 'transferencia') {
+            const destId = tx.targetAccountId ?? tx.toAccountId
+            if (destId?.startsWith('goal_')) {
+              autoCategory = 'investimento'
+              targetAccountName = 'Meta de Poupança'
+            } else {
+              const destAcc = accounts.find(a => a.id === destId)
+              targetAccountName = destAcc?.name
+              if (destAcc?.type === 'investimento') {
+                autoCategory = 'investimento'
+              } else {
+                // Transferência entre contas correntes/carteiras próprias é neutra:
+                const explicit = recurringOverrides[tx.id]
+                if (!explicit || explicit === 'outros' || explicit === 'ignorado') {
+                  continue
+                }
+                autoCategory = explicit
+              }
+            }
+          }
+
+          const category = recurringOverrides[tx.id] ?? autoCategory
+          if (category === 'ignorado') continue
+
+          items.push({
+            id: tx.id,
+            description: tx.description,
+            amount: tx.amount,
+            origin: 'avulso',
+            date: tx.date,
+            type: tx.type as 'despesa' | 'transferencia',
+            sourceAccountName,
+            targetAccountName,
+            autoCategory,
+            category,
+          })
+        }
+      }
+    }
+
     return items
-  }, [transactions, accounts, recurringOverrides])
+  }, [transactions, accounts, recurringOverrides, selectedDate])
 
   // ── Totais por categoria ─────────────────────────────────────────────────────
   const totals = useMemo(() => {
@@ -292,7 +411,7 @@ export function OrcamentoScreen() {
         .filter(i => i.category === cat)
         .reduce((s, i) => s + i.amount, 0)
       return acc
-    }, {} as Record<RecurringExpenseCategory, number>)
+    }, {} as Record<Exclude<RecurringExpenseCategory, 'ignorado'>, number>)
   }, [detectedItems])
 
   const totalCommitted = useMemo(
@@ -320,8 +439,8 @@ export function OrcamentoScreen() {
   [detectedItems, filterCategory])
 
   const handleCategorySelect = useCallback(
-    (groupId: string, category: RecurringExpenseCategory) => {
-      saveRecurringOverride(groupId, category)
+    (id: string, category: RecurringExpenseCategory) => {
+      saveRecurringOverride(id, category)
     },
     [saveRecurringOverride],
   )
@@ -375,38 +494,57 @@ export function OrcamentoScreen() {
 
       {/* ── Renda de referência ── */}
       <View style={[styles.incomeCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <View style={styles.incomeCardLeft}>
-          <Ionicons name="cash-outline" size={20} color="#388E3C" />
-          <View style={{ marginLeft: 10 }}>
+        {/* Top Header Row */}
+        <View style={styles.incomeCardHeader}>
+          <View style={styles.incomeCardTitleRow}>
+            <View style={[styles.incomeIconWrap, { backgroundColor: '#388E3C18' }]}>
+              <Ionicons name="cash-outline" size={16} color="#388E3C" />
+            </View>
             <Text style={[styles.incomeLabel, { color: colors.mutedForeground }]}>
               {incomeSummary.total > 0
-                ? incomeSummary.pending > 0 && incomeSummary.paid > 0
-                  ? `Receitas (${fmt(incomeSummary.paid)} recebido · ${fmt(incomeSummary.pending)} a receber)`
-                  : incomeSummary.pending > 0
-                    ? 'Receitas previstas (a receber)'
-                    : 'Receitas do mês (recebido)'
-                : 'Total comprometido (estimado)'}
+                ? isFutureMonth ? 'Receitas previstas' : 'Receitas do mês'
+                : 'Total de referência'}
             </Text>
-            <Text style={[styles.incomeValue, { color: colors.foreground }]}>
-              {fmt(referenceIncome)}
+          </View>
+          <View style={[styles.incomeBadge, {
+            backgroundColor: incomeSummary.total > 0
+              ? incomeSummary.pending === 0 ? '#388E3C20' : '#F57C0020'
+              : '#73737320',
+          }]}>
+            <Text style={[styles.incomeBadgeText, {
+              color: incomeSummary.total > 0
+                ? incomeSummary.pending === 0 ? '#388E3C' : '#F57C00'
+                : colors.mutedForeground,
+            }]}>
+              {incomeSummary.total > 0
+                ? incomeSummary.pending === 0 ? 'Realizado' : 'Previsto'
+                : 'Estimado'}
             </Text>
           </View>
         </View>
-        <View style={[styles.incomeBadge, {
-          backgroundColor: incomeSummary.total > 0
-            ? incomeSummary.pending === 0 ? '#388E3C20' : '#F57C0020'
-            : '#73737320',
-        }]}>
-          <Text style={[styles.incomeBadgeText, {
-            color: incomeSummary.total > 0
-              ? incomeSummary.pending === 0 ? '#388E3C' : '#F57C00'
-              : colors.mutedForeground,
-          }]}>
-            {incomeSummary.total > 0
-              ? incomeSummary.pending === 0 ? 'Realizado' : 'Previsto'
-              : 'Estimado'}
-          </Text>
-        </View>
+
+        {/* Big Amount */}
+        <Text style={[styles.incomeValue, { color: colors.foreground }]}>
+          {fmt(referenceIncome)}
+        </Text>
+
+        {/* Breakdown de recebido vs a receber (se houver divisão no mês) */}
+        {incomeSummary.total > 0 && incomeSummary.pending > 0 && incomeSummary.paid > 0 && (
+          <View style={[styles.incomeBreakdownRow, { borderTopColor: colors.border }]}>
+            <View style={styles.incomeBreakdownItem}>
+              <View style={[styles.incomeDot, { backgroundColor: '#388E3C' }]} />
+              <Text style={[styles.incomeBreakdownText, { color: colors.mutedForeground }]}>
+                {fmt(incomeSummary.paid)} recebido
+              </Text>
+            </View>
+            <View style={styles.incomeBreakdownItem}>
+              <View style={[styles.incomeDot, { backgroundColor: '#F57C00' }]} />
+              <Text style={[styles.incomeBreakdownText, { color: colors.mutedForeground }]}>
+                {fmt(incomeSummary.pending)} a receber
+              </Text>
+            </View>
+          </View>
+        )}
       </View>
 
       {/* ── Divisão teórica ── */}
@@ -477,9 +615,9 @@ export function OrcamentoScreen() {
         })}
       </View>
 
-      {/* ── Resumo comprometido ── */}
+      {/* ── Resumo de Gastos do Mês ── */}
       <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <Text style={[styles.sectionCardTitle, { color: colors.foreground }]}>Comprometido por Categoria</Text>
+        <Text style={[styles.sectionCardTitle, { color: colors.foreground }]}>Total por Categoria no Mês</Text>
         {CATEGORIES.map((cat) => {
           const meta = CATEGORY_META[cat]
           return (
@@ -493,18 +631,18 @@ export function OrcamentoScreen() {
           )
         })}
         <View style={[styles.summaryTotalRow, { borderTopColor: colors.border }]}>
-          <Text style={[styles.summaryTotalLabel, { color: colors.foreground }]}>Total recorrente</Text>
+          <Text style={[styles.summaryTotalLabel, { color: colors.foreground }]}>Total de saídas do mês</Text>
           <Text style={[styles.summaryTotalValue, { color: colors.foreground }]}>{fmt(totalCommitted)}</Text>
         </View>
       </View>
 
-      {/* ── Lista de recorrências detectadas ── */}
+      {/* ── Lista de gastos e transferências do mês ── */}
       <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <View style={styles.listHeader}>
           <View>
-            <Text style={[styles.sectionCardTitle, { color: colors.foreground }]}>Recorrências Detectadas</Text>
+            <Text style={[styles.sectionCardTitle, { color: colors.foreground }]}>Gastos & Saídas do Mês</Text>
             <Text style={[styles.listSubtitle, { color: colors.mutedForeground }]}>
-              Toque na categoria para reclassificar
+              Recorrências, compras no cartão e gastos avulsos
             </Text>
           </View>
         </View>
@@ -538,27 +676,39 @@ export function OrcamentoScreen() {
         {/* Itens */}
         {filteredItems.length === 0 ? (
           <View style={styles.emptyState}>
-            <Ionicons name="repeat-outline" size={40} color={colors.mutedForeground} />
+            <Ionicons name="receipt-outline" size={40} color={colors.mutedForeground} />
             <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
-              Nenhuma recorrência encontrada
+              Nenhum gasto encontrado neste mês
             </Text>
             <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
-              Adicione transações com recorrência mensal, semanal ou anual na tela principal para que apareçam aqui automaticamente.
+              Lançamentos avulsos, compras no cartão ou recorrências cadastradas aparecerão aqui automaticamente.
             </Text>
           </View>
         ) : (
           filteredItems.map((item) => {
             const meta = CATEGORY_META[item.category]
-            const isOverridden = !!recurringOverrides[item.groupId]
+            const isOverridden = !!recurringOverrides[item.id]
+            const originIcon =
+              item.type === 'transferencia'
+                ? 'swap-horizontal-outline'
+                : item.origin === 'cartao'
+                  ? 'card-outline'
+                  : item.origin === 'recorrente'
+                    ? 'repeat-outline'
+                    : 'receipt-outline'
+
+            const originLabel =
+              item.origin === 'recorrente'
+                ? (item.recurrence ? RECURRENCE_LABEL[item.recurrence] ?? item.recurrence : 'Recorrente')
+                : item.origin === 'cartao'
+                  ? 'Fatura Cartão'
+                  : 'Avulso'
+
             return (
-              <View key={item.groupId} style={[styles.expenseItem, { borderBottomColor: colors.border }]}>
+              <View key={item.id} style={[styles.expenseItem, { borderBottomColor: colors.border }]}>
                 {/* Ícone do tipo */}
                 <View style={[styles.itemIcon, { backgroundColor: meta.color + '18' }]}>
-                  <Ionicons
-                    name={item.type === 'transferencia' ? 'swap-horizontal-outline' : 'receipt-outline'}
-                    size={18}
-                    color={meta.color}
-                  />
+                  <Ionicons name={originIcon as any} size={18} color={meta.color} />
                 </View>
 
                 {/* Detalhes */}
@@ -567,11 +717,11 @@ export function OrcamentoScreen() {
                     {item.description}
                   </Text>
                   <View style={styles.itemMeta}>
-                    {/* Tipo de recorrência */}
+                    {/* Badge de origem */}
                     <View style={[styles.recurrencePill, { backgroundColor: colors.muted }]}>
-                      <Ionicons name="repeat-outline" size={10} color={colors.mutedForeground} />
+                      <Ionicons name={originIcon as any} size={10} color={colors.mutedForeground} />
                       <Text style={[styles.recurrencePillText, { color: colors.mutedForeground }]}>
-                        {RECURRENCE_LABEL[item.recurrence] ?? item.recurrence}
+                        {originLabel}
                       </Text>
                     </View>
                     {/* Conta de origem → destino */}
@@ -656,14 +806,29 @@ const styles = StyleSheet.create({
   currentMonthBadgeText: { fontSize: 11, fontWeight: '600' },
 
   incomeCard: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     borderRadius: 14, borderWidth: 1, padding: 14, marginBottom: 14,
   },
-  incomeCardLeft: { flexDirection: 'row', alignItems: 'center' },
-  incomeLabel: { fontSize: 12 },
-  incomeValue: { fontSize: 20, fontWeight: '700', letterSpacing: -0.4, marginTop: 2 },
+  incomeCardHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  incomeCardTitleRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1, marginRight: 8,
+  },
+  incomeIconWrap: {
+    width: 28, height: 28, borderRadius: 8, alignItems: 'center', justifyContent: 'center',
+  },
+  incomeLabel: { fontSize: 13, fontWeight: '500', flexShrink: 1 },
+  incomeValue: { fontSize: 24, fontWeight: '800', letterSpacing: -0.5, marginBottom: 4 },
   incomeBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
   incomeBadgeText: { fontSize: 12, fontWeight: '600' },
+  incomeBreakdownRow: {
+    flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap',
+    gap: 12, marginTop: 8, paddingTop: 10, borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  incomeBreakdownItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  incomeDot: { width: 6, height: 6, borderRadius: 3 },
+  incomeBreakdownText: { fontSize: 12, fontWeight: '500' },
 
   sectionCard: { borderRadius: 14, borderWidth: 1, padding: 14, marginBottom: 14 },
   sectionCardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
