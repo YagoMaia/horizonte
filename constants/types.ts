@@ -95,6 +95,7 @@ export interface GoalDeposit {
   amount: number                // Positive for deposits, negative for withdrawals
   date: string                  // ISO date string (system-generated)
   accountId?: string            // Linked account (optional)
+  source?: 'recurrence' | 'manual' // Origin: automated recurrence vs manual entry
 }
 
 export interface CreateGoalInput {

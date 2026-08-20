@@ -42,6 +42,9 @@ export interface UseSavingsGoalsReturn {
     addTransaction: (tx: any) => Promise<any>
   ) => Promise<void>;
 
+  // Synchronizes paid goal transfers from transactions store with goal deposits
+  syncWithTransactions: (transactions: any[]) => Promise<void>;
+
   retry: () => Promise<void>;
 }
 
@@ -94,7 +97,6 @@ export function useSavingsGoals(): UseSavingsGoalsReturn {
       try {
         parsed = JSON.parse(raw);
       } catch (parseError) {
-        // Malformed data: treat as empty, log error, do NOT delete corrupted data
         console.error('Dados de metas corrompidos no AsyncStorage:', parseError);
         setGoals([]);
         setDeposits([]);
@@ -176,7 +178,6 @@ export function useSavingsGoals(): UseSavingsGoalsReturn {
         setGoals(newGoals);
         return newGoal;
       } catch (e) {
-        // Revert: don't update in-memory state on write failure
         console.error('Erro ao salvar meta:', e);
         throw new Error('Não foi possível salvar a meta. Tente novamente.');
       }
@@ -209,7 +210,6 @@ export function useSavingsGoals(): UseSavingsGoalsReturn {
         await persist(newData);
         setGoals(newGoals);
       } catch (e) {
-        // Revert: don't update in-memory state on write failure
         console.error('Erro ao atualizar meta:', e);
         throw new Error('Não foi possível atualizar a meta. Tente novamente.');
       }
@@ -231,7 +231,6 @@ export function useSavingsGoals(): UseSavingsGoalsReturn {
         setDeposits(newDeposits);
         setRecurrences(newRecurrences);
       } catch (e) {
-        // Revert: don't update in-memory state on write failure
         console.error('Erro ao excluir meta:', e);
         throw new Error('Não foi possível excluir a meta. Tente novamente.');
       }
@@ -253,6 +252,7 @@ export function useSavingsGoals(): UseSavingsGoalsReturn {
         amount,
         date: new Date().toISOString(),
         accountId,
+        source: 'manual',
       };
 
       const newDeposits = [...deposits, newDeposit];
@@ -270,7 +270,6 @@ export function useSavingsGoals(): UseSavingsGoalsReturn {
         setGoals(newGoals);
         setDeposits(newDeposits);
       } catch (e) {
-        // Revert: don't update in-memory state on write failure
         throw new Error('Não foi possível registrar o depósito. Tente novamente.');
       }
     }),
@@ -320,6 +319,7 @@ export function useSavingsGoals(): UseSavingsGoalsReturn {
         amount: -amount,
         date: new Date().toISOString(),
         accountId,
+        source: 'manual',
       };
 
       const newDeposits = [...deposits, newDeposit];
@@ -337,7 +337,6 @@ export function useSavingsGoals(): UseSavingsGoalsReturn {
         setGoals(newGoals);
         setDeposits(newDeposits);
       } catch (e) {
-        // Revert: don't update in-memory state on write failure
         console.error('Erro ao registrar retirada:', e);
         throw new Error('Não foi possível registrar a retirada. Tente novamente.');
       }
@@ -415,7 +414,6 @@ export function useSavingsGoals(): UseSavingsGoalsReturn {
   const processOverdueRecurrences = useCallback(
     (addTransaction: (tx: any) => Promise<any>) =>
       withWriteLock(async () => {
-        // Re-read raw storage to get the freshest state (avoids stale closure)
         const raw = await AsyncStorage.getItem(STORAGE_KEY);
         if (!raw) return;
 
@@ -463,8 +461,7 @@ export function useSavingsGoals(): UseSavingsGoalsReturn {
             // Only process if dueDate is today or past AND after lastProcessed
             if (dueDate <= today) {
               const alreadyDone =
-                lastProcessed !== null &&
-                dueDate.getFullYear() < lastProcessed.getFullYear() ||
+                (lastProcessed !== null && dueDate.getFullYear() < lastProcessed.getFullYear()) ||
                 (lastProcessed !== null &&
                   dueDate.getFullYear() === lastProcessed.getFullYear() &&
                   dueDate.getMonth() <= lastProcessed.getMonth());
@@ -493,6 +490,7 @@ export function useSavingsGoals(): UseSavingsGoalsReturn {
               amount: rec.amount,
               date: dueDate.toISOString(),
               accountId: rec.accountId,
+              source: 'recurrence',
             };
             updatedDeposits = [...updatedDeposits, newDeposit];
 
@@ -522,7 +520,6 @@ export function useSavingsGoals(): UseSavingsGoalsReturn {
               });
             } catch (txErr) {
               console.error('Erro ao registrar transação do aporte recorrente:', txErr);
-              // Continue even if transaction fails — deposit was already added
             }
 
             changed = true;
@@ -554,6 +551,159 @@ export function useSavingsGoals(): UseSavingsGoalsReturn {
     [sortGoals, persist, withWriteLock],
   );
 
+  /**
+   * Synchronizes paid goal transfer transactions with GoalDeposits.
+   * This ensures that any recurring or manual transfer targeting a goal
+   * that is marked as paid is properly recorded as an accumulated deposit.
+   */
+  const syncWithTransactions = useCallback(
+    (transactions: any[]) =>
+      withWriteLock(async () => {
+        if (!Array.isArray(transactions) || transactions.length === 0) return;
+
+        const raw = await AsyncStorage.getItem(STORAGE_KEY);
+        if (!raw) return;
+
+        let data: StorageData;
+        try {
+          data = JSON.parse(raw);
+        } catch {
+          return;
+        }
+
+        if (!Array.isArray(data.goals) || !Array.isArray(data.deposits)) return;
+
+        const existingDeposits = [...data.deposits];
+        const depositMap = new Map<string, GoalDeposit>();
+        existingDeposits.forEach((d) => depositMap.set(d.id, d));
+
+        let changed = false;
+
+        // Process all transactions
+        for (const tx of transactions) {
+          // 1. Aportes/Depósitos na meta
+          if (tx.type === 'transferencia' && tx.targetAccountId?.startsWith('goal_')) {
+            const goalId = tx.targetAccountId.replace('goal_', '');
+            const goalExists = data.goals.some((g) => g.id === goalId);
+            if (!goalExists) continue;
+
+            const depositId = `tx_${tx.id}`;
+            const existing = depositMap.get(depositId) || depositMap.get(tx.id);
+
+            if (tx.paid) {
+              const isTxRecurring = (tx.recurrence && tx.recurrence !== 'unica') || !!tx.groupId || tx.id.includes('-');
+              if (!existing || existing.amount !== tx.amount || existing.goalId !== goalId) {
+                const newDeposit: GoalDeposit = {
+                  id: depositId,
+                  goalId,
+                  amount: tx.amount,
+                  date: tx.date,
+                  accountId: tx.accountId,
+                  source: isTxRecurring ? 'recurrence' : 'manual',
+                };
+                if (existing) {
+                  const idx = existingDeposits.findIndex((d) => d.id === existing.id);
+                  if (idx !== -1) existingDeposits[idx] = newDeposit;
+                } else {
+                  existingDeposits.push(newDeposit);
+                }
+                depositMap.set(depositId, newDeposit);
+                changed = true;
+              }
+            } else {
+              if (existing) {
+                const idx = existingDeposits.findIndex((d) => d.id === existing.id);
+                if (idx !== -1) existingDeposits.splice(idx, 1);
+                depositMap.delete(existing.id);
+                changed = true;
+              }
+            }
+          }
+
+          // 2. Resgates/Retiradas da meta
+          if (tx.type === 'transferencia' && tx.accountId?.startsWith('goal_')) {
+            const goalId = tx.accountId.replace('goal_', '');
+            const goalExists = data.goals.some((g) => g.id === goalId);
+            if (!goalExists) continue;
+
+            const depositId = `tx_withdraw_${tx.id}`;
+            const existing = depositMap.get(depositId) || depositMap.get(tx.id);
+
+            if (tx.paid) {
+              const isTxRecurring = (tx.recurrence && tx.recurrence !== 'unica') || !!tx.groupId || tx.id.includes('-');
+              if (!existing || existing.amount !== -tx.amount || existing.goalId !== goalId) {
+                const newDeposit: GoalDeposit = {
+                  id: depositId,
+                  goalId,
+                  amount: -tx.amount,
+                  date: tx.date,
+                  accountId: tx.targetAccountId,
+                  source: isTxRecurring ? 'recurrence' : 'manual',
+                };
+                if (existing) {
+                  const idx = existingDeposits.findIndex((d) => d.id === existing.id);
+                  if (idx !== -1) existingDeposits[idx] = newDeposit;
+                } else {
+                  existingDeposits.push(newDeposit);
+                }
+                depositMap.set(depositId, newDeposit);
+                changed = true;
+              }
+            } else {
+              if (existing) {
+                const idx = existingDeposits.findIndex((d) => d.id === existing.id);
+                if (idx !== -1) existingDeposits.splice(idx, 1);
+                depositMap.delete(existing.id);
+                changed = true;
+              }
+            }
+          }
+        }
+
+        // Clean up any tx_ deposits whose transactions were deleted
+        const txIdSet = new Set(transactions.map((t) => t.id));
+        const cleanedDeposits = existingDeposits.filter((d) => {
+          if (d.id.startsWith('tx_withdraw_')) {
+            const rawTxId = d.id.replace('tx_withdraw_', '');
+            if (!txIdSet.has(rawTxId)) {
+              changed = true;
+              return false;
+            }
+          } else if (d.id.startsWith('tx_')) {
+            const rawTxId = d.id.replace('tx_', '');
+            if (!txIdSet.has(rawTxId)) {
+              changed = true;
+              return false;
+            }
+          }
+          return true;
+        });
+
+        if (!changed) return;
+
+        const updatedGoals = sortGoals(
+          data.goals.map((goal) => {
+            const goalDeposits = cleanedDeposits.filter((d) => d.goalId === goal.id);
+            return {
+              ...goal,
+              accumulatedAmount: recalculateAccumulated(goalDeposits),
+            };
+          })
+        );
+
+        const newData: StorageData = {
+          goals: updatedGoals,
+          deposits: cleanedDeposits,
+          recurrences: data.recurrences,
+        };
+
+        await persist(newData);
+        setDeposits(cleanedDeposits);
+        setGoals(updatedGoals);
+      }),
+    [sortGoals, persist, withWriteLock]
+  );
+
   return {
     goals,
     deposits,
@@ -569,6 +719,7 @@ export function useSavingsGoals(): UseSavingsGoalsReturn {
     createRecurrence,
     cancelRecurrence,
     processOverdueRecurrences,
+    syncWithTransactions,
     retry,
   };
 }

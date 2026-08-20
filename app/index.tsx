@@ -29,7 +29,7 @@ export default function HomePage() {
   const { colors } = useTheme()
   const store = useStoreContext()
   const savingsGoalsProps = useSavingsGoals()
-  const { goals, deposits, processOverdueRecurrences, addDeposit } = savingsGoalsProps
+  const { goals, deposits, processOverdueRecurrences, syncWithTransactions, addDeposit } = savingsGoalsProps
   const [activeTab, setActiveTab] = useState<TabType>('saldos')
   const [modalVisible, setModalVisible] = useState(false)
   
@@ -55,12 +55,13 @@ export default function HomePage() {
     }
   }, [defaultValues.accountId, defaultValues.type]);
 
-  // Process recurring goal deposits on app startup (after store loads)
+  // Process recurring goal deposits & sync transactions on app startup and changes
   useEffect(() => {
     if (!store.loading) {
       processOverdueRecurrences(store.addTransaction);
+      syncWithTransactions(store.transactions);
     }
-  }, [store.loading, store.addTransaction, processOverdueRecurrences]);
+  }, [store.loading, store.transactions, store.addTransaction, processOverdueRecurrences, syncWithTransactions]);
 
   if (store.loading) {
     return (

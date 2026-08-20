@@ -505,7 +505,16 @@ export function SaldosScreen() {
   const renderItem = ({ item: tx, index }: { item: Transaction; index: number }) => {
     const isFirst = index === 0;
     const isLast = index === listData.length - 1;
+    let sourceName = '';
     const account = accounts.find((a) => a.id === tx.accountId);
+    if (account) {
+      sourceName = account.name;
+    } else if (tx.accountId?.startsWith('goal_')) {
+      const goalId = tx.accountId.replace('goal_', '');
+      const goal = goals.find((g) => g.id === goalId);
+      sourceName = goal ? `Meta: ${goal.name}` : 'Meta';
+    }
+    
     const visuals = getTransactionVisuals(tx.type, colors);
 
     let destName = '';
@@ -540,7 +549,7 @@ export function SaldosScreen() {
           <View style={styles.txInfo}>
             <Text style={[styles.txDesc, { color: colors.foreground }]} numberOfLines={1}>{tx.description}</Text>
             <Text style={[styles.txMetaText, { color: colors.mutedForeground }]}>
-              {formatDateShort(tx.date)} • {account?.name}
+              {formatDateShort(tx.date)} • {sourceName}
               {destName ? ` ➔ ${destName}` : ''}
             </Text>
           </View>

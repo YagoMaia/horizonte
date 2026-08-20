@@ -17,6 +17,7 @@ import {
   calculateRemainingDays,
   calculateOverdueDays,
   calculateRemainingAmount,
+  isRecurringGoalDeposit,
 } from '@/lib/goalUtils';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { GoalFormModal } from '../GoalFormModal';
@@ -42,7 +43,7 @@ interface GoalDetailScreenProps {
 
 export function GoalDetailScreen({ goal: initialGoal, onBack, goals, deposits: allDeposits, recurrences, addDeposit, addWithdrawal, deleteDeposit, updateGoal, deleteGoal, createRecurrence, cancelRecurrence }: GoalDetailScreenProps) {
   const { colors } = useTheme();
-  const { accounts, addTransaction } = useStoreContext();
+  const { accounts, addTransaction, deleteTransaction, transactions } = useStoreContext();
 
   // Use live data from hook if available, fallback to props
   const goal = goals.find((g) => g.id === initialGoal.id) || initialGoal;
@@ -75,10 +76,8 @@ export function GoalDetailScreen({ goal: initialGoal, onBack, goals, deposits: a
 
   // Handlers
   const handleDeposit = async (amount: number, accountId: string) => {
-    // 1. Add deposit record to goal (SavingsGoal state)
-    await addDeposit(goal.id, amount, accountId);
-    
-    // 2. Add transaction to account (Account state) as a transfer to goal
+    // A transação adicionada será capturada pelo syncWithTransactions 
+    // que criará o registro de depósito e atualizará o saldo da meta automaticamente.
     await addTransaction({
       description: `Reserva: ${goal.name}`,
       amount: amount,
@@ -116,10 +115,8 @@ export function GoalDetailScreen({ goal: initialGoal, onBack, goals, deposits: a
   };
 
   const handleWithdraw = async (amount: number, accountId: string) => {
-    // 1. Add withdrawal record to goal
-    await addWithdrawal(goal.id, amount, accountId);
-
-    // 2. Add transaction to account as a transfer from goal
+    // A transação adicionada será capturada pelo syncWithTransactions 
+    // que criará o registro de retirada e atualizará o saldo da meta automaticamente.
     await addTransaction({
       description: `Resgate: ${goal.name}`,
       amount: amount,
@@ -144,6 +141,44 @@ export function GoalDetailScreen({ goal: initialGoal, onBack, goals, deposits: a
 
   const renderDepositItem = ({ item }: { item: GoalDeposit }) => {
     const isWithdrawal = item.amount < 0;
+    const isRecurring = !isWithdrawal && isRecurringGoalDeposit(item);
+
+    const iconBg = isWithdrawal
+      ? colors.destructive + '15'
+      : isRecurring
+        ? colors.primary + '15'
+        : colors.success + '15';
+
+    const iconColor = isWithdrawal
+      ? colors.destructive
+      : isRecurring
+        ? colors.primary
+        : colors.success;
+
+    const iconName = isWithdrawal
+      ? 'arrow-down-outline'
+      : isRecurring
+        ? 'repeat'
+        : 'hand-left-outline';
+
+    const badgeLabel = isWithdrawal
+      ? 'Resgate'
+      : isRecurring
+        ? 'Recorrente'
+        : 'Manual';
+
+    const badgeBg = isWithdrawal
+      ? colors.destructive + '15'
+      : isRecurring
+        ? colors.primary + '15'
+        : colors.mutedForeground + '15';
+
+    const badgeColor = isWithdrawal
+      ? colors.destructive
+      : isRecurring
+        ? colors.primary
+        : colors.mutedForeground;
+
     return (
       <View
         style={[
@@ -151,17 +186,29 @@ export function GoalDetailScreen({ goal: initialGoal, onBack, goals, deposits: a
           { backgroundColor: colors.card, borderColor: colors.border },
         ]}
       >
-        <View style={[styles.depositIcon, { backgroundColor: isWithdrawal ? colors.destructive + '15' : colors.success + '15' }]}>
+        <View style={[styles.depositIcon, { backgroundColor: iconBg }]}>
           <Ionicons
-            name={isWithdrawal ? 'arrow-down-outline' : 'arrow-up-outline'}
+            name={iconName as any}
             size={18}
-            color={isWithdrawal ? colors.destructive : colors.success}
+            color={iconColor}
           />
         </View>
         <View style={styles.depositInfo}>
-          <Text style={[styles.depositAmount, { color: isWithdrawal ? colors.destructive : colors.success }]}>
-            {isWithdrawal ? '- ' : '+ '}{formatCurrency(Math.abs(item.amount))}
-          </Text>
+          <View style={styles.depositAmountRow}>
+            <Text style={[styles.depositAmount, { color: isWithdrawal ? colors.destructive : colors.success }]}>
+              {isWithdrawal ? '- ' : '+ '}{formatCurrency(Math.abs(item.amount))}
+            </Text>
+            <View style={[styles.depositBadge, { backgroundColor: badgeBg }]}>
+              <Ionicons
+                name={isWithdrawal ? 'arrow-down' : isRecurring ? 'repeat' : 'hand-left-outline'}
+                size={10}
+                color={badgeColor}
+              />
+              <Text style={[styles.depositBadgeText, { color: badgeColor }]}>
+                {badgeLabel}
+              </Text>
+            </View>
+          </View>
           <Text style={[styles.depositDate, { color: colors.mutedForeground }]}>
             {formatDate(item.date)}
           </Text>
@@ -171,7 +218,9 @@ export function GoalDetailScreen({ goal: initialGoal, onBack, goals, deposits: a
           onPress={() => {
             Alert.alert(
               'Excluir registro',
-              'Tem certeza que deseja remover este registro da meta?',
+              isRecurring
+                ? 'Este registro foi gerado pela recorrência automática. Tem certeza que deseja removê-lo?'
+                : 'Tem certeza que deseja remover este registro manual da meta?',
               [
                 { text: 'Cancelar', style: 'cancel' },
                 {
@@ -179,6 +228,31 @@ export function GoalDetailScreen({ goal: initialGoal, onBack, goals, deposits: a
                   style: 'destructive',
                   onPress: async () => {
                     try {
+                      // 1. Procurar e remover transação correspondente no extrato
+                      let matchingTxId: string | null = null;
+                      if (item.id.startsWith('tx_withdraw_')) {
+                        matchingTxId = item.id.replace('tx_withdraw_', '');
+                      } else if (item.id.startsWith('tx_')) {
+                        matchingTxId = item.id.replace('tx_', '');
+                      } else {
+                        const found = transactions.find(
+                          (t) =>
+                            t.id === item.id ||
+                            (t.type === 'transferencia' &&
+                              (t.targetAccountId === `goal_${item.goalId}` || t.accountId === `goal_${item.goalId}`) &&
+                              Math.abs(t.amount) === Math.abs(item.amount) &&
+                              t.date.slice(0, 10) === item.date.slice(0, 10))
+                        );
+                        if (found) {
+                          matchingTxId = found.id;
+                        }
+                      }
+
+                      if (matchingTxId) {
+                        await deleteTransaction(matchingTxId);
+                      }
+
+                      // 2. Remover o registro de depósito da meta
                       await deleteDeposit(item.id);
                     } catch (e: any) {
                       Alert.alert('Erro', e.message || 'Falha ao excluir registro.');
@@ -669,6 +743,23 @@ const styles = StyleSheet.create({
   depositAmount: {
     fontSize: 15,
     fontWeight: '700',
+  },
+  depositAmountRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  depositBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  depositBadgeText: {
+    fontSize: 10,
+    fontWeight: '600',
   },
   depositDate: {
     fontSize: 12,

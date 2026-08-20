@@ -58,13 +58,15 @@ interface BudgetItem {
   description: string
   amount: number
   origin: 'recorrente' | 'avulso' | 'cartao'
+  isInstallment?: boolean
   recurrence?: string
   date?: string
+  paid?: boolean
   type: 'despesa' | 'transferencia'
   sourceAccountName: string
   targetAccountName?: string   // para transferências
-  autoCategory: RecurringExpenseCategory
-  category: RecurringExpenseCategory // final (auto ou override do usuário)
+  autoCategory: Exclude<RecurringExpenseCategory, 'ignorado'>
+  category: Exclude<RecurringExpenseCategory, 'ignorado'> // final (auto ou override do usuário)
 }
 
 // ────────────────────────────────────────────────────────────────────────────────
@@ -247,79 +249,21 @@ export function OrcamentoScreen() {
   // ── Composição dos gastos e transferências do mês ───────────────────────────
   const detectedItems = useMemo((): BudgetItem[] => {
     const items: BudgetItem[] = []
-    const seenRecurring = new Set<string>()
 
-    // 1. Recorrências ativas (Fixos, Assinaturas, Transferências programadas)
-    const sorted = [...transactions].sort((a, b) => {
-      const ia = a.groupIndex ?? 0
-      const ib = b.groupIndex ?? 0
-      return ia - ib
-    })
-
-    for (const tx of sorted) {
-      if (tx.recurrence === 'unica' || !tx.recurrence) continue
-      if (tx.type === 'receita') continue
-
-      const key = tx.groupId || tx.id.split('-')[0]
-      if (seenRecurring.has(key)) continue
-      seenRecurring.add(key)
-
-      const sourceAcc = accounts.find(a => a.id === tx.accountId)
-      const sourceAccountName = sourceAcc?.name ?? 'Conta'
-
-      let autoCategory: RecurringExpenseCategory = 'fixo'
-      let targetAccountName: string | undefined
-
-      if (tx.type === 'transferencia') {
-        const destId = tx.targetAccountId ?? tx.toAccountId
-        if (destId?.startsWith('goal_')) {
-          autoCategory = 'investimento'
-          targetAccountName = 'Meta de Poupança'
-        } else {
-          const destAcc = accounts.find(a => a.id === destId)
-          targetAccountName = destAcc?.name
-          if (destAcc?.type === 'investimento') {
-            autoCategory = 'investimento'
-          } else {
-            // Transferência entre contas correntes/carteiras próprias é neutra:
-            // Só entra se o usuário mudou explicitamente para fixo, variavel ou investimento
-            const explicit = recurringOverrides[key]
-            if (!explicit || explicit === 'outros' || explicit === 'ignorado') {
-              continue
-            }
-            autoCategory = explicit
-          }
-        }
-      }
-
-      const category = recurringOverrides[key] ?? autoCategory
-      if (category === 'ignorado') continue
-
-      items.push({
-        id: key,
-        description: tx.description,
-        amount: tx.amount,
-        origin: 'recorrente',
-        recurrence: tx.recurrence,
-        type: tx.type as 'despesa' | 'transferencia',
-        sourceAccountName,
-        targetAccountName,
-        autoCategory,
-        category,
-      })
-    }
-
-    // 2. Gastos avulsos e compras no cartão de crédito do mês selecionado
     for (const tx of transactions) {
       if (tx.type === 'receita') continue
-      // Ignora recorrências (já processadas acima)
-      if (tx.recurrence && tx.recurrence !== 'unica') continue
       // Ignora lançamento de pagamento de fatura para não duplicar com as compras no cartão
       if (tx.description?.startsWith('Pagamento Fatura')) continue
 
       const sourceAcc = accounts.find(a => a.id === tx.accountId)
       const sourceAccountName = sourceAcc?.name ?? 'Conta'
       const isCard = tx.paymentMethod === 'credito' || sourceAcc?.type === 'cartao_credito'
+
+      // Detecta se é compra parcelada (ex: totalInstallments > 1 ou terminada em "(1/10)")
+      const isInstallment = Boolean(
+        (tx.totalInstallments && tx.totalInstallments > 1) ||
+        /\(\d+\/\d+\)$/.test(tx.description.trim())
+      )
 
       if (isCard) {
         // Verifica se a compra cai na fatura do mês selecionado
@@ -338,16 +282,30 @@ export function OrcamentoScreen() {
         const invoiceYear = y
 
         if (invoiceMonth === selectedDate.month && invoiceYear === selectedDate.year) {
-          const autoCategory: RecurringExpenseCategory = 'variavel'
-          const category = recurringOverrides[tx.id] ?? autoCategory
+          let autoCategory: RecurringExpenseCategory = 'variavel'
+          let origin: 'recorrente' | 'avulso' | 'cartao' = 'cartao'
+
+          if (tx.recurrence && tx.recurrence !== 'unica') {
+            autoCategory = 'fixo'
+            origin = 'recorrente'
+          } else if (isInstallment) {
+            // Compras parceladas entram inicialmente como 'outros' (10%)
+            autoCategory = 'outros'
+          }
+
+          const itemKey = tx.groupId || tx.id
+          const category = recurringOverrides[itemKey] ?? recurringOverrides[tx.id] ?? autoCategory
           if (category === 'ignorado') continue
 
           items.push({
             id: tx.id,
             description: tx.description,
             amount: tx.amount,
-            origin: 'cartao',
+            origin,
+            isInstallment,
+            recurrence: tx.recurrence,
             date: tx.date,
+            paid: tx.paid,
             type: tx.type as 'despesa' | 'transferencia',
             sourceAccountName,
             autoCategory,
@@ -355,11 +313,12 @@ export function OrcamentoScreen() {
           })
         }
       } else {
-        // Transação avulsa comum no débito/pix/dinheiro ou transferência
+        // Transação avulsa ou recorrente no débito/pix/dinheiro ou transferência
         const d = new Date(tx.date)
         if (d.getMonth() === selectedDate.month && d.getFullYear() === selectedDate.year) {
           let autoCategory: RecurringExpenseCategory = 'variavel'
           let targetAccountName: string | undefined
+          let origin: 'recorrente' | 'avulso' | 'cartao' = 'avulso'
 
           if (tx.type === 'transferencia') {
             const destId = tx.targetAccountId ?? tx.toAccountId
@@ -373,24 +332,37 @@ export function OrcamentoScreen() {
                 autoCategory = 'investimento'
               } else {
                 // Transferência entre contas correntes/carteiras próprias é neutra:
-                const explicit = recurringOverrides[tx.id]
+                const explicit = recurringOverrides[tx.groupId || tx.id] ?? recurringOverrides[tx.id]
                 if (!explicit || explicit === 'outros' || explicit === 'ignorado') {
                   continue
                 }
                 autoCategory = explicit
               }
             }
+          } else {
+            // Despesa
+            if (tx.recurrence && tx.recurrence !== 'unica') {
+              autoCategory = 'fixo'
+              origin = 'recorrente'
+            } else if (isInstallment) {
+              // Compras parceladas entram inicialmente como 'outros' (10%)
+              autoCategory = 'outros'
+            }
           }
 
-          const category = recurringOverrides[tx.id] ?? autoCategory
+          const itemKey = tx.groupId || tx.id
+          const category = recurringOverrides[itemKey] ?? recurringOverrides[tx.id] ?? autoCategory
           if (category === 'ignorado') continue
 
           items.push({
             id: tx.id,
             description: tx.description,
             amount: tx.amount,
-            origin: 'avulso',
+            origin,
+            isInstallment,
+            recurrence: tx.recurrence,
             date: tx.date,
+            paid: tx.paid,
             type: tx.type as 'despesa' | 'transferencia',
             sourceAccountName,
             targetAccountName,
@@ -578,7 +550,7 @@ export function OrcamentoScreen() {
         {(Object.keys(budgetAllocation) as (keyof BudgetAllocation)[]).map((key) => {
           const meta = ALLOCATION_META[key]
           const theoretical = theoreticalAlloc[key]
-          const actual = totals[key as RecurringExpenseCategory] ?? 0
+          const actual = totals[key] ?? 0
           const diff = theoretical - actual
           const isOk = actual <= theoretical
 
@@ -688,21 +660,41 @@ export function OrcamentoScreen() {
           filteredItems.map((item) => {
             const meta = CATEGORY_META[item.category]
             const isOverridden = !!recurringOverrides[item.id]
-            const originIcon =
-              item.type === 'transferencia'
-                ? 'swap-horizontal-outline'
-                : item.origin === 'cartao'
-                  ? 'card-outline'
-                  : item.origin === 'recorrente'
-                    ? 'repeat-outline'
-                    : 'receipt-outline'
 
-            const originLabel =
-              item.origin === 'recorrente'
-                ? (item.recurrence ? RECURRENCE_LABEL[item.recurrence] ?? item.recurrence : 'Recorrente')
-                : item.origin === 'cartao'
-                  ? 'Fatura Cartão'
-                  : 'Avulso'
+            const isRecurring = item.origin === 'recorrente' || (!!item.recurrence && item.recurrence !== 'unica')
+            
+            // Origem (Recorrente vs Manual)
+            let originLabel = 'Manual · Avulso'
+            let originIcon = 'create-outline'
+            let originBg = colors.muted
+            let originTextColor = colors.mutedForeground
+
+            if (isRecurring) {
+              originLabel = item.recurrence ? `Recorrente · ${RECURRENCE_LABEL[item.recurrence] ?? item.recurrence}` : 'Recorrente'
+              originIcon = 'repeat-outline'
+              originBg = colors.primary + '18'
+              originTextColor = colors.primary
+            } else if (item.isInstallment) {
+              originLabel = 'Manual · Parcelado'
+              originIcon = 'layers-outline'
+              originBg = '#7B1FA218'
+              originTextColor = '#7B1FA2'
+            } else if (item.origin === 'cartao') {
+              originLabel = 'Manual · Cartão'
+              originIcon = 'card-outline'
+              originBg = '#E6510018'
+              originTextColor = '#E65100'
+            } else if (item.type === 'transferencia') {
+              originLabel = 'Manual · Transf.'
+              originIcon = 'swap-horizontal-outline'
+            }
+
+            // Status de pagamento (Pago vs A pagar)
+            const isPaid = item.paid ?? false
+            const statusLabel = isPaid ? 'Pago' : 'A pagar'
+            const statusIcon = isPaid ? 'checkmark-circle-outline' : 'time-outline'
+            const statusBg = isPaid ? '#388E3C18' : '#F57C0018'
+            const statusTextColor = isPaid ? '#388E3C' : '#F57C00'
 
             return (
               <View key={item.id} style={[styles.expenseItem, { borderBottomColor: colors.border }]}>
@@ -717,13 +709,22 @@ export function OrcamentoScreen() {
                     {item.description}
                   </Text>
                   <View style={styles.itemMeta}>
-                    {/* Badge de origem */}
-                    <View style={[styles.recurrencePill, { backgroundColor: colors.muted }]}>
-                      <Ionicons name={originIcon as any} size={10} color={colors.mutedForeground} />
-                      <Text style={[styles.recurrencePillText, { color: colors.mutedForeground }]}>
+                    {/* Badge de origem (Recorrente vs Manual) */}
+                    <View style={[styles.recurrencePill, { backgroundColor: originBg }]}>
+                      <Ionicons name={originIcon as any} size={10} color={originTextColor} />
+                      <Text style={[styles.recurrencePillText, { color: originTextColor }]}>
                         {originLabel}
                       </Text>
                     </View>
+
+                    {/* Badge de status (Pago vs A pagar) */}
+                    <View style={[styles.statusPill, { backgroundColor: statusBg }]}>
+                      <Ionicons name={statusIcon as any} size={10} color={statusTextColor} />
+                      <Text style={[styles.statusPillText, { color: statusTextColor }]}>
+                        {statusLabel}
+                      </Text>
+                    </View>
+
                     {/* Conta de origem → destino */}
                     {item.type === 'transferencia' && item.targetAccountName ? (
                       <Text style={[styles.accountFlow, { color: colors.mutedForeground }]} numberOfLines={1}>
@@ -879,7 +880,9 @@ const styles = StyleSheet.create({
   itemName: { fontSize: 14, fontWeight: '600', marginBottom: 4 },
   itemMeta: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
   recurrencePill: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 8 },
-  recurrencePillText: { fontSize: 10, fontWeight: '500' },
+  recurrencePillText: { fontSize: 10, fontWeight: '600' },
+  statusPill: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 8 },
+  statusPillText: { fontSize: 10, fontWeight: '600' },
   accountFlow: { fontSize: 11, flexShrink: 1 },
   itemRight: { alignItems: 'flex-end', gap: 5 },
   itemAmount: { fontSize: 14, fontWeight: '700' },
