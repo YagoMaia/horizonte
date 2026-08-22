@@ -563,8 +563,8 @@ export function HorizonteScreen() {
             <Ionicons name="warning" size={20} color="#FFF" />
             <Text style={styles.alertText}>
               {isInCurrentView
-                ? `⚠️ Saldo negativo previsto em ${mesNome} — revise seus gastos ou aportes`
-                : `⚠️ Saldo negativo previsto em ${mesNome} ${negYear}`}
+                ? `Saldo negativo previsto em ${mesNome} — revise seus gastos ou aportes`
+                : `Saldo negativo previsto em ${mesNome} ${negYear}`}
             </Text>
           </View>
         );
