@@ -660,35 +660,7 @@ export function OrcamentoScreen() {
           filteredItems.map((item) => {
             const meta = CATEGORY_META[item.category]
             const isOverridden = !!recurringOverrides[item.id]
-
-            const isRecurring = item.origin === 'recorrente' || (!!item.recurrence && item.recurrence !== 'unica')
             
-            // Origem (Recorrente vs Manual)
-            let originLabel = 'Manual · Avulso'
-            let originIcon = 'create-outline'
-            let originBg = colors.muted
-            let originTextColor = colors.mutedForeground
-
-            if (isRecurring) {
-              originLabel = item.recurrence ? `Recorrente · ${RECURRENCE_LABEL[item.recurrence] ?? item.recurrence}` : 'Recorrente'
-              originIcon = 'repeat-outline'
-              originBg = colors.primary + '18'
-              originTextColor = colors.primary
-            } else if (item.isInstallment) {
-              originLabel = 'Manual · Parcelado'
-              originIcon = 'layers-outline'
-              originBg = '#7B1FA218'
-              originTextColor = '#7B1FA2'
-            } else if (item.origin === 'cartao') {
-              originLabel = 'Manual · Cartão'
-              originIcon = 'card-outline'
-              originBg = '#E6510018'
-              originTextColor = '#E65100'
-            } else if (item.type === 'transferencia') {
-              originLabel = 'Manual · Transf.'
-              originIcon = 'swap-horizontal-outline'
-            }
-
             // Status de pagamento (Pago vs A pagar)
             const isPaid = item.paid ?? false
             const statusLabel = isPaid ? 'Pago' : 'A pagar'
@@ -700,7 +672,7 @@ export function OrcamentoScreen() {
               <View key={item.id} style={[styles.expenseItem, { borderBottomColor: colors.border }]}>
                 {/* Ícone do tipo */}
                 <View style={[styles.itemIcon, { backgroundColor: meta.color + '18' }]}>
-                  <Ionicons name={originIcon as any} size={18} color={meta.color} />
+                  <Ionicons name={meta.icon as any} size={18} color={meta.color} />
                 </View>
 
                 {/* Detalhes */}
@@ -709,14 +681,6 @@ export function OrcamentoScreen() {
                     {item.description}
                   </Text>
                   <View style={styles.itemMeta}>
-                    {/* Badge de origem (Recorrente vs Manual) */}
-                    <View style={[styles.recurrencePill, { backgroundColor: originBg }]}>
-                      <Ionicons name={originIcon as any} size={10} color={originTextColor} />
-                      <Text style={[styles.recurrencePillText, { color: originTextColor }]}>
-                        {originLabel}
-                      </Text>
-                    </View>
-
                     {/* Badge de status (Pago vs A pagar) */}
                     <View style={[styles.statusPill, { backgroundColor: statusBg }]}>
                       <Ionicons name={statusIcon as any} size={10} color={statusTextColor} />
