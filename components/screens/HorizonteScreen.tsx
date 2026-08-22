@@ -14,6 +14,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "@/hooks/useTheme";
 import { useStoreContext } from "@/context/StoreContext";
+import { useSavingsGoals } from "@/hooks/useSavingsGoals";
 import { formatCurrency, formatDateShort, getTransactionVisuals } from "@/lib/utils";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
@@ -79,6 +80,7 @@ export function HorizonteScreen() {
   const { colors } = useTheme();
   const { transactions, accounts, getEffectiveBudget, saveMonthlyBudget } =
     useStoreContext();
+  const { goals } = useSavingsGoals();
 
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
@@ -86,6 +88,7 @@ export function HorizonteScreen() {
   const [selectedDay, setSelectedDay] = useState<any | null>(null);
   const [configModalVisible, setConfigModalVisible] = useState(false);
   const [activeAccountIds, setActiveAccountIds] = useState<string[]>([]);
+  const [activeGoalIds, setActiveGoalIds] = useState<string[]>([]);
   const [budgetInput, setBudgetInput] = useState<string>("");
 
   // 👉 NOVO ESTADO: Alternar entre Lista e Mapa de Calor
@@ -101,6 +104,9 @@ export function HorizonteScreen() {
         );
         if (savedAccounts) setActiveAccountIds(JSON.parse(savedAccounts));
         else setActiveAccountIds(accounts.map((a) => a.id));
+
+        const savedGoals = await AsyncStorage.getItem("@horizonte:active_goals");
+        if (savedGoals) setActiveGoalIds(JSON.parse(savedGoals));
 
         const savedView = await AsyncStorage.getItem("@horizonte:view_mode");
         if (savedView) setViewMode(savedView as "list" | "grid");
@@ -130,6 +136,14 @@ export function HorizonteScreen() {
     );
   };
 
+  const toggleGoal = async (id: string) => {
+    const newIds = activeGoalIds.includes(id)
+      ? activeGoalIds.filter((gId) => gId !== id)
+      : [...activeGoalIds, id];
+    setActiveGoalIds(newIds);
+    await AsyncStorage.setItem("@horizonte:active_goals", JSON.stringify(newIds));
+  };
+
   const saveBudget = async () => {
     const value = parseFloat(budgetInput.replace(",", "."));
     if (!isNaN(value)) await saveMonthlyBudget(year, month, value);
@@ -155,11 +169,19 @@ export function HorizonteScreen() {
     } else setMonth((m) => m + 1);
   };
 
+  // Saldo das contas ativas + saldo acumulado das metas ativas no Horizonte
+  const activeGoalsBalance = goals
+    .filter((g) => activeGoalIds.includes(g.id))
+    .reduce((s, g) => s + g.accumulatedAmount, 0);
+
   const activeBalance = accounts
     .filter(
       (a) => activeAccountIds.includes(a.id) && a.type !== "cartao_credito",
     )
-    .reduce((s, a) => s + a.balance, 0);
+    .reduce((s, a) => s + a.balance, 0) + activeGoalsBalance;
+
+  // Set de IDs de metas ativas para uso no motor de projeção
+  const activeGoalIdSet = new Set(activeGoalIds);
 
   // 👉 O MOTOR CONTÍNUO MULTI-MÊS
   const { resultsMap, firstNegativeDate } = useMemo(() => {
@@ -195,6 +217,15 @@ export function HorizonteScreen() {
     txsToUndo.forEach((tx) => {
       const isFromActiveAccount = activeCashAccountIds.has(tx.accountId);
       const isToActiveAccount = tx.type === 'transferencia' && tx.targetAccountId && activeCashAccountIds.has(tx.targetAccountId);
+
+      // Transferências para/de metas ATIVAS no Horizonte são neutras (o saldo da meta já está incluído no activeBalance)
+      const goalId = tx.targetAccountId?.startsWith('goal_')
+        ? tx.targetAccountId.replace('goal_', '')
+        : tx.accountId?.startsWith('goal_')
+        ? tx.accountId.replace('goal_', '')
+        : null;
+      const isActiveGoalTransfer = goalId !== null && activeGoalIdSet.has(goalId);
+      if (isActiveGoalTransfer) return; // Ignora — o saldo da meta já está contabilizado
 
       if (tx.type === 'receita' && isFromActiveAccount) openingBalance -= tx.amount;
       else if (tx.type === 'despesa' && isFromActiveAccount) openingBalance += tx.amount;
@@ -318,8 +349,23 @@ export function HorizonteScreen() {
           .reduce((s, t) => s + t.amount, 0);
 
         // Transferências impactam o saldo mas não são classificadas como "gasto"
+        // Transferências para/de metas ATIVAS são neutras — o saldo delas já está no activeBalance
         const transferOut = effectiveDayTxs
-          .filter((t) => t.type === 'transferencia' && activeCashAccountIds.has(t.accountId) && (!t.targetAccountId || !activeCashAccountIds.has(t.targetAccountId)))
+          .filter((t) => {
+            if (t.type !== 'transferencia') return false;
+            if (!activeCashAccountIds.has(t.accountId)) return false;
+            // Metas ativas: aporte é neutro (vai de uma "conta ativa" para outra)
+            const tGoalId = t.targetAccountId?.startsWith('goal_')
+              ? t.targetAccountId.replace('goal_', '')
+              : null;
+            if (tGoalId && activeGoalIdSet.has(tGoalId)) return false;
+            // Resgates de metas ativas: também neutros
+            const sGoalId = t.accountId?.startsWith('goal_')
+              ? t.accountId.replace('goal_', '')
+              : null;
+            if (sGoalId && activeGoalIdSet.has(sGoalId)) return false;
+            return !t.targetAccountId || !activeCashAccountIds.has(t.targetAccountId);
+          })
           .reduce((s, t) => s + t.amount, 0);
 
         // Faturas de cartão de crédito (transações virtuais de fatura)
@@ -391,7 +437,7 @@ export function HorizonteScreen() {
     }
 
     return { resultsMap, firstNegativeDate: firstNegDate };
-  }, [transactions, activeBalance, activeAccountIds, year, month, getEffectiveBudget, today]);
+  }, [transactions, activeBalance, activeAccountIds, activeGoalIdSet, activeGoalIds, year, month, getEffectiveBudget, today]);
 
   // Extrai o mês focado para o Modo Lista e Resumo
   const focusedMonthKey = `${year}-${month}`;
@@ -506,14 +552,23 @@ export function HorizonteScreen() {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       {/* BANNER DE ALERTA CRÍTICO */}
-      {firstNegativeDate && (
-        <View style={[styles.alertBanner, { backgroundColor: colors.destructive }]}>
-          <Ionicons name="warning" size={20} color="#FFF" />
-          <Text style={styles.alertText}>
-            Saldo crítico detectado em {formatDateShort(firstNegativeDate)}
-          </Text>
-        </View>
-      )}
+      {firstNegativeDate && (() => {
+        const negDate = new Date(firstNegativeDate);
+        const negMonth = negDate.getMonth();
+        const negYear = negDate.getFullYear();
+        const isInCurrentView = negMonth === month && negYear === year;
+        const mesNome = MONTH_NAMES[negMonth];
+        return (
+          <View style={[styles.alertBanner, { backgroundColor: isInCurrentView ? colors.destructive : '#F57C00' }]}>
+            <Ionicons name="warning" size={20} color="#FFF" />
+            <Text style={styles.alertText}>
+              {isInCurrentView
+                ? `⚠️ Saldo negativo previsto em ${mesNome} — revise seus gastos ou aportes`
+                : `⚠️ Saldo negativo previsto em ${mesNome} ${negYear}`}
+            </Text>
+          </View>
+        );
+      })()}
 
       {/* HEADER E NAVEGAÇÃO DE MESES */}
       <View
@@ -1051,6 +1106,74 @@ export function HorizonteScreen() {
                     </TouchableOpacity>
                   );
                 })}
+
+                {/* ── Seção de Metas ── */}
+                {goals.length > 0 && (
+                  <>
+                    <Text
+                      style={[
+                        styles.configLabel,
+                        { color: colors.foreground, marginTop: 20, marginBottom: 4 },
+                      ]}
+                    >
+                      Metas no Planejamento
+                    </Text>
+                    <Text style={{ fontSize: 12, color: colors.mutedForeground, marginBottom: 8 }}>
+                      Metas marcadas têm seu saldo incluído no Horizonte e seus aportes não reduzem a projeção.
+                    </Text>
+                    {goals.map((goal) => {
+                      const isGoalActive = activeGoalIds.includes(goal.id);
+                      const pct = goal.targetAmount > 0
+                        ? Math.min(100, Math.round((goal.accumulatedAmount / goal.targetAmount) * 100))
+                        : 0;
+                      return (
+                        <TouchableOpacity
+                          key={goal.id}
+                          activeOpacity={0.7}
+                          onPress={() => toggleGoal(goal.id)}
+                          style={[
+                            styles.accountOption,
+                            {
+                              backgroundColor: isGoalActive
+                                ? '#388E3C15'
+                                : colors.background,
+                              borderColor: isGoalActive
+                                ? '#388E3C'
+                                : colors.border,
+                            },
+                          ]}
+                        >
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                            <View style={[styles.accountOptionIcon, { backgroundColor: '#388E3C20' }]}>
+                              <Ionicons name="flag-outline" size={16} color="#388E3C" />
+                            </View>
+                            <View>
+                              <Text style={[styles.accountOptionName, { color: colors.foreground }]}>
+                                {goal.name}
+                              </Text>
+                              <Text style={{ fontSize: 11, color: colors.mutedForeground }}>
+                                {pct}% concluído · R$ {goal.accumulatedAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                              </Text>
+                            </View>
+                          </View>
+                          <View
+                            style={[
+                              styles.checkbox,
+                              {
+                                borderColor: isGoalActive ? '#388E3C' : colors.border,
+                                backgroundColor: isGoalActive ? '#388E3C' : 'transparent',
+                              },
+                            ]}
+                          >
+                            {isGoalActive && (
+                              <Ionicons name="checkmark" size={14} color="#FFF" />
+                            )}
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </>
+                )}
               </ScrollView>
 
               <TouchableOpacity
