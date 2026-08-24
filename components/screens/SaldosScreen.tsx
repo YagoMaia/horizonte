@@ -108,29 +108,34 @@ export function SaldosScreen() {
     setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + offset, 1));
   };
 
-  // CÁLCULO DE ENTRADAS E SAÍDAS DO MÊS ATUAL (Corrigido para evitar bitributação)
+  // CÁLCULO DE ENTRADAS E SAÍDAS DO MÊS ATUAL
   const currentMonthStats = useMemo(() => {
     let income = 0;
-    let expense = 0;
+    let expenseDebit = 0;
+    let expenseCredit = 0;
 
     transactions.forEach((tx) => {
       const txDate = new Date(tx.date);
-      // Filtra pelo mês atual e apenas transações pagas
+      // Filtra pelo mês atual
       if (
         txDate.getMonth() === currentDate.getMonth() &&
-        txDate.getFullYear() === currentDate.getFullYear() &&
-        tx.paid
+        txDate.getFullYear() === currentDate.getFullYear()
       ) {
-        if (tx.type === 'receita') {
+        if (tx.type === 'receita' && tx.paid) {
           income += tx.amount;
-        } else if (tx.type === 'despesa' && tx.paymentMethod !== 'credito') {
-          // Ignora compras no crédito (a fatura, quando paga, entrará como débito aqui)
-          expense += tx.amount;
+        } else if (tx.type === 'despesa') {
+          if (tx.paymentMethod === 'credito') {
+            // Conta TODAS as compras de crédito do mês (não há transações virtuais de fatura aqui)
+            expenseCredit += tx.amount;
+          } else if (tx.paid) {
+            // Débito só conta se estiver pago
+            expenseDebit += tx.amount;
+          }
         }
       }
     });
 
-    return { income, expense };
+    return { income, expense: expenseDebit + expenseCredit, expenseDebit, expenseCredit };
   }, [transactions, currentDate]);
 
   // MOTOR DE BUSCA ATUALIZADO (Filtro por Mês)
@@ -351,8 +356,17 @@ export function SaldosScreen() {
           </View>
           <View style={styles.balanceDivider} />
           <View style={styles.balanceStat}>
-            <Ionicons name='arrow-down-circle' size={16} color='rgba(255,255,255,0.8)' />
-            <Text style={styles.balanceStatText}>{formatCurrency(currentMonthStats.expense)}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <Ionicons name='arrow-down-circle' size={16} color='rgba(255,255,255,0.8)' />
+              <Text style={styles.balanceStatText}>{formatCurrency(currentMonthStats.expense)}</Text>
+            </View>
+            {(currentMonthStats.expenseCredit > 0 || currentMonthStats.expenseDebit > 0) && (
+              <Text style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)', marginTop: 2 }}>
+                {currentMonthStats.expenseDebit > 0 ? `Déb.: ${formatCurrency(currentMonthStats.expenseDebit)}` : ''}
+                {currentMonthStats.expenseDebit > 0 && currentMonthStats.expenseCredit > 0 ? ' | ' : ''}
+                {currentMonthStats.expenseCredit > 0 ? `Créd.: ${formatCurrency(currentMonthStats.expenseCredit)}` : ''}
+              </Text>
+            )}
           </View>
         </View>
       </View>
