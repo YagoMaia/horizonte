@@ -335,7 +335,13 @@ export function HorizonteScreen() {
           .filter((t) => {
             if (t.isVirtual) return t.type === 'receita';
             if (t.type === 'receita' && activeCashAccountIds.has(t.accountId)) return true;
-            if (t.type === 'transferencia' && t.targetAccountId && activeCashAccountIds.has(t.targetAccountId) && !activeCashAccountIds.has(t.accountId)) return true;
+            if (t.type === 'transferencia' && t.targetAccountId && activeCashAccountIds.has(t.targetAccountId) && !activeCashAccountIds.has(t.accountId)) {
+              // Resgates de metas ATIVAS são neutros — o saldo delas já está em activeBalance.
+              // Contar o resgate como income causaria dupla contagem positiva.
+              const srcGoalId = t.accountId?.startsWith('goal_') ? t.accountId.replace('goal_', '') : null;
+              if (srcGoalId && activeGoalIdSet.has(srcGoalId)) return false;
+              return true;
+            }
             return false;
           })
           .reduce((s, t) => s + t.amount, 0);
@@ -641,6 +647,12 @@ export function HorizonteScreen() {
             >
               {formatCurrency(activeBalance)}
             </Text>
+            {activeGoalIds.length > 0 && activeGoalsBalance > 0 && (
+              <Text style={{ fontSize: 11, color: colors.mutedForeground, marginTop: 2 }}>
+                {`inclui ${activeGoalIds.length} meta${activeGoalIds.length > 1 ? 's' : ''} · `}
+                <Text style={{ color: '#388E3C' }}>{formatCurrency(activeGoalsBalance)}</Text>
+              </Text>
+            )}
           </View>
           <View style={styles.budgetRight}>
             <Text

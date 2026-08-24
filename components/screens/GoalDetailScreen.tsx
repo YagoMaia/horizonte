@@ -228,24 +228,22 @@ export function GoalDetailScreen({ goal: initialGoal, onBack, goals, deposits: a
                   style: 'destructive',
                   onPress: async () => {
                     try {
-                      // 1. Procurar e remover transação correspondente no extrato
+                      // O syncWithTransactions cria depósitos com IDs determinísticos:
+                      //   resgate  → 'tx_withdraw_<txId>'
+                      //   aporte   → 'tx_<txId>'
+                      // Invertendo o padrão, obtemos o txId com segurança sem fallback por valor+data.
                       let matchingTxId: string | null = null;
                       if (item.id.startsWith('tx_withdraw_')) {
                         matchingTxId = item.id.replace('tx_withdraw_', '');
                       } else if (item.id.startsWith('tx_')) {
                         matchingTxId = item.id.replace('tx_', '');
                       } else {
-                        const found = transactions.find(
-                          (t) =>
-                            t.id === item.id ||
-                            (t.type === 'transferencia' &&
-                              (t.targetAccountId === `goal_${item.goalId}` || t.accountId === `goal_${item.goalId}`) &&
-                              Math.abs(t.amount) === Math.abs(item.amount) &&
-                              t.date.slice(0, 10) === item.date.slice(0, 10))
-                        );
-                        if (found) {
-                          matchingTxId = found.id;
+                        // Fallback para depósitos legados: tenta match exato por ID primeiro
+                        const byId = transactions.find((t) => t.id === item.id);
+                        if (byId) {
+                          matchingTxId = byId.id;
                         }
+                        // Sem fallback por valor+data para evitar deleção errada
                       }
 
                       if (matchingTxId) {

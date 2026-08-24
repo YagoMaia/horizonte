@@ -1,5 +1,5 @@
 // components/screens/GoalsScreen.tsx
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '@/hooks/useTheme';
 import { useSavingsGoals } from '@/hooks/useSavingsGoals';
 import { calculateProgress } from '@/lib/goalUtils';
@@ -28,6 +29,13 @@ interface GoalsScreenProps {
 export function GoalsScreen({ onGoalPress, goals, loading, error, createGoal, retry }: GoalsScreenProps) {
   const { colors } = useTheme();
   const [formModalVisible, setFormModalVisible] = useState(false);
+  const [activeGoalIds, setActiveGoalIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    AsyncStorage.getItem('@horizonte:active_goals').then((raw) => {
+      if (raw) setActiveGoalIds(JSON.parse(raw));
+    }).catch(() => {});
+  }, [goals]);
 
   const handleCreateGoal = async (input: CreateGoalInput) => {
     await createGoal(input);
@@ -108,6 +116,7 @@ export function GoalsScreen({ onGoalPress, goals, loading, error, createGoal, re
           {goals.map((goal) => {
             const progress = calculateProgress(goal.accumulatedAmount, goal.targetAmount);
             const isCompleted = goal.accumulatedAmount >= goal.targetAmount;
+            const isInHorizonte = activeGoalIds.includes(goal.id);
 
             return (
               <TouchableOpacity
@@ -116,7 +125,7 @@ export function GoalsScreen({ onGoalPress, goals, loading, error, createGoal, re
                 onPress={() => onGoalPress(goal)}
                 activeOpacity={0.7}
               >
-                {/* Goal header: icon + name + checkmark */}
+                {/* Goal header: icon + name + badges */}
                 <View style={styles.goalHeader}>
                   <View style={[styles.goalIcon, { backgroundColor: goal.color + '20' }]}>
                     <Ionicons name={goal.icon as any} size={22} color={goal.color} />
@@ -127,11 +136,19 @@ export function GoalsScreen({ onGoalPress, goals, loading, error, createGoal, re
                   >
                     {goal.name}
                   </Text>
-                  {isCompleted && (
-                    <View style={[styles.checkmark, { backgroundColor: '#4CAF50' }]}>
-                      <Ionicons name="checkmark" size={14} color="#FFF" />
-                    </View>
-                  )}
+                  <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+                    {isInHorizonte && (
+                      <View style={[styles.horizonteBadge, { backgroundColor: '#1976D215', borderColor: '#1976D2' }]}>
+                        <Ionicons name="trending-up-outline" size={10} color="#1976D2" />
+                        <Text style={[styles.horizonteBadgeText, { color: '#1976D2' }]}>Horizonte</Text>
+                      </View>
+                    )}
+                    {isCompleted && (
+                      <View style={[styles.checkmark, { backgroundColor: '#4CAF50' }]}>
+                        <Ionicons name="checkmark" size={14} color="#FFF" />
+                      </View>
+                    )}
+                  </View>
                 </View>
 
                 {/* Amounts */}
@@ -157,10 +174,32 @@ export function GoalsScreen({ onGoalPress, goals, loading, error, createGoal, re
                   />
                 </View>
 
-                {/* Progress percentage */}
-                <Text style={[styles.progressText, { color: colors.mutedForeground }]}>
-                  {progress}% concluído
-                </Text>
+                {/* Progress percentage + deadline */}
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 }}>
+                  <Text style={[styles.progressText, { color: colors.mutedForeground }]}>
+                    {progress}% concluído
+                  </Text>
+                  {goal.deadline && !isCompleted && (() => {
+                    const deadline = new Date(goal.deadline);
+                    const now = new Date();
+                    const diffMs = deadline.getTime() - now.getTime();
+                    const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+                    const isLate = diffDays < 0;
+                    const label = isLate
+                      ? `Atrasado ${Math.abs(diffDays)}d`
+                      : diffDays === 0
+                      ? 'Vence hoje'
+                      : diffDays <= 30
+                      ? `${diffDays}d restantes`
+                      : deadline.toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' });
+                    return (
+                      <View style={[styles.deadlineBadge, { backgroundColor: isLate ? '#D32F2F15' : colors.muted, borderColor: isLate ? '#D32F2F' : colors.border }]}>
+                        <Ionicons name="calendar-outline" size={10} color={isLate ? '#D32F2F' : colors.mutedForeground} />
+                        <Text style={[styles.deadlineText, { color: isLate ? '#D32F2F' : colors.mutedForeground }]}>{label}</Text>
+                      </View>
+                    );
+                  })()}
+                </View>
               </TouchableOpacity>
             );
           })}
@@ -240,6 +279,19 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     flex: 1,
   },
+  horizonteBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  horizonteBadgeText: {
+    fontSize: 10,
+    fontWeight: '600',
+  },
   checkmark: {
     width: 24,
     height: 24,
@@ -271,6 +323,19 @@ const styles = StyleSheet.create({
   },
   progressText: {
     fontSize: 12,
+    fontWeight: '500',
+  },
+  deadlineBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  deadlineText: {
+    fontSize: 10,
     fontWeight: '500',
   },
   emptyState: {
