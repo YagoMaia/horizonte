@@ -375,11 +375,23 @@ export function SaldosScreen() {
       {overduePendingTransactions.length > 0 && (
         <View style={[styles.pendingBanner, { backgroundColor: colors.warning + '20', borderColor: colors.warning }]}>
           <Ionicons name="alert-circle" size={20} color={colors.warning} />
-          <View style={{ flex: 1 }}>
+          <View style={{ flex: 1, gap: 4 }}>
             <Text style={[styles.pendingTitle, { color: colors.warning }]}>Lançamentos Atrasados</Text>
             <Text style={[styles.pendingText, { color: colors.foreground }]}>
-              Você tem {overduePendingTransactions.length} {overduePendingTransactions.length === 1 ? 'pagamento que não foi confirmado' : 'pagamentos que não foram confirmados'}.
+              Você tem {overduePendingTransactions.length} {overduePendingTransactions.length === 1 ? 'pagamento que não foi confirmado' : 'pagamentos que não foram confirmados'}:
             </Text>
+            <View style={{ marginTop: 2 }}>
+              {overduePendingTransactions.slice(0, 2).map((tx) => (
+                <Text key={tx.id} style={{ fontSize: 12, color: colors.foreground, marginLeft: 4 }}>
+                  • {tx.description} ({formatCurrency(tx.amount)})
+                </Text>
+              ))}
+              {overduePendingTransactions.length > 2 && (
+                <Text style={{ fontSize: 12, color: colors.mutedForeground, marginLeft: 4, marginTop: 2, fontStyle: 'italic' }}>
+                  E mais {overduePendingTransactions.length - 2} {overduePendingTransactions.length - 2 === 1 ? 'lançamento' : 'lançamentos'}...
+                </Text>
+              )}
+            </View>
           </View>
         </View>
       )}
