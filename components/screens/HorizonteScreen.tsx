@@ -638,7 +638,7 @@ export function HorizonteScreen() {
                 { color: colors.mutedForeground },
               ]}
             >
-              Saldo Disponível{" "}
+              Saldo Disponível (Hoje){" "}
               {activeAccountIds.length > 0 &&
                 `(${activeAccountIds.length})`}
             </Text>

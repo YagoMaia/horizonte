@@ -48,7 +48,7 @@ const ACCOUNT_TYPES: { value: Account['type']; label: string }[] = [
 
 export function ContasScreen() {
   const { colors } = useTheme();
-  const { accounts, totalBalance, saveAccounts } = useStoreContext();
+  const { accounts, totalBalance, saveAccounts, addTransaction } = useStoreContext();
   const insets = useSafeAreaInsets();
 
   const [modalVisible, setModalVisible] = useState(false);
@@ -135,12 +135,14 @@ export function ContasScreen() {
     }
 
     if (editAccount) {
+      const diff = type !== 'cartao_credito' ? parsedBalance - editAccount.balance : 0;
+
       const updated = accounts.map((a) =>
         a.id === editAccount.id
           ? {
               ...a,
               name: name.trim(),
-              balance: type === 'cartao_credito' ? a.balance : parsedBalance,
+              balance: editAccount.balance, // Mantemos o original, o addTransaction atualizará
               type,
               color: selectedColor,
               icon: selectedIcon,
@@ -151,6 +153,20 @@ export function ContasScreen() {
           : a,
       );
       await saveAccounts(updated);
+
+      if (diff !== 0) {
+        await addTransaction({
+          description: 'Ajuste de Saldo',
+          amount: Math.abs(diff),
+          type: diff > 0 ? 'receita' : 'despesa',
+          date: new Date().toISOString(),
+          accountId: editAccount.id,
+          paid: true,
+          recurrence: 'unica',
+          paymentMethod: 'debito',
+          categoryId: 'outros', // Pode ser mapeado para uma categoria de ajuste
+        });
+      }
     } else {
       const newAccount: Account = {
         id: Date.now().toString(),

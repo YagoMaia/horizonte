@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   ScrollView,
   Alert,
+  TextInput,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/hooks/useTheme';
@@ -60,6 +61,7 @@ export function GoalDetailScreen({ goal: initialGoal, onBack, goals, deposits: a
   const [showWithdrawModal, setShowWithdrawModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showRecurrenceModal, setShowRecurrenceModal] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Derived values
   const progress = calculateProgress(goal.accumulatedAmount, goal.targetAmount);
@@ -67,12 +69,22 @@ export function GoalDetailScreen({ goal: initialGoal, onBack, goals, deposits: a
   const remainingDays = calculateRemainingDays(goal.deadline);
   const overdueDays = calculateOverdueDays(goal.deadline);
 
-  // Deposits sorted by date descending
+  // Deposits filtered and sorted by date descending
   const sortedDeposits = useMemo(() => {
-    return [...deposits].sort(
+    let filtered = deposits;
+    if (searchQuery) {
+      const lowerQuery = searchQuery.toLowerCase();
+      filtered = deposits.filter((d) => {
+        // Busca por valor formatado, valor bruto, ou data
+        return formatCurrency(d.amount).toLowerCase().includes(lowerQuery)
+            || d.amount.toString().includes(lowerQuery)
+            || formatDate(d.date).toLowerCase().includes(lowerQuery);
+      });
+    }
+    return [...filtered].sort(
       (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
     );
-  }, [deposits]);
+  }, [deposits, searchQuery]);
 
   // Handlers
   const handleDeposit = async (amount: number, accountId: string) => {
@@ -447,11 +459,29 @@ export function GoalDetailScreen({ goal: initialGoal, onBack, goals, deposits: a
             Histórico de Depósitos
           </Text>
 
+          {deposits.length > 0 && (
+            <View style={[styles.searchContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Ionicons name="search" size={18} color={colors.mutedForeground} />
+              <TextInput
+                style={[styles.searchInput, { color: colors.foreground }]}
+                placeholder="Buscar (data, valor...)"
+                placeholderTextColor={colors.mutedForeground}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+              />
+              {searchQuery.length > 0 && (
+                <TouchableOpacity onPress={() => setSearchQuery('')}>
+                  <Ionicons name="close-circle" size={18} color={colors.mutedForeground} />
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
           {sortedDeposits.length === 0 ? (
             <View style={[styles.emptyState, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <Ionicons name="receipt-outline" size={36} color={colors.mutedForeground} />
+              <Ionicons name="search-outline" size={36} color={colors.mutedForeground} />
               <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
-                Nenhum depósito registrado ainda
+                {searchQuery ? 'Nenhum resultado encontrado' : 'Nenhum depósito registrado ainda'}
               </Text>
             </View>
           ) : (
@@ -715,6 +745,21 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 14,
     textAlign: 'center',
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    height: 40,
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    gap: 8,
+    marginBottom: 4,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    height: '100%',
   },
   depositsList: {
     gap: 8,

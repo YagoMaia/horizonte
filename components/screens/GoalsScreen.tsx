@@ -95,6 +95,27 @@ export function GoalsScreen({ onGoalPress, goals, loading, error, createGoal, re
     );
   }
 
+  const sortedGoals = React.useMemo(() => {
+    return [...goals].sort((a, b) => {
+      const aCompleted = a.accumulatedAmount >= a.targetAmount;
+      const bCompleted = b.accumulatedAmount >= b.targetAmount;
+
+      // 1. Concluídas sempre por último
+      if (aCompleted && !bCompleted) return 1;
+      if (!aCompleted && bCompleted) return -1;
+
+      // 2. Metas com prazo vêm primeiro (ordenadas pelo prazo mais próximo)
+      if (a.deadline && b.deadline) {
+        return new Date(a.deadline).getTime() - new Date(b.deadline).getTime();
+      }
+      if (a.deadline && !b.deadline) return -1;
+      if (!a.deadline && b.deadline) return 1;
+
+      // 3. Empate (sem prazo) -> data de criação (mais recentes primeiro)
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
+  }, [goals]);
+
   // Goals list
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -113,7 +134,7 @@ export function GoalsScreen({ onGoalPress, goals, loading, error, createGoal, re
 
         {/* Goal cards */}
         <View style={styles.goalsList}>
-          {goals.map((goal) => {
+          {sortedGoals.map((goal) => {
             const progress = calculateProgress(goal.accumulatedAmount, goal.targetAmount);
             const isCompleted = goal.accumulatedAmount >= goal.targetAmount;
             const isInHorizonte = activeGoalIds.includes(goal.id);
