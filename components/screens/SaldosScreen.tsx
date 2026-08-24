@@ -124,11 +124,13 @@ export function SaldosScreen() {
         if (tx.type === 'receita' && tx.paid) {
           income += tx.amount;
         } else if (tx.type === 'despesa') {
+          // Ignora o pagamento da fatura em si para não duplicar o gasto
+          // (já que as compras no crédito individuais já estão sendo somadas)
+          const isInvoicePayment = tx.description.startsWith('Pagamento Fatura -') || tx.description.startsWith('Antecipação Fatura -');
+
           if (tx.paymentMethod === 'credito') {
-            // Conta TODAS as compras de crédito do mês (não há transações virtuais de fatura aqui)
             expenseCredit += tx.amount;
-          } else if (tx.paid) {
-            // Débito só conta se estiver pago
+          } else if (tx.paid && !isInvoicePayment) {
             expenseDebit += tx.amount;
           }
         }
@@ -355,17 +357,24 @@ export function SaldosScreen() {
             <Text style={styles.balanceStatText}>{formatCurrency(currentMonthStats.income)}</Text>
           </View>
           <View style={styles.balanceDivider} />
-          <View style={styles.balanceStat}>
+          <View style={{ flexDirection: 'column', alignItems: 'flex-start', flex: 1 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
               <Ionicons name='arrow-down-circle' size={16} color='rgba(255,255,255,0.8)' />
               <Text style={styles.balanceStatText}>{formatCurrency(currentMonthStats.expense)}</Text>
             </View>
             {(currentMonthStats.expenseCredit > 0 || currentMonthStats.expenseDebit > 0) && (
-              <Text style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)', marginTop: 2 }}>
-                {currentMonthStats.expenseDebit > 0 ? `Déb.: ${formatCurrency(currentMonthStats.expenseDebit)}` : ''}
-                {currentMonthStats.expenseDebit > 0 && currentMonthStats.expenseCredit > 0 ? ' | ' : ''}
-                {currentMonthStats.expenseCredit > 0 ? `Créd.: ${formatCurrency(currentMonthStats.expenseCredit)}` : ''}
-              </Text>
+              <View style={{ marginTop: 2 }}>
+                {currentMonthStats.expenseDebit > 0 && (
+                  <Text style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)' }}>
+                    Déb.: {formatCurrency(currentMonthStats.expenseDebit)}
+                  </Text>
+                )}
+                {currentMonthStats.expenseCredit > 0 && (
+                  <Text style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)' }}>
+                    Créd.: {formatCurrency(currentMonthStats.expenseCredit)}
+                  </Text>
+                )}
+              </View>
             )}
           </View>
         </View>
