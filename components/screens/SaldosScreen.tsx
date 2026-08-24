@@ -357,27 +357,18 @@ export function SaldosScreen() {
             <Text style={styles.balanceStatText}>{formatCurrency(currentMonthStats.income)}</Text>
           </View>
           <View style={styles.balanceDivider} />
-          <View style={{ flexDirection: 'column', alignItems: 'flex-start', flex: 1 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-              <Ionicons name='arrow-down-circle' size={16} color='rgba(255,255,255,0.8)' />
-              <Text style={styles.balanceStatText}>{formatCurrency(currentMonthStats.expense)}</Text>
-            </View>
-            {(currentMonthStats.expenseCredit > 0 || currentMonthStats.expenseDebit > 0) && (
-              <View style={{ marginTop: 2 }}>
-                {currentMonthStats.expenseDebit > 0 && (
-                  <Text style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)' }}>
-                    Déb.: {formatCurrency(currentMonthStats.expenseDebit)}
-                  </Text>
-                )}
-                {currentMonthStats.expenseCredit > 0 && (
-                  <Text style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)' }}>
-                    Créd.: {formatCurrency(currentMonthStats.expenseCredit)}
-                  </Text>
-                )}
-              </View>
-            )}
+          <View style={styles.balanceStat}>
+            <Ionicons name='arrow-down-circle' size={16} color='rgba(255,255,255,0.8)' />
+            <Text style={styles.balanceStatText}>{formatCurrency(currentMonthStats.expense)}</Text>
           </View>
         </View>
+        {(currentMonthStats.expenseCredit > 0 && currentMonthStats.expenseDebit > 0) && (
+          <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.65)', marginTop: 2 }}>
+            Déb. {formatCurrency(currentMonthStats.expenseDebit)}
+            {'  ·  '}
+            Créd. {formatCurrency(currentMonthStats.expenseCredit)}
+          </Text>
+        )}
       </View>
 
       {/* BANNER DE PENDÊNCIAS */}
