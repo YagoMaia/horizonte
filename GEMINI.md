@@ -40,9 +40,11 @@ Se uma ação falhar ou o sistema entrar em estado inconsistente:
 
 ## 6. ESPECIFICAÇÕES TÉCNICAS (Project Domain)
 - **Stack:** Expo (React Native), TypeScript, Context API, AsyncStorage, Ionicons.
-- **Offline-First:** O `useStore.ts` é o Single Source of Truth.
-- **Lógica de Cartão:** O fechamento/vencimento de faturas é crítico; alterações no processamento de transações devem respeitar o ciclo financeiro definido em `CartaoScreen.tsx`.
-- **Projeções:** O fluxo de caixa baseia-se em recorrências. Nunca altere a lógica de projeção sem validar a função de cálculo de saldo futuro.
+- **Offline-First:** O `useStore.ts` é o Single Source of Truth para transações e contas; `useSavingsGoals.ts` gerencia metas e depósitos.
+- **Lógica de Cartão:** O fechamento/vencimento de faturas é crítico; alterações no processamento de transações devem respeitar o ciclo financeiro definido em `CartaoScreen.tsx`. O pagamento de fatura não deve duplicar saídas no extrato analítico (`SaldosScreen.tsx`).
+- **Sincronização de Metas:** Aportes e resgates de metas (`useSavingsGoals.ts`) sincronizam deterministicamente com transações via prefixos `tx_` e `tx_withdraw_`.
+- **Projeções e Horizonte:** O fluxo de caixa baseia-se em recorrências e metas ativas (ex: reserva de emergência). Nunca altere a lógica de projeção sem validar a função de cálculo de saldo futuro e a neutralidade de transferências internas.
+- **Documentação de Referência:** Consulte `docs/ARCHITECTURE.md` para fluxo de dados e `docs/DOMINIO_FINANCEIRO.md` para regras contábeis e matemáticas.
 
 ## 7. CONVENÇÕES DE CÓDIGO (Machine-Oriented Standards)
 - **Componentes:** Funcionais com Hooks. Estilos no final do arquivo via `StyleSheet.create()`.

@@ -16,6 +16,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '@/hooks/useTheme';
 import {
   calculateCreditCardInvoice,
@@ -61,6 +62,28 @@ export function SaldosScreen() {
   const [displayLimit, setDisplayLimit] = useState(20);
   const [recurrenceDeleteData, setRecurrenceDeleteData] = useState<string | null>(null);
   const [simpleDeleteData, setSimpleDeleteData] = useState<Transaction | null>(null);
+  const [activeAccountIds, setActiveAccountIds] = useState<string[]>([]);
+
+  React.useEffect(() => {
+    const loadActiveAccounts = async () => {
+      try {
+        const saved = await AsyncStorage.getItem('@horizonte:active_accounts');
+        if (saved) setActiveAccountIds(JSON.parse(saved));
+      } catch (e) {
+        console.error(e);
+      }
+    };
+    loadActiveAccounts();
+  }, []);
+
+  const customTotalBalance = useMemo(() => {
+    if (activeAccountIds.length === 0) return totalBalance;
+    return accounts.reduce((acc, account) => {
+      if (account.type === 'cartao_credito') return acc;
+      if (!activeAccountIds.includes(account.id)) return acc;
+      return acc + account.balance;
+    }, 0);
+  }, [accounts, activeAccountIds, totalBalance]);
   
   const overduePendingTransactions = useMemo(() => {
     const today = new Date();
@@ -349,8 +372,10 @@ export function SaldosScreen() {
     <View style={{ gap: 16, paddingBottom: 8 }}>
       {/* 1. CARD DE SALDO TOTAL */}
       <View style={[styles.balanceCard, { backgroundColor: colors.primary }]}>
-        <Text style={styles.balanceLabel}>Saldo Total</Text>
-        <Text style={styles.balanceValue}>{formatCurrency(totalBalance)}</Text>
+        <Text style={styles.balanceLabel}>
+          Saldo Total {activeAccountIds.length > 0 ? '(Contas do Horizonte)' : ''}
+        </Text>
+        <Text style={styles.balanceValue}>{formatCurrency(customTotalBalance)}</Text>
         <View style={styles.balanceRow}>
           <View style={styles.balanceStat}>
             <Ionicons name='arrow-up-circle' size={16} color='rgba(255,255,255,0.8)' />
