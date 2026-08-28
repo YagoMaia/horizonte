@@ -43,7 +43,7 @@ export function SaldosScreen() {
     tags,
     projects,
     goals,
-    getProjectSpent,
+    getProjectStats,
     getGoalSavedAmount,
     totalBalance,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -190,12 +190,19 @@ export function SaldosScreen() {
   const activeProjectStats = useMemo(() => {
     const activeProjects = projects.filter(p => p.active !== false);
     return activeProjects.map((project) => {
-      const totalSpent = getProjectSpent(project.id);
-      const progress = project.targetBudget > 0 ? Math.min(totalSpent / project.targetBudget, 1) : 0;
-      const isOverBudget = totalSpent > project.targetBudget;
-      return { ...project, totalSpent, progress, isOverBudget };
+      const stats = getProjectStats(project.id);
+      const progress = project.targetBudget > 0 ? Math.min(stats.spent / project.targetBudget, 1) : 0;
+      const isOverBudget = stats.spent > project.targetBudget;
+      return { 
+        ...project, 
+        totalIncome: stats.income,
+        totalSpent: stats.spent, 
+        available: stats.available,
+        progress, 
+        isOverBudget 
+      };
     });
-  }, [projects, getProjectSpent]);
+  }, [projects, getProjectStats]);
 
   // CÁLCULO METAS ATIVAS
   const activeGoalStats = useMemo(() => {
@@ -378,11 +385,17 @@ export function SaldosScreen() {
                         <View style={[styles.progressBarFill, { backgroundColor: project.isOverBudget ? colors.destructive : project.color, width: `${project.progress * 100}%` }]} />
                       </View>
                       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <Text style={[styles.secondaryText, { color: project.isOverBudget ? colors.destructive : colors.foreground, fontWeight: '800', fontSize: 14 }]}>{formatCurrency(project.totalSpent)}</Text>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                          <Text style={[styles.secondaryText, { color: colors.mutedForeground, fontSize: 12 }]}>Meta:</Text>
-                          <Text style={[styles.secondaryText, { color: colors.foreground, fontSize: 12, fontWeight: '600' }]}>{formatCurrency(project.targetBudget)}</Text>
-                        </View>
+                        <Text style={[styles.secondaryText, { color: project.available < 0 ? colors.destructive : colors.primary, fontWeight: '800', fontSize: 14 }]}>
+                          Disponível: {formatCurrency(project.available)}
+                        </Text>
+                      </View>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
+                        <Text style={[styles.secondaryText, { color: colors.mutedForeground, fontSize: 12 }]}>
+                          Juntei: {formatCurrency(project.totalIncome)}
+                        </Text>
+                        <Text style={[styles.secondaryText, { color: colors.mutedForeground, fontSize: 12 }]}>
+                          Gasto: {formatCurrency(project.totalSpent)} / {formatCurrency(project.targetBudget)}
+                        </Text>
                       </View>
                     </View>
                   </TouchableOpacity>

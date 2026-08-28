@@ -10,6 +10,12 @@ import { StoreProvider } from '@/context/StoreContext'
 import { ThemeProvider, useThemeContext } from '@/context/ThemeContext'
 import * as NotificationService from '../services/notificationService'
 
+// Suprime warning falso-positivo do Reanimated 3.16 com Switch nativo (bug conhecido)
+import { LogBox as RNLogBox } from 'react-native'
+RNLogBox.ignoreLogs([
+  "It looks like you might be using shared value's .value inside reanimated inline style",
+])
+
 
 function AppContent() {
   const { isDark, colors } = useThemeContext()

@@ -551,8 +551,19 @@ export function useStore() {
       }
 
       if (notifPrefsRaw[1] !== null) {
-        setNotificationPreferences(JSON.parse(notifPrefsRaw[1]));
+      const prefs = JSON.parse(notifPrefsRaw[1]);
+      setNotificationPreferences(prefs);
+      // Schedule notifications based on loaded preferences
+      if (prefs.dailyReminders) {
+        NotificationService.scheduleDailyReminder(prefs.dailyReminderTime.hour, prefs.dailyReminderTime.minute);
       }
+      if (prefs.expenseReminders) {
+        NotificationService.scheduleExpenseReminder(prefs.expenseReminderTime.hour, prefs.expenseReminderTime.minute);
+      }
+      if (prefs.creditCardAlerts) {
+        NotificationService.scheduleCreditCardAlert(prefs.creditCardAlertTime.hour, prefs.creditCardAlertTime.minute);
+      }
+    }
 
       if (homeLayoutRaw[1] !== null) {
         setHomeLayout(JSON.parse(homeLayoutRaw[1]));
@@ -1133,20 +1144,29 @@ export function useStore() {
     await saveTransactions(updatedTxs);
   }, [transactions, saveTransactions]);
 
-  const getProjectSpent = useCallback((projectId: string) => {
-    if (!projectId) return 0;
+  const getProjectStats = useCallback((projectId: string) => {
+    if (!projectId) return { income: 0, spent: 0, available: 0 };
     const projectTxs = transactions.filter(tx => tx.projectId === projectId);
-    return projectTxs.reduce((sum, tx) => {
+    
+    let income = 0;
+    let spent = 0;
+    
+    projectTxs.forEach(tx => {
       const amount = Number(tx.amount) || 0;
       if (tx.type === 'despesa' || tx.type === 'transferencia') {
-        return sum + amount;
+        spent += amount;
+      } else if (tx.type === 'receita') {
+        income += amount;
       }
-      if (tx.type === 'receita') {
-        return sum - amount;
-      }
-      return sum;
-    }, 0);
+    });
+    
+    return { income, spent, available: income - spent };
   }, [transactions]);
+
+  // Mantendo para compatibilidade ou uso legado
+  const getProjectSpent = useCallback((projectId: string) => {
+    return getProjectStats(projectId).spent;
+  }, [getProjectStats]);
 
   const getGoalSavedAmount = useCallback((goalId: string) => {
     if (!goalId) return 0;
@@ -1204,6 +1224,7 @@ export function useStore() {
     updateProject,
     deleteProject,
     getProjectSpent,
+    getProjectStats,
     getInvoiceTotalForMonth,
     goals,
     addGoal,

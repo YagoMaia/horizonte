@@ -24,7 +24,7 @@ const PROJECT_COLORS = [
 export function ProjetosScreen() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  const { transactions, projects, getProjectSpent, addProject, updateProject, deleteProject } = useStoreContext();
+  const { transactions, projects, getProjectStats, addProject, updateProject, deleteProject } = useStoreContext();
 
   const [modalVisible, setModalVisible] = useState(false);
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
@@ -116,20 +116,22 @@ export function ProjetosScreen() {
 
   const projectStats = useMemo(() => {
     return projects.map((project) => {
-      const totalSpent = getProjectSpent(project.id);
+      const stats = getProjectStats(project.id);
 
-      const progress = project.targetBudget > 0 ? Math.min(totalSpent / project.targetBudget, 1) : 0;
-      const isOverBudget = totalSpent > project.targetBudget;
+      const progress = project.targetBudget > 0 ? Math.min(stats.spent / project.targetBudget, 1) : 0;
+      const isOverBudget = stats.spent > project.targetBudget;
 
       return {
         ...project,
-        totalSpent,
+        totalIncome: stats.income,
+        totalSpent: stats.spent,
+        available: stats.available,
         progress,
         isOverBudget,
       };
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projects, getProjectSpent, transactions]);
+  }, [projects, getProjectStats, transactions]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -182,8 +184,8 @@ export function ProjetosScreen() {
                         {project.name}
                         {isInactive && <Text style={{ color: colors.mutedForeground, fontSize: 12, fontWeight: 'normal' }}> (Inativo)</Text>}
                       </Text>
-                      <Text style={[styles.spentText, { color: project.isOverBudget && !isInactive ? colors.destructive : colors.foreground, marginTop: 4 }]}>
-                        {formatCurrency(project.totalSpent)}
+                      <Text style={[styles.spentText, { color: project.available < 0 && !isInactive ? colors.destructive : colors.primary, marginTop: 4, fontWeight: '600' }]}>
+                        Disponível: {formatCurrency(project.available)}
                       </Text>
                     </View>
                   </View>
@@ -210,9 +212,11 @@ export function ProjetosScreen() {
                     />
                   </View>
                   <View style={styles.budgetLabels}>
-                    <Text style={[styles.budgetLabelText, { color: colors.mutedForeground }]}>Gasto</Text>
                     <Text style={[styles.budgetLabelText, { color: colors.mutedForeground }]}>
-                      Orçamento: {formatCurrency(project.targetBudget)}
+                      Juntei: {formatCurrency(project.totalIncome)}
+                    </Text>
+                    <Text style={[styles.budgetLabelText, { color: colors.mutedForeground }]}>
+                      Gasto: {formatCurrency(project.totalSpent)} / Orç: {formatCurrency(project.targetBudget)}
                     </Text>
                   </View>
                 </View>
