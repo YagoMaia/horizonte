@@ -1,7 +1,7 @@
 // hooks/useStore.ts
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Transaction, Account, Tag, DEFAULT_TAGS, Project, NotificationPreferences, WishlistItem, UserSettings, PaymentPreference } from '@/constants/types';
+import { Transaction, Account, Tag, DEFAULT_TAGS, Project, NotificationPreferences, UserSettings } from '@/constants/types';
 import * as NotificationService from '../services/notificationService';
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { addMonths, addYears, addWeeks, addDays, setDate } from 'date-fns';
@@ -19,7 +19,6 @@ const STORAGE_KEYS = {
   GOALS: '@horizonte:goals',
   HOME_LAYOUT: '@horizonte:home_layout',
   TOTAIS_LAYOUT: '@horizonte:totais_layout',
-  WISHLIST: '@horizonte:wishlist',
   USER_SETTINGS: '@horizonte:user_settings',
 };
 
@@ -61,7 +60,7 @@ export function useStore() {
     { id: 'category', visible: true },
     { id: 'period', visible: true },
   ]);
-  const [wishlist, setWishlist] = useState<WishlistItem[]>([]);
+
   const [userSettings, setUserSettings] = useState<UserSettings>(DEFAULT_USER_SETTINGS);
   const [loading, setLoading] = useState(true);
 
@@ -287,55 +286,14 @@ export function useStore() {
     await AsyncStorage.setItem(STORAGE_KEYS.TOTAIS_LAYOUT, JSON.stringify(newLayout));
   }, []);
 
-  // --- MÉTODOS PARA WISHLIST ---
-
-  const saveWishlist = useCallback(async (data: WishlistItem[]) => {
-    await AsyncStorage.setItem(STORAGE_KEYS.WISHLIST, JSON.stringify(data));
-    setWishlist(data);
-  }, []);
-
   const saveUserSettings = useCallback(async (data: UserSettings) => {
     await AsyncStorage.setItem(STORAGE_KEYS.USER_SETTINGS, JSON.stringify(data));
     setUserSettings(data);
   }, []);
 
-  const addWishlistItem = useCallback(async (item: Omit<WishlistItem, 'id' | 'status' | 'createdAt'>) => {
-    const newItem: WishlistItem = {
-      ...item,
-      id: Date.now().toString(),
-      status: 'PENDENTE',
-      createdAt: new Date().toISOString(),
-    };
-    const updated = [...wishlist, newItem];
-    await saveWishlist(updated);
-  }, [wishlist, saveWishlist]);
-
-  const editWishlistItem = useCallback(async (updatedItem: WishlistItem) => {
-    const updated = wishlist.map(i => i.id === updatedItem.id ? updatedItem : i);
-    await saveWishlist(updated);
-  }, [wishlist, saveWishlist]);
-
-  const deleteWishlistItem = useCallback(async (id: string) => {
-    const updated = wishlist.filter(i => i.id !== id);
-    await saveWishlist(updated);
-  }, [wishlist, saveWishlist]);
-
-  const markAsBought = useCallback(async (id: string) => {
-    const updated = wishlist.map(i =>
-      i.id === id ? { ...i, status: 'COMPRADO' as const } : i
-    );
-    await saveWishlist(updated);
-  }, [wishlist, saveWishlist]);
-
   const calculateAvailableCashForMonth = useCallback((targetMonth: number, targetYear: number) => {
     const currentTotalBalance = accounts.reduce((sum, a) => {
       if (a.type === 'cartao_credito') return sum;
-      
-      const isIncluded = userSettings.simulatorIncludedAccounts 
-        ? userSettings.simulatorIncludedAccounts.includes(a.id)
-        : true;
-        
-      if (!isIncluded) return sum;
 
       return sum + a.balance;
     }, 0);
@@ -351,11 +309,6 @@ export function useStore() {
     const currentYear = now.getFullYear();
 
     pendentes.forEach(tx => {
-      const isAccountIncluded = userSettings.simulatorIncludedAccounts 
-        ? userSettings.simulatorIncludedAccounts.includes(tx.accountId)
-        : true;
-
-      if (!isAccountIncluded) return;
 
       const txDate = new Date(tx.date);
       const txYear = txDate.getFullYear();
@@ -390,12 +343,6 @@ export function useStore() {
   const getMonthBreakdown = useCallback((targetMonth: number, targetYear: number) => {
     const currentTotalBalance = accounts.reduce((sum, a) => {
       if (a.type === 'cartao_credito') return sum;
-      
-      const isIncluded = userSettings.simulatorIncludedAccounts 
-        ? userSettings.simulatorIncludedAccounts.includes(a.id)
-        : true;
-        
-      if (!isIncluded) return sum;
 
       return sum + a.balance;
     }, 0);
@@ -409,11 +356,6 @@ export function useStore() {
     const currentYear = now.getFullYear();
 
     pendentes.forEach(tx => {
-      const isAccountIncluded = userSettings.simulatorIncludedAccounts 
-        ? userSettings.simulatorIncludedAccounts.includes(tx.accountId)
-        : true;
-
-      if (!isAccountIncluded) return;
 
       const txDate = new Date(tx.date);
       const txYear = txDate.getFullYear();
@@ -447,267 +389,7 @@ export function useStore() {
     };
   }, [accounts, transactions, userSettings]);
 
-  const evaluateItemAffordability = useCallback((itemPrice: number | string, preference: PaymentPreference = 'QUALQUER', userInstallments?: number) => {
-    // Higienizador: Remove 'R$', espaços, converte vírgula para ponto e faz o parse seguro
-    const cleanPrice = (val: number | string): number => {
-      if (typeof val === 'number') return val;
-      if (!val) return 0;
-      const cleanedString = String(val).replace(/[R$\s]/g, '').replace(',', '.');
-      return Number(cleanedString) || 0;
-    };
-    
-    const price = cleanPrice(itemPrice);
 
-    // LOG DE SEGURANÇA
-    const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
-    const currentAvailable = calculateAvailableCashForMonth(currentMonth, currentYear);
-  
-    // 1. Dinheiro Livre Agora (A_VISTA)
-    if (preference !== 'CREDITO' && price <= currentAvailable) {
-      return {
-        status: 'VERDE',
-        suggestedMethod: 'A_VISTA',
-        suggestedMessage: 'Dinheiro disponível. Pode comprar no PIX ou Débito.',
-        bestFutureMonth: currentMonth,
-        currentAvailable
-      };
-    }
-  
-    // --- TRAVA COMPORTAMENTAL: TETO DE FATURA ---
-    const maxCreditSpend = userSettings.maxMonthlyCreditSpend !== undefined && userSettings.maxMonthlyCreditSpend > 0 
-      ? userSettings.maxMonthlyCreditSpend 
-      : Infinity;
-
-    const creditSafetyMargin = userSettings.creditSafetyMargin || 0;
-    const effectiveMaxCreditSpend = maxCreditSpend === Infinity ? Infinity : maxCreditSpend - creditSafetyMargin;
-
-    const creditCardIds = accounts.filter(a => a.type === 'cartao_credito').map(c => c.id);
-
-    // Lógica para virada de mês/ano segura
-    let nextMonth = currentMonth + 1;
-    let nextMonthYear = currentYear;
-    if (nextMonth > 11) {
-      nextMonth = 0;
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      nextMonthYear++;
-    }
-
-    const getCreditBillForMonth = (targetMonth: number, targetYear: number) => {
-      let total = 0;
-      transactions.forEach(tx => {
-        if (!tx.paid && tx.type !== 'receita' && creditCardIds.includes(tx.accountId)) {
-          const account = accounts.find(a => a.id === tx.accountId);
-          if (account) {
-            const invoice = getInvoiceForTx(tx.date, account);
-            if (invoice.viewMonth === targetMonth && invoice.viewYear === targetYear) {
-              total += tx.amount;
-            }
-          }
-        }
-      });
-      return total;
-    };
-
-    const getCreditBillTransactionsForMonth = (targetMonth: number, targetYear: number) => {
-      return transactions.filter(tx => {
-        if (!tx.paid && tx.type !== 'receita' && creditCardIds.includes(tx.accountId)) {
-          const account = accounts.find(a => a.id === tx.accountId);
-          if (account) {
-            const invoice = getInvoiceForTx(tx.date, account);
-            return invoice.viewMonth === targetMonth && invoice.viewYear === targetYear;
-          }
-        }
-        return false;
-      });
-    };
-
-    // Cartão representativo para mapear datas de compra → mês real da fatura
-    const representativeCard = accounts.find(a => a.type === 'cartao_credito') || { closingDay: 25, dueDay: 5 };
-
-    const currentMonthBill = getCreditBillForMonth(currentMonth, currentYear);
-  
-    // 2. Cartão de Crédito (CARTAO_1X) - Verifica Fluxo E Limite (apenas para QUALQUER)
-    if (preference === 'QUALQUER') {
-      // Mapeia a compra de hoje para a fatura real usando closingDay/dueDay
-      const todayInvoice = getInvoiceForTx(now.toISOString(), representativeCard);
-      const invoiceMonth1x = todayInvoice.viewMonth;
-      const invoiceYear1x = todayInvoice.viewYear;
-      const invoiceBill1x = getCreditBillForMonth(invoiceMonth1x, invoiceYear1x);
-      const invoiceAvailable1x = calculateAvailableCashForMonth(invoiceMonth1x, invoiceYear1x);
-
-      if (price <= invoiceAvailable1x && (price + invoiceBill1x) <= effectiveMaxCreditSpend) {
-        return {
-          status: 'VERDE',
-          suggestedMethod: 'CARTAO_1X',
-          suggestedMessage: 'Compre no Crédito hoje em 1x. Seu fluxo de caixa cobre a fatura.',
-          bestFutureMonth: invoiceMonth1x,
-          currentAvailable,
-          creditData: { maxCreditSpend, creditSafetyMargin, currentMonthBill: invoiceBill1x, installmentValue: price, installments: 1, effectiveMaxCreditSpend, billTransactions: getCreditBillTransactionsForMonth(invoiceMonth1x, invoiceYear1x) }
-        };
-      }
-    }
-  
-    // 3. Lógica específica para quando o usuário escolhe CREDITO
-    if (preference === 'CREDITO') {
-      const installments = userInstallments && userInstallments >= 2 ? userInstallments : 2;
-      const installmentValue = price / installments;
-      
-      let bestFutureMonthForInstallments: number | undefined;
-      let bestFutureYearForInstallments: number | undefined;
-      let startOffsetThatWorked = -1;
-
-      for (let startOffset = 0; startOffset <= 24; startOffset++) {
-        let isSafe = true;
-        for (let i = 0; i < installments; i++) {
-          // Simula a data em que a parcela i seria cobrada no cartão
-          const simulatedChargeDate = new Date(currentYear, currentMonth + startOffset + i, now.getDate(), 12, 0, 0);
-          const invoiceInfo = getInvoiceForTx(simulatedChargeDate.toISOString(), representativeCard);
-          const m = invoiceInfo.viewMonth;
-          const y = invoiceInfo.viewYear;
-          
-          const monthBill = getCreditBillForMonth(m, y);
-          if ((installmentValue + monthBill) > effectiveMaxCreditSpend) {
-            isSafe = false;
-            break;
-          }
-
-          const monthAvailable = calculateAvailableCashForMonth(m, y);
-          const accumulatedInstallmentCost = installmentValue * (i + 1);
-  
-          if (accumulatedInstallmentCost > monthAvailable) {
-            isSafe = false;
-            break;
-          }
-        }
-
-        if (isSafe) {
-          let computedMonth = currentMonth + startOffset;
-          let computedYear = currentYear;
-          while (computedMonth > 11) {
-            computedMonth -= 12;
-            computedYear++;
-          }
-          bestFutureMonthForInstallments = computedMonth;
-          bestFutureYearForInstallments = computedYear;
-          startOffsetThatWorked = startOffset;
-          break;
-        }
-      }
-
-      if (startOffsetThatWorked === 0) {
-        return {
-          status: 'VERDE',
-          suggestedMethod: 'PARCELADO',
-          suggestedMessage: `Pode comprar hoje parcelado em ${installments}x de R$ ${installmentValue.toFixed(2)} com total segurança.`,
-          bestFutureMonth: currentMonth,
-          currentAvailable,
-          creditData: { maxCreditSpend, creditSafetyMargin, currentMonthBill, installmentValue, installments, effectiveMaxCreditSpend, billTransactions: getCreditBillTransactionsForMonth(currentMonth, currentYear) }
-        };
-      } else if (startOffsetThatWorked > 0 && bestFutureMonthForInstallments !== undefined && bestFutureYearForInstallments !== undefined) {
-        const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
-        return {
-          status: 'AMARELO',
-          suggestedMethod: 'PARCELADO',
-          suggestedMessage: `Aguarde para comprar no cartão em ${monthNames[bestFutureMonthForInstallments]} de ${bestFutureYearForInstallments}. Assim, as parcelas de ${installments}x ficarão seguras.`,
-          bestFutureMonth: bestFutureMonthForInstallments,
-          currentAvailable,
-          creditData: { maxCreditSpend, creditSafetyMargin, currentMonthBill: getCreditBillForMonth(bestFutureMonthForInstallments, bestFutureYearForInstallments), installmentValue, installments, effectiveMaxCreditSpend, billTransactions: getCreditBillTransactionsForMonth(bestFutureMonthForInstallments, bestFutureYearForInstallments) }
-        };
-      } else {
-        return {
-          status: 'VERMELHO',
-          suggestedMethod: 'CREDITO_RECUSADO',
-          suggestedMessage: `Parcelamento recusado. O valor de ${installments}x estoura o seu Teto do Cartão mensal (já descontada a margem) ou o seu fluxo de caixa não comporta essas parcelas nem mesmo no futuro.`,
-          bestFutureMonth: undefined,
-          currentAvailable,
-          creditData: { maxCreditSpend, creditSafetyMargin, currentMonthBill, installmentValue, installments, effectiveMaxCreditSpend, billTransactions: getCreditBillTransactionsForMonth(currentMonth, currentYear) }
-        };
-      }
-    }
-
-    // 4. Parcelamento Seguro Automático (apenas para QUALQUER)
-    let canInstallment = false;
-    let bestInstallments = 0;
-    let bestInstallmentValue = 0;
-  
-    if (preference === 'QUALQUER') {
-      for (let parcels = 2; parcels <= 12; parcels++) {
-        const installmentValue = price / parcels;
-        let isSafe = true;
-        
-        for (let i = 0; i < parcels; i++) {
-          // Simula a data em que a parcela i seria cobrada no cartão
-          const simulatedChargeDate = new Date(currentYear, currentMonth + i, now.getDate(), 12, 0, 0);
-          const invoiceInfo = getInvoiceForTx(simulatedChargeDate.toISOString(), representativeCard);
-          const m = invoiceInfo.viewMonth;
-          const y = invoiceInfo.viewYear;
-          
-          const monthBill = getCreditBillForMonth(m, y);
-          if ((installmentValue + monthBill) > effectiveMaxCreditSpend) {
-            isSafe = false;
-            break;
-          }
-
-          const monthAvailable = calculateAvailableCashForMonth(m, y);
-          const accumulatedInstallmentCost = installmentValue * (i + 1);
-  
-          if (accumulatedInstallmentCost > monthAvailable) {
-            isSafe = false;
-            break;
-          }
-        }
-  
-        if (isSafe) {
-          canInstallment = true;
-          bestInstallments = parcels;
-          bestInstallmentValue = installmentValue;
-          break;
-        }
-      }
-    }
-  
-    if (canInstallment) {
-      return {
-        status: 'AMARELO',
-        suggestedMethod: 'PARCELADO',
-        suggestedMessage: `Pode ser parcelado de forma segura hoje em até ${bestInstallments}x de R$ ${bestInstallmentValue.toFixed(2)}.`,
-        bestFutureMonth: undefined,
-        currentAvailable
-      };
-    }
-  
-    // 5. Necessidade de Poupar (POUPAR) para compra à vista (usado se QUALQUER ou DEBITO falharem hoje)
-    let bestFutureMonth: number | undefined;
-    let bestFutureYear: number | undefined;
-  
-    for (let i = 1; i <= 24; i++) { // Projeta até 2 anos
-      let m = currentMonth + i;
-      let y = currentYear;
-      while (m > 11) {
-        m -= 12;
-        y++;
-      }
-      const futureAvailable = calculateAvailableCashForMonth(m, y);
-      if (price <= futureAvailable) {
-        bestFutureMonth = m;
-        bestFutureYear = y;
-        break;
-      }
-    }
-  
-    const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
-    const monthText = bestFutureMonth !== undefined ? `${monthNames[bestFutureMonth]} de ${bestFutureYear}` : 'um mês futuro';
-  
-    return {
-      status: 'VERMELHO',
-      suggestedMethod: 'POUPAR',
-      suggestedMessage: `Sem margem. Guarde dinheiro e compre à vista em ${monthText}.`,
-      bestFutureMonth,
-      currentAvailable
-    };
-  }, [calculateAvailableCashForMonth, accounts, transactions, userSettings]);
 
   const calculateAvailableCash = useCallback(() => {
     const now = new Date();
@@ -719,23 +401,7 @@ export function useStore() {
     await saveUserSettings(updated);
   }, [userSettings, saveUserSettings]);
 
-  const toggleSimulatorAccount = useCallback((accountId: string) => {
-    let currentList = userSettings.simulatorIncludedAccounts;
-    if (!currentList) {
-      currentList = accounts.filter(a => a.type !== 'cartao_credito').map(a => a.id).filter(id => id !== accountId);
-    } else {
-      if (currentList.includes(accountId)) {
-        currentList = currentList.filter(id => id !== accountId);
-      } else {
-        currentList = [...currentList, accountId];
-      }
-    }
-    updateUserSettings({ simulatorIncludedAccounts: currentList });
-  }, [userSettings.simulatorIncludedAccounts, accounts, updateUserSettings]);
 
-  const selectSimulatorCreditCard = useCallback((accountId: string | null) => {
-    updateUserSettings({ simulatorSelectedCreditCardId: accountId });
-  }, [updateUserSettings]);
 
   // --- DEMAIS MÉTODOS ---
 
@@ -850,7 +516,6 @@ export function useStore() {
         goalsRaw,
         homeLayoutRaw,
         totaisLayoutRaw,
-        wishlistRaw,
         userSettingsRaw
       ] = await AsyncStorage.multiGet([
           STORAGE_KEYS.TRANSACTIONS,
@@ -864,7 +529,6 @@ export function useStore() {
           STORAGE_KEYS.GOALS,
           STORAGE_KEYS.HOME_LAYOUT,
           STORAGE_KEYS.TOTAIS_LAYOUT,
-          STORAGE_KEYS.WISHLIST,
           STORAGE_KEYS.USER_SETTINGS,
         ]);
 
@@ -898,9 +562,7 @@ export function useStore() {
         setTotaisLayout(JSON.parse(totaisLayoutRaw[1]));
       }
 
-      if (wishlistRaw && wishlistRaw[1] !== null) {
-        setWishlist(JSON.parse(wishlistRaw[1]));
-      }
+
 
       if (userSettingsRaw && userSettingsRaw[1] !== null) {
         setUserSettings(JSON.parse(userSettingsRaw[1]));
@@ -934,7 +596,6 @@ export function useStore() {
       STORAGE_KEYS.GOALS,
       STORAGE_KEYS.HOME_LAYOUT,
       STORAGE_KEYS.TOTAIS_LAYOUT,
-      STORAGE_KEYS.WISHLIST,
       STORAGE_KEYS.USER_SETTINGS,
     ]);
     setTransactions(DEFAULT_TRANSACTIONS);
@@ -958,7 +619,6 @@ export function useStore() {
       { id: 'category', visible: true },
       { id: 'period', visible: true },
     ]);
-    setWishlist([]);
     setUserSettings(DEFAULT_USER_SETTINGS);
   }, []);
 
@@ -1578,17 +1238,12 @@ export function useStore() {
     updateHomeLayout,
     totaisLayout,
     updateTotaisLayout,
-    wishlist,
-    addWishlistItem,
-    editWishlistItem,
-    deleteWishlistItem,
-    markAsBought,
+
+
     calculateAvailableCash,
     calculateAvailableCashForMonth,
     getMonthBreakdown,
-    evaluateItemAffordability,
-    toggleSimulatorAccount,
-    selectSimulatorCreditCard,
+
     userSettings,
     updateUserSettings,
     loading,

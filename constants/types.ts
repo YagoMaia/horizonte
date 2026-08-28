@@ -1,6 +1,6 @@
 // constants/types.ts
 
-export type TabType = 'saldos' | 'totais' | 'horizonte' | 'menu' | 'cartao' | 'contas' | 'projetos' | 'metas' | 'home_layout' | 'totais_layout' | 'wishlist'
+export type TabType = 'saldos' | 'totais' | 'horizonte' | 'menu' | 'cartao' | 'contas' | 'projetos' | 'metas' | 'home_layout' | 'totais_layout'
 
 export type TransactionType = 'receita' | 'despesa' | 'transferencia'
 
@@ -87,24 +87,9 @@ export interface Tag {
   color: string;
 }
 
-export type WishlistItemStatus = 'PENDENTE' | 'COMPRADO';
-export type PaymentPreference = 'DEBITO' | 'CREDITO' | 'QUALQUER';
-
-export interface WishlistItem {
-  id: string;
-  name: string;
-  price: number;
-  status: WishlistItemStatus;
-  createdAt: string;
-  paymentPreference?: PaymentPreference;
-  installments?: number;
-}
-
 export interface UserSettings {
   dailyAllowance: number;
   safetyMargin: number;
-  simulatorIncludedAccounts?: string[];
-  simulatorSelectedCreditCardId?: string | null;
   maxMonthlyCreditSpend?: number;
   creditSafetyMargin?: number;
 }

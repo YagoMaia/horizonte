@@ -40,11 +40,11 @@ const RECURRENCE_OPTIONS: { value: RecurrenceType; label: string }[] = [
 
 export default function AddTransactionScreen() {
   const router = useRouter();
-  const { accountId: initialAccountId, type: initialTypeStr, txId, wishlistId, initialDescription, initialAmount } = useLocalSearchParams<{ accountId?: string; type?: string; txId?: string; wishlistId?: string; initialDescription?: string; initialAmount?: string }>();
+  const { accountId: initialAccountId, type: initialTypeStr, txId, initialDescription, initialAmount } = useLocalSearchParams<{ accountId?: string; type?: string; txId?: string; initialDescription?: string; initialAmount?: string }>();
   const initialType = initialTypeStr as TransactionType | undefined;
 
   const { colors } = useTheme();
-  const { tags, projects, goals, accounts, transactions, addTransaction, updateTransaction, markAsBought } = useStoreContext();
+  const { tags, projects, goals, accounts, transactions, addTransaction, updateTransaction } = useStoreContext();
   const insets = useSafeAreaInsets();
   
   const transactionToEdit = useMemo(() => transactions.find(t => t.id === txId), [transactions, txId]);
@@ -327,9 +327,6 @@ export default function AddTransactionScreen() {
       }
     } else {
       addTransaction(txData);
-      if (wishlistId) {
-        markAsBought(wishlistId);
-      }
       router.back();
     }
   };
