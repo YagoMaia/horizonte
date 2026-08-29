@@ -72,6 +72,9 @@ export function AddTransactionModal({
   initialAccountId,
   initialType,
 }: AddTransactionModalProps) {
+  // Early bail: quando o modal está fechado, não executa nenhuma lógica pesada
+  if (!visible && !transactionToEdit) return null;
+
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const isEditing = !!transactionToEdit;

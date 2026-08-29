@@ -1,9 +1,10 @@
 // components/screens/HorizonteScreen.tsx
-import React, { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
   ScrollView,
+  FlatList,
   StyleSheet,
   TouchableOpacity,
   KeyboardAvoidingView,
@@ -82,9 +83,14 @@ export function HorizonteScreen() {
     useStoreContext();
   const { goals } = useSavingsGoals();
 
-  const today = new Date();
-  const [year, setYear] = useState(today.getFullYear());
-  const [month, setMonth] = useState(today.getMonth());
+  const startOfToday = useMemo(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }, []);
+
+  const [year, setYear] = useState(startOfToday.getFullYear());
+  const [month, setMonth] = useState(startOfToday.getMonth());
   const [selectedDay, setSelectedDay] = useState<any | null>(null);
   const [configModalVisible, setConfigModalVisible] = useState(false);
   const [activeAccountIds, setActiveAccountIds] = useState<string[]>([]);
@@ -169,27 +175,31 @@ export function HorizonteScreen() {
     } else setMonth((m) => m + 1);
   };
 
-  // Saldo das contas ativas + saldo acumulado das metas ativas no Horizonte
-  const activeGoalsBalance = goals
-    .filter((g) => activeGoalIds.includes(g.id))
-    .reduce((s, g) => s + g.accumulatedAmount, 0);
-
-  const activeBalance = accounts
-    .filter(
-      (a) => activeAccountIds.includes(a.id) && a.type !== "cartao_credito",
-    )
-    .reduce((s, a) => s + a.balance, 0) + activeGoalsBalance;
-
   // Set de IDs de metas ativas para uso no motor de projeção
-  const activeGoalIdSet = new Set(activeGoalIds);
+  const activeGoalIdSet = useMemo(() => new Set(activeGoalIds), [activeGoalIds]);
+
+  // Saldo das contas ativas + saldo acumulado das metas ativas no Horizonte
+  const activeGoalsBalance = useMemo(() => 
+    goals
+      .filter((g) => activeGoalIdSet.has(g.id))
+      .reduce((s, g) => s + g.accumulatedAmount, 0),
+  [goals, activeGoalIdSet]);
+
+  const activeBalance = useMemo(() => 
+    accounts
+      .filter(
+        (a) => activeAccountIds.includes(a.id) && a.type !== "cartao_credito",
+      )
+      .reduce((s, a) => s + a.balance, 0) + activeGoalsBalance,
+  [accounts, activeAccountIds, activeGoalsBalance]);
 
   // 👉 O MOTOR CONTÍNUO MULTI-MÊS
   const { resultsMap, firstNegativeDate } = useMemo(() => {
     const isPast =
-      year < today.getFullYear() ||
-      (year === today.getFullYear() && month < today.getMonth());
-    const startYear = isPast ? year : today.getFullYear();
-    const startMonth = isPast ? month : today.getMonth();
+      year < startOfToday.getFullYear() ||
+      (year === startOfToday.getFullYear() && month < startOfToday.getMonth());
+    const startYear = isPast ? year : startOfToday.getFullYear();
+    const startMonth = isPast ? month : startOfToday.getMonth();
 
     // 1. Descobre o saldo exato no início do mês de partida (desfazendo o futuro)
     // Consideramos apenas as contas ativas no planejamento
@@ -204,14 +214,15 @@ export function HorizonteScreen() {
         .map(a => a.id)
     );
 
+    const startMonthStr = String(startMonth + 1).padStart(2, '0');
+    const startMonthPrefix = `${startYear}-${startMonthStr}`;
+
     const txsToUndo = transactions.filter((tx) => {
-      if (!tx.paid) return false;
+      if (!tx.paid || !tx.date) return false;
       // Transações de cartão de crédito não afetam o saldo das contas bancárias diretamente.
       // O impacto no caixa vem das faturas virtuais (creditExpense) ou do pagamento da fatura (paymentMethod='debito').
       if (tx.paymentMethod === 'credito') return false;
-      const d = new Date(tx.date);
-      const isFromStartMonthOnwards = d.getFullYear() > startYear || (d.getFullYear() === startYear && d.getMonth() >= startMonth);
-      return isFromStartMonthOnwards;
+      return tx.date >= startMonthPrefix;
     });
 
     txsToUndo.forEach((tx) => {
@@ -243,7 +254,7 @@ export function HorizonteScreen() {
     let simMonth = startMonth;
 
     // Alvo final: até o fim do próximo ano (máximo 1 ano à frente do ano atual)
-    const horizonEnd = new Date(today.getFullYear() + 1, 11, 31);
+    const horizonEnd = new Date(startOfToday.getFullYear() + 1, 11, 31);
     
     // Alvo visual: O mês que o utilizador escolheu + 2 meses para a frente (para encher a grelha)
     let visualEndYear = year;
@@ -256,8 +267,22 @@ export function HorizonteScreen() {
     const visualEndDate = new Date(visualEndYear, visualEndMonth, 31);
     const calculationEndDate = visualEndDate > horizonEnd ? visualEndDate : horizonEnd;
 
-    // 👉 PRÉ-CÁLCULO DE FATURAS DE CARTÃO DE CRÉDITO (NÃO PAGAS)
+    // 👉 PRÉ-CÁLCULO DE FATURAS DE CARTÃO DE CRÉDITO E MAPA DE TRANSAÇÕES (O(N) pass)
     const virtualInvoiceTxs: Record<string, any[]> = {};
+    const txsByMonthAndDay: Record<string, Record<number, any[]>> = {};
+
+    for (let i = 0; i < transactions.length; i++) {
+      const tx = transactions[i];
+      if (!tx.date || tx.date.length < 10) continue;
+      
+      const yyyyMm = tx.date.substring(0, 7);
+      const day = parseInt(tx.date.substring(8, 10), 10);
+      
+      if (!txsByMonthAndDay[yyyyMm]) txsByMonthAndDay[yyyyMm] = {};
+      if (!txsByMonthAndDay[yyyyMm][day]) txsByMonthAndDay[yyyyMm][day] = [];
+      txsByMonthAndDay[yyyyMm][day].push(tx);
+    }
+
     accounts.filter(a => a.type === 'cartao_credito').forEach(card => {
       const closingDay = card.closingDay || 25;
       const dueDay = card.dueDay || 5;
@@ -269,16 +294,19 @@ export function HorizonteScreen() {
       const invoiceTotals: Record<string, number> = {};
       
       cardUnpaidTxs.forEach(tx => {
-        const d = new Date(tx.date);
-        let m = d.getMonth() + 1;
-        let y = d.getFullYear();
-        if (d.getDate() >= closingDay) m += 1;
+        if (!tx.date) return;
+        const y = parseInt(tx.date.substring(0, 4), 10);
+        const mStr = parseInt(tx.date.substring(5, 7), 10);
+        const d = parseInt(tx.date.substring(8, 10), 10);
+        
+        let m = mStr;
+        let invoiceY = y;
+        if (d >= closingDay) m += 1;
         if (dueDay < closingDay) m += 1;
-        while (m > 12) { m -= 12; y += 1; }
+        while (m > 12) { m -= 12; invoiceY += 1; }
         
         const invoiceMonth = m - 1;
-        const invoiceYear = y;
-        const dateKey = `${invoiceYear}-${invoiceMonth}-${dueDay}`;
+        const dateKey = `${invoiceY}-${invoiceMonth}-${dueDay}`;
         
         invoiceTotals[dateKey] = (invoiceTotals[dateKey] || 0) + (tx.type === 'receita' ? -tx.amount : tx.amount);
       });
@@ -309,17 +337,8 @@ export function HorizonteScreen() {
       const monthKey = `${simYear}-${simMonth}`;
       const monthDays = [];
 
-      const monthTxs = transactions.filter((tx) => {
-        const d = new Date(tx.date);
-        return d.getFullYear() === simYear && d.getMonth() === simMonth;
-      });
-
-      const txsByDay: Record<number, any[]> = {};
-      monthTxs.forEach((tx) => {
-        const day = new Date(tx.date).getDate();
-        if (!txsByDay[day]) txsByDay[day] = [];
-        txsByDay[day].push(tx);
-      });
+      const searchPrefix = `${simYear}-${String(simMonth + 1).padStart(2, '0')}`;
+      const txsByDay = txsByMonthAndDay[searchPrefix] || {};
 
       let accumulatedMonthlyExpense = 0;
       let frozenFutureDailyPlan = 0;
@@ -382,11 +401,11 @@ export function HorizonteScreen() {
         const dayDate = new Date(simYear, simMonth, d);
         const isDayPast =
           dayDate <
-          new Date(today.getFullYear(), today.getMonth(), today.getDate());
+          new Date(startOfToday.getFullYear(), startOfToday.getMonth(), startOfToday.getDate());
         const isDayToday =
-          d === today.getDate() &&
-          simMonth === today.getMonth() &&
-          simYear === today.getFullYear();
+          d === startOfToday.getDate() &&
+          simMonth === startOfToday.getMonth() &&
+          simYear === startOfToday.getFullYear();
 
         if (isDayPast) accumulatedMonthlyExpense += expense;
 
@@ -400,7 +419,7 @@ export function HorizonteScreen() {
             if (isDayToday) frozenFutureDailyPlan = dailyPlan;
           } else {
             const isFutureMonthSim =
-              simMonth > today.getMonth() || simYear > today.getFullYear();
+              simMonth > startOfToday.getMonth() || simYear > startOfToday.getFullYear();
             dailyPlan = isFutureMonthSim
               ? simBudget / simDaysCount
               : frozenFutureDailyPlan;
@@ -443,7 +462,7 @@ export function HorizonteScreen() {
     }
 
     return { resultsMap, firstNegativeDate: firstNegDate };
-  }, [transactions, activeBalance, activeAccountIds, activeGoalIdSet, activeGoalIds, year, month, getEffectiveBudget, today]);
+  }, [transactions, activeBalance, activeAccountIds, activeGoalIdSet, activeGoalIds, year, month, getEffectiveBudget, startOfToday]);
 
   // Extrai o mês focado para o Modo Lista e Resumo
   const focusedMonthKey = `${year}-${month}`;
@@ -551,6 +570,206 @@ export function HorizonteScreen() {
       </View>
     );
   };
+
+  const renderDayItem = useCallback(({ item: d, index: idx }: { item: any; index: number }) => {
+    const rowBg = d.isToday
+      ? colors.primary + "10"
+      : idx % 2 === 0
+        ? colors.card
+        : colors.background;
+    // Gasto total do dia = gastos diretos + fatura de crédito no vencimento
+    const gastoTotalDia = d.expense + (d.creditExpense || 0);
+    const economizou =
+      currentBudget > 0 && d.dailyPlan > 0 && gastoTotalDia < d.dailyPlan;
+    const excedeu =
+      currentBudget > 0 && d.isPast && gastoTotalDia > d.dailyPlan;
+    const valorDiferenca = Math.abs(d.dailyPlan - gastoTotalDia);
+    const mostrarBadge = currentBudget > 0 && (d.isPast || d.isToday);
+
+    const saldoBg =
+      d.balance >= 0 ? colors.successLight : colors.dangerLight;
+    const saldoColor =
+      d.balance >= 0 ? colors.success : colors.destructive;
+
+    return (
+      <TouchableOpacity
+        key={d.day}
+        activeOpacity={0.7}
+        onPress={() => setSelectedDay(d)}
+        style={[
+          styles.row,
+          { backgroundColor: rowBg, borderBottomColor: colors.border },
+        ]}
+      >
+        <View
+          style={[
+            styles.colDia,
+            {
+              backgroundColor: d.isToday
+                ? colors.primary + "15"
+                : "rgba(0,0,0,0.02)",
+            },
+          ]}
+        >
+          <Text
+            style={[styles.dayNumber, { color: colors.foreground }]}
+          >
+            {d.day}
+          </Text>
+          <Text
+            style={[styles.weekDay, { color: colors.mutedForeground }]}
+          >
+            {d.weekDay}
+          </Text>
+        </View>
+
+        <View style={styles.colIndicators}>
+          <View style={styles.indicatorLine}>
+            <Ionicons
+              name="arrow-up-circle"
+              size={16}
+              color={d.income > 0 ? colors.success : colors.border}
+            />
+            <Text
+              style={[
+                styles.indicatorText,
+                {
+                  color:
+                    d.income > 0
+                      ? colors.foreground
+                      : colors.mutedForeground,
+                },
+              ]}
+            >
+              {formatShort(d.income)}
+            </Text>
+          </View>
+
+          <View style={styles.indicatorLine}>
+            <Ionicons
+              name="arrow-down-circle"
+              size={16}
+              color={d.expense > 0 ? colors.destructive : colors.border}
+            />
+            <Text
+              style={[
+                styles.indicatorText,
+                {
+                  color:
+                    d.expense > 0
+                      ? colors.foreground
+                      : colors.mutedForeground,
+                  fontWeight: d.expense > 0 ? "700" : "400",
+                },
+              ]}
+            >
+              {formatShort(d.expense)}
+            </Text>
+          </View>
+
+          {d.transferOut > 0 && (
+            <View style={styles.indicatorLine}>
+              <Ionicons
+                name="swap-horizontal"
+                size={16}
+                color={colors.warning}
+              />
+              <Text
+                style={[
+                  styles.indicatorText,
+                  { color: colors.foreground },
+                ]}
+              >
+                {formatShort(d.transferOut)}
+              </Text>
+            </View>
+          )}
+
+          {d.creditExpense > 0 && (
+            <View style={styles.indicatorLine}>
+              <Ionicons
+                name="card-outline"
+                size={16}
+                color={colors.destructive}
+              />
+              <Text
+                style={[
+                  styles.indicatorText,
+                  { color: colors.foreground },
+                ]}
+              >
+                {formatShort(d.creditExpense)}
+              </Text>
+            </View>
+          )}
+
+          {currentBudget > 0 && (
+            <View style={styles.indicatorLine}>
+              <View
+                style={[
+                  styles.miniBadge,
+                  { backgroundColor: colors.primary },
+                ]}
+              >
+                <Text style={styles.miniBadgeText}>M</Text>
+              </View>
+              <Text
+                style={[
+                  styles.indicatorText,
+                  { color: colors.mutedForeground },
+                ]}
+              >
+                {formatShort(d.dailyPlan || 0)}
+              </Text>
+
+              {mostrarBadge && (
+                <>
+                  {economizou && (
+                    <View
+                      style={[
+                        styles.savingBadge,
+                        { backgroundColor: colors.success + "20" },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.savingText,
+                          { color: colors.success },
+                        ]}
+                      >{`+ ${formatShort(valorDiferenca)}`}</Text>
+                    </View>
+                  )}
+                  {excedeu && (
+                    <View
+                      style={[
+                        styles.savingBadge,
+                        { backgroundColor: colors.destructive + "20" },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.savingText,
+                          { color: colors.destructive },
+                        ]}
+                      >{`- ${formatShort(valorDiferenca)}`}</Text>
+                    </View>
+                  )}
+                </>
+              )}
+            </View>
+          )}
+        </View>
+
+        <View
+          style={[styles.colSaldoVisual, { backgroundColor: saldoBg }]}
+        >
+          <Text style={[styles.saldoTextLarge, { color: saldoColor }]}>
+            {formatShort(d.balance)}
+          </Text>
+        </View>
+      </TouchableOpacity>
+    );
+  }, [colors, currentBudget, setSelectedDay]);
 
   return (
     <KeyboardAvoidingView
@@ -747,208 +966,17 @@ export function HorizonteScreen() {
       {viewMode === "grid" ? (
         renderHeatmapGrid()
       ) : (
-        <ScrollView showsVerticalScrollIndicator={false}>
-          {days.map((d, idx) => {
-            const rowBg = d.isToday
-              ? colors.primary + "10"
-              : idx % 2 === 0
-                ? colors.card
-                : colors.background;
-            // Gasto total do dia = gastos diretos + fatura de crédito no vencimento
-            const gastoTotalDia = d.expense + (d.creditExpense || 0);
-            const economizou =
-              currentBudget > 0 && d.dailyPlan > 0 && gastoTotalDia < d.dailyPlan;
-            const excedeu =
-              currentBudget > 0 && d.isPast && gastoTotalDia > d.dailyPlan;
-            const valorDiferenca = Math.abs(d.dailyPlan - gastoTotalDia);
-            const mostrarBadge = currentBudget > 0 && (d.isPast || d.isToday);
-
-            const saldoBg =
-              d.balance >= 0 ? colors.successLight : colors.dangerLight;
-            const saldoColor =
-              d.balance >= 0 ? colors.success : colors.destructive;
-
-            return (
-              <TouchableOpacity
-                key={d.day}
-                activeOpacity={0.7}
-                onPress={() => setSelectedDay(d)}
-                style={[
-                  styles.row,
-                  { backgroundColor: rowBg, borderBottomColor: colors.border },
-                ]}
-              >
-                <View
-                  style={[
-                    styles.colDia,
-                    {
-                      backgroundColor: d.isToday
-                        ? colors.primary + "15"
-                        : "rgba(0,0,0,0.02)",
-                    },
-                  ]}
-                >
-                  <Text
-                    style={[styles.dayNumber, { color: colors.foreground }]}
-                  >
-                    {d.day}
-                  </Text>
-                  <Text
-                    style={[styles.weekDay, { color: colors.mutedForeground }]}
-                  >
-                    {d.weekDay}
-                  </Text>
-                </View>
-
-                <View style={styles.colIndicators}>
-                  <View style={styles.indicatorLine}>
-                    <Ionicons
-                      name="arrow-up-circle"
-                      size={16}
-                      color={d.income > 0 ? colors.success : colors.border}
-                    />
-                    <Text
-                      style={[
-                        styles.indicatorText,
-                        {
-                          color:
-                            d.income > 0
-                              ? colors.foreground
-                              : colors.mutedForeground,
-                        },
-                      ]}
-                    >
-                      {formatShort(d.income)}
-                    </Text>
-                  </View>
-
-                  <View style={styles.indicatorLine}>
-                    <Ionicons
-                      name="arrow-down-circle"
-                      size={16}
-                      color={d.expense > 0 ? colors.destructive : colors.border}
-                    />
-                    <Text
-                      style={[
-                        styles.indicatorText,
-                        {
-                          color:
-                            d.expense > 0
-                              ? colors.foreground
-                              : colors.mutedForeground,
-                          fontWeight: d.expense > 0 ? "700" : "400",
-                        },
-                      ]}
-                    >
-                      {formatShort(d.expense)}
-                    </Text>
-                  </View>
-
-                  {d.transferOut > 0 && (
-                    <View style={styles.indicatorLine}>
-                      <Ionicons
-                        name="swap-horizontal"
-                        size={16}
-                        color={colors.warning}
-                      />
-                      <Text
-                        style={[
-                          styles.indicatorText,
-                          { color: colors.foreground },
-                        ]}
-                      >
-                        {formatShort(d.transferOut)}
-                      </Text>
-                    </View>
-                  )}
-
-                  {d.creditExpense > 0 && (
-                    <View style={styles.indicatorLine}>
-                      <Ionicons
-                        name="card-outline"
-                        size={16}
-                        color={colors.destructive}
-                      />
-                      <Text
-                        style={[
-                          styles.indicatorText,
-                          { color: colors.foreground },
-                        ]}
-                      >
-                        {formatShort(d.creditExpense)}
-                      </Text>
-                    </View>
-                  )}
-
-                  {currentBudget > 0 && (
-                    <View style={styles.indicatorLine}>
-                      <View
-                        style={[
-                          styles.miniBadge,
-                          { backgroundColor: colors.primary },
-                        ]}
-                      >
-                        <Text style={styles.miniBadgeText}>M</Text>
-                      </View>
-                      <Text
-                        style={[
-                          styles.indicatorText,
-                          { color: colors.mutedForeground },
-                        ]}
-                      >
-                        {formatShort(d.dailyPlan || 0)}
-                      </Text>
-
-                      {mostrarBadge && (
-                        <>
-                          {economizou && (
-                            <View
-                              style={[
-                                styles.savingBadge,
-                                { backgroundColor: colors.success + "20" },
-                              ]}
-                            >
-                              <Text
-                                style={[
-                                  styles.savingText,
-                                  { color: colors.success },
-                                ]}
-                              >{`+ ${formatShort(valorDiferenca)}`}</Text>
-                            </View>
-                          )}
-                          {excedeu && (
-                            <View
-                              style={[
-                                styles.savingBadge,
-                                { backgroundColor: colors.destructive + "20" },
-                              ]}
-                            >
-                              <Text
-                                style={[
-                                  styles.savingText,
-                                  { color: colors.destructive },
-                                ]}
-                              >{`- ${formatShort(valorDiferenca)}`}</Text>
-                            </View>
-                          )}
-                        </>
-                      )}
-                    </View>
-                  )}
-                </View>
-
-                <View
-                  style={[styles.colSaldoVisual, { backgroundColor: saldoBg }]}
-                >
-                  <Text style={[styles.saldoTextLarge, { color: saldoColor }]}>
-                    {formatShort(d.balance)}
-                  </Text>
-                </View>
-              </TouchableOpacity>
-            );
-          })}
-          <View style={{ height: 50 }} />
-        </ScrollView>
+        <FlatList
+          data={days}
+          keyExtractor={(item) => String(item.day)}
+          renderItem={renderDayItem}
+          showsVerticalScrollIndicator={false}
+          initialNumToRender={15}
+          maxToRenderPerBatch={10}
+          windowSize={5}
+          removeClippedSubviews={true}
+          ListFooterComponent={<View style={{ height: 50 }} />}
+        />
       )}
 
       {/* MODAL DE CONFIGURAÇÃO (Omitido por brevidade, mantém-se EXATAMENTE igual ao seu original) */}

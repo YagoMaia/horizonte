@@ -11,8 +11,10 @@ interface RecurrenceActionModalProps {
   onSelect: (mode: 'single' | 'future' | 'all') => void;
 }
 
-export function RecurrenceActionModal({ visible, actionType, onClose, onSelect }: RecurrenceActionModalProps) {
+export const RecurrenceActionModal = React.memo(function RecurrenceActionModal({ visible, actionType, onClose, onSelect }: RecurrenceActionModalProps) {
   const { colors } = useTheme();
+
+  if (!visible) return null;
   
   const title = actionType === 'delete' ? 'Apagar Lançamento' : 'Editar Lançamento';
   const subtitle = 'Esta transação faz parte de uma recorrência. Como deseja prosseguir?';
@@ -60,7 +62,7 @@ export function RecurrenceActionModal({ visible, actionType, onClose, onSelect }
       </View>
     </Modal>
   );
-}
+});
 
 const styles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },

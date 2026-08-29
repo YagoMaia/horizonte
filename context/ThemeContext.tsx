@@ -1,5 +1,5 @@
 // context/ThemeContext.tsx
-import React, { createContext, useContext, useEffect, useState } from 'react'
+import React, { createContext, useContext, useEffect, useState, useMemo, useCallback } from 'react'
 import { useColorScheme } from 'react-native'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { getThemeColors, ThemeColors, PRIMARY_COLORS } from '@/constants/theme'
@@ -28,46 +28,48 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [primaryColor, setPrimaryColorState] = useState<string>(PRIMARY_COLORS[0].value)
 
   useEffect(() => {
+    let isMounted = true
     const loadThemeSettings = async () => {
       try {
         const savedMode = await AsyncStorage.getItem(THEME_MODE_KEY)
-        if (savedMode) setThemeModeState(savedMode as ThemeMode)
+        if (savedMode && isMounted) setThemeModeState(savedMode as ThemeMode)
         
         const savedColor = await AsyncStorage.getItem(PRIMARY_COLOR_KEY)
-        if (savedColor) setPrimaryColorState(savedColor)
+        if (savedColor && isMounted) setPrimaryColorState(savedColor)
       } catch (e) {
         console.error('Failed to load theme settings', e)
       }
     }
     loadThemeSettings()
+    return () => { isMounted = false }
   }, [])
 
-  const setThemeMode = async (mode: ThemeMode) => {
+  const setThemeMode = useCallback(async (mode: ThemeMode) => {
     setThemeModeState(mode)
     await AsyncStorage.setItem(THEME_MODE_KEY, mode)
-  }
+  }, [])
 
-  const setPrimaryColor = async (color: string) => {
+  const setPrimaryColor = useCallback(async (color: string) => {
     setPrimaryColorState(color)
     await AsyncStorage.setItem(PRIMARY_COLOR_KEY, color)
-  }
+  }, [])
 
   const activeScheme = themeMode === 'system' ? systemScheme : themeMode
-  const colors = getThemeColors(activeScheme, primaryColor)
   const isDark = activeScheme === 'dark'
+  const colors = useMemo(() => getThemeColors(activeScheme, primaryColor), [activeScheme, primaryColor])
+
+  const contextValue = useMemo<ThemeContextType>(() => ({
+    colors,
+    isDark,
+    scheme: activeScheme,
+    themeMode,
+    setThemeMode,
+    primaryColor,
+    setPrimaryColor,
+  }), [colors, isDark, activeScheme, themeMode, setThemeMode, primaryColor, setPrimaryColor])
 
   return (
-    <ThemeContext.Provider
-      value={{
-        colors,
-        isDark,
-        scheme: activeScheme,
-        themeMode,
-        setThemeMode,
-        primaryColor,
-        setPrimaryColor,
-      }}
-    >
+    <ThemeContext.Provider value={contextValue}>
       {children}
     </ThemeContext.Provider>
   )

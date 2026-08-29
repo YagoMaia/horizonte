@@ -13,7 +13,7 @@ interface ConfirmDeleteModalProps {
   cancelText?: string;
 }
 
-export function ConfirmDeleteModal({
+export const ConfirmDeleteModal = React.memo(function ConfirmDeleteModal({
   visible,
   title,
   description,
@@ -23,6 +23,8 @@ export function ConfirmDeleteModal({
   cancelText = 'Cancelar'
 }: ConfirmDeleteModalProps) {
   const { colors } = useTheme();
+
+  if (!visible) return null;
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -65,7 +67,7 @@ export function ConfirmDeleteModal({
       </TouchableOpacity>
     </Modal>
   );
-}
+});
 
 const styles = StyleSheet.create({
   overlay: {

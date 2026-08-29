@@ -1,5 +1,5 @@
 // components/screens/CartaoScreen.tsx
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -481,7 +481,7 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
     );
   }
 
-  const renderTransaction = ({ item: tx }: { item: Transaction }) => {
+  const renderTransaction = useCallback(({ item: tx }: { item: Transaction }) => {
     const visuals = getTransactionVisuals(tx.type, colors);
     const txCard = isAll ? accounts.find((a: Account) => a.id === tx.accountId) : null;
 
@@ -513,7 +513,7 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
         <Text style={[styles.txAmount, { color: visuals.color }]}>{visuals.prefix}{formatCurrency(tx.amount)}</Text>
       </TouchableOpacity>
     );
-  };
+  }, [colors, isAll, accounts]);
 
   const statusCfg = STATUS_CONFIG[invoiceStatus] || STATUS_CONFIG['ZERADA'];
 
@@ -549,179 +549,189 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
       </View>
 
       {selectedCard && (
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
-          {/* Month navigator */}
-          <View style={styles.monthNav}>
-            <TouchableOpacity onPress={() => setMonthOffset((m) => m - 1)} style={styles.navBtn}>
-              <Ionicons name='chevron-back' size={24} color={colors.foreground} />
-            </TouchableOpacity>
-            <View style={{ alignItems: 'center' }}>
-              <Text style={[styles.monthTitle, { color: colors.foreground }]}>{MONTH_NAMES[targetMonth]} {targetYear}</Text>
-            </View>
-            <TouchableOpacity onPress={() => setMonthOffset((m) => m + 1)} style={styles.navBtn}>
-              <Ionicons name='chevron-forward' size={24} color={colors.foreground} />
-            </TouchableOpacity>
-          </View>
-
-          {/* ─── Card Visual ──────────────────────────────────────── */}
-          <View style={[styles.cardVisual, { backgroundColor: selectedCard.color }]}>
-            <View style={styles.cardHeader}>
-              <Ionicons name={selectedCard.icon as any} size={28} color="#FFF" />
-              <Text style={styles.cardBrand}>{selectedCard.name.toUpperCase()}</Text>
-            </View>
-
-            <View style={styles.cardBody}>
-              <Text style={styles.cardLabel}>Valor total da fatura</Text>
-              <Text style={styles.cardAmount}>{formatCurrency(totalInvoice)}</Text>
-
-              <View style={styles.limitContainer}>
-                <View style={styles.limitBarBackground}>
-                  <View style={[styles.limitBarFill, { width: `${limitUsagePercent}%` }]} />
+        <FlatList
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.content}
+          data={invoiceTransactions}
+          keyExtractor={(item) => item.id}
+          ListHeaderComponent={
+            <>
+              {/* Month navigator */}
+              <View style={styles.monthNav}>
+                <TouchableOpacity onPress={() => setMonthOffset((m) => m - 1)} style={styles.navBtn}>
+                  <Ionicons name='chevron-back' size={24} color={colors.foreground} />
+                </TouchableOpacity>
+                <View style={{ alignItems: 'center' }}>
+                  <Text style={[styles.monthTitle, { color: colors.foreground }]}>{MONTH_NAMES[targetMonth]} {targetYear}</Text>
                 </View>
-                <View style={styles.limitInfo}>
-                  <View>
-                    <Text style={styles.limitValue}>{formatCurrency(globalPendingDebt)}</Text>
-                    <Text style={styles.limitLabel}>Utilizado</Text>
+                <TouchableOpacity onPress={() => setMonthOffset((m) => m + 1)} style={styles.navBtn}>
+                  <Ionicons name='chevron-forward' size={24} color={colors.foreground} />
+                </TouchableOpacity>
+              </View>
+
+              {/* ─── Card Visual ──────────────────────────────────────── */}
+              <View style={[styles.cardVisual, { backgroundColor: selectedCard.color }]}>
+                <View style={styles.cardHeader}>
+                  <Ionicons name={selectedCard.icon as any} size={28} color="#FFF" />
+                  <Text style={styles.cardBrand}>{selectedCard.name.toUpperCase()}</Text>
+                </View>
+
+                <View style={styles.cardBody}>
+                  <Text style={styles.cardLabel}>Valor total da fatura</Text>
+                  <Text style={styles.cardAmount}>{formatCurrency(totalInvoice)}</Text>
+
+                  <View style={styles.limitContainer}>
+                    <View style={styles.limitBarBackground}>
+                      <View style={[styles.limitBarFill, { width: `${limitUsagePercent}%` }]} />
+                    </View>
+                    <View style={styles.limitInfo}>
+                      <View>
+                        <Text style={styles.limitValue}>{formatCurrency(globalPendingDebt)}</Text>
+                        <Text style={styles.limitLabel}>Utilizado</Text>
+                      </View>
+                      <View style={{ alignItems: 'flex-end' }}>
+                        <Text style={styles.limitValue}>{formatCurrency(availableLimit)}</Text>
+                        <Text style={styles.limitLabel}>Disponível</Text>
+                      </View>
+                    </View>
                   </View>
-                  <View style={{ alignItems: 'flex-end' }}>
-                    <Text style={styles.limitValue}>{formatCurrency(availableLimit)}</Text>
-                    <Text style={styles.limitLabel}>Disponível</Text>
+                </View>
+
+                <View style={styles.cardFooter}>
+                  <View style={styles.chip} />
+                  {/* ─── Status badge (improved) */}
+                  <View style={[styles.cardStatus, { backgroundColor: statusCfg.color + '30' }]}>
+                    <Text style={styles.cardStatusEmoji}>{statusCfg.emoji}</Text>
+                    <Text style={[styles.cardStatusText, { color: '#FFF' }]}>
+                      {invoiceStatus === 'ABERTA' ? 'FATURA EM ABERTO' : `FATURA ${invoiceStatus}`}
+                    </Text>
                   </View>
                 </View>
               </View>
-            </View>
 
-            <View style={styles.cardFooter}>
-              <View style={styles.chip} />
-              {/* ─── Status badge (improved) */}
-              <View style={[styles.cardStatus, { backgroundColor: statusCfg.color + '30' }]}>
-                <Text style={styles.cardStatusEmoji}>{statusCfg.emoji}</Text>
-                <Text style={[styles.cardStatusText, { color: '#FFF' }]}>
-                  {invoiceStatus === 'ABERTA' ? 'FATURA EM ABERTO' : `FATURA ${invoiceStatus}`}
-                </Text>
-              </View>
-            </View>
-          </View>
+              {/* ─── Invoice Status Detail Card (below main card) ─────── */}
+              <InvoiceStatusCard
+                status={invoiceStatus}
+                totalInvoice={totalInvoice}
+                pendingInvoice={pendingInvoice}
+                colors={colors}
+                selectedCard={selectedCard}
+              />
 
-          {/* ─── Invoice Status Detail Card (below main card) ─────── */}
-          <InvoiceStatusCard
-            status={invoiceStatus}
-            totalInvoice={totalInvoice}
-            pendingInvoice={pendingInvoice}
-            colors={colors}
-            selectedCard={selectedCard}
-          />
+              {/* ─── Invoice Timeline (only for single card) ──────────── */}
+              {!isAll && invoiceTimeline.length > 0 && (
+                <View style={[styles.timelineContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                  <Text style={[styles.sectionTitle, { color: colors.mutedForeground, marginBottom: 12 }]}>LINHA DO TEMPO</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+                    {invoiceTimeline.map((item, idx) => {
+                      const cfg = STATUS_CONFIG[item.status] || STATUS_CONFIG['ZERADA'];
+                      const isCurrent = item.offset === monthOffset;
+                      return (
+                        <TouchableOpacity
+                          key={idx}
+                          onPress={() => setMonthOffset(item.offset)}
+                          style={[
+                            styles.timelineItem,
+                            {
+                              backgroundColor: isCurrent ? cfg.color + '22' : colors.secondary,
+                              borderColor: isCurrent ? cfg.color : colors.border,
+                              borderWidth: isCurrent ? 2 : StyleSheet.hairlineWidth,
+                            },
+                          ]}
+                        >
+                          <Text style={[styles.timelineMonth, { color: isCurrent ? cfg.color : colors.mutedForeground }]}>
+                            {MONTH_ABBR[item.month]}
+                          </Text>
+                          <Text style={[styles.timelineEmoji]}>{cfg.emoji}</Text>
+                          <Text style={[styles.timelineAmount, { color: item.total > 0 ? colors.destructive : colors.mutedForeground }]}>
+                            {item.total > 0 ? formatCurrency(item.total) : 'Zerada'}
+                          </Text>
+                          {item.pending > 0 && (
+                            <View style={[styles.timelinePendingDot, { backgroundColor: '#f59e0b' }]} />
+                          )}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                </View>
+              )}
 
-          {/* ─── Invoice Timeline (only for single card) ──────────── */}
-          {!isAll && invoiceTimeline.length > 0 && (
-            <View style={[styles.timelineContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <Text style={[styles.sectionTitle, { color: colors.mutedForeground, marginBottom: 12 }]}>LINHA DO TEMPO</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-                {invoiceTimeline.map((item, idx) => {
-                  const cfg = STATUS_CONFIG[item.status] || STATUS_CONFIG['ZERADA'];
-                  const isCurrent = item.offset === monthOffset;
-                  return (
+              {/* ─── Action Buttons ───────────────────────────────────── */}
+              {!isAll && (
+                <View style={styles.actionButtonsRow}>
+                  <TouchableOpacity
+                    style={[styles.payButton, { backgroundColor: pendingInvoice > 0 ? colors.primary : colors.border, flex: 1 }]}
+                    disabled={pendingInvoice <= 0}
+                    onPress={handlePayInvoice}
+                  >
+                    <Ionicons name={pendingInvoice > 0 ? 'wallet-outline' : 'checkmark-circle-outline'} size={20} color={pendingInvoice > 0 ? '#FFF' : colors.mutedForeground} />
+                    <Text style={[styles.payButtonText, { color: pendingInvoice > 0 ? '#FFF' : colors.mutedForeground }]}>
+                      {pendingInvoice > 0 ? `Pagar Fatura` : 'Paga'}
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.payButton, { backgroundColor: globalPendingDebt > 0 ? colors.secondary : colors.border, marginLeft: 12, paddingHorizontal: 16 }]}
+                    disabled={globalPendingDebt <= 0}
+                    onPress={handleOpenAnticipate}
+                  >
+                    <Ionicons name="flash-outline" size={20} color={globalPendingDebt > 0 ? colors.foreground : colors.mutedForeground} />
+                    <Text style={[styles.payButtonText, { color: globalPendingDebt > 0 ? colors.foreground : colors.mutedForeground }]}>
+                      Antecipar
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {/* ─── Simulation Button ───────────────────────────────── */}
+              <TouchableOpacity
+                style={[styles.simButton, { backgroundColor: colors.primary + '15', borderColor: colors.primary + '40' }]}
+                onPress={openSimModal}
+              >
+                <Ionicons name="calculator-outline" size={20} color={colors.primary} />
+                <Text style={[styles.simButtonText, { color: colors.primary }]}>Simular Compra</Text>
+                <Ionicons name="chevron-forward" size={16} color={colors.primary} style={{ marginLeft: 'auto' }} />
+              </TouchableOpacity>
+
+              {/* ─── Invoice items ────────────────────────────────────── */}
+              <View style={styles.sectionHeader}>
+                <View>
+                  <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>ITENS DA FATURA</Text>
+                  <Text style={[styles.itemCount, { color: colors.mutedForeground }]}>{invoiceTransactions.length} itens</Text>
+                </View>
+
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  {invoiceTransactions.length > 0 && (
                     <TouchableOpacity
-                      key={idx}
-                      onPress={() => setMonthOffset(item.offset)}
-                      style={[
-                        styles.timelineItem,
-                        {
-                          backgroundColor: isCurrent ? cfg.color + '22' : colors.secondary,
-                          borderColor: isCurrent ? cfg.color : colors.border,
-                          borderWidth: isCurrent ? 2 : StyleSheet.hairlineWidth,
-                        },
-                      ]}
+                      style={[styles.exportBtn, { backgroundColor: colors.primary + '15' }]}
+                      onPress={handleExportCSV}
                     >
-                      <Text style={[styles.timelineMonth, { color: isCurrent ? cfg.color : colors.mutedForeground }]}>
-                        {MONTH_ABBR[item.month]}
-                      </Text>
-                      <Text style={[styles.timelineEmoji]}>{cfg.emoji}</Text>
-                      <Text style={[styles.timelineAmount, { color: item.total > 0 ? colors.destructive : colors.mutedForeground }]}>
-                        {item.total > 0 ? formatCurrency(item.total) : 'Zerada'}
-                      </Text>
-                      {item.pending > 0 && (
-                        <View style={[styles.timelinePendingDot, { backgroundColor: '#f59e0b' }]} />
-                      )}
+                      <Ionicons name="download-outline" size={16} color={colors.primary} />
+                      <Text style={[styles.exportText, { color: colors.primary }]}>Exportar</Text>
                     </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
+                  )}
+
+                  {invoiceTransactions.length > 0 && !isAll && (
+                    <TouchableOpacity style={styles.deleteAllBtn} onPress={handleDeleteAllFromInvoice}>
+                      <Ionicons name="trash-outline" size={16} color={colors.destructive} />
+                      <Text style={[styles.deleteAllText, { color: colors.destructive }]}>Excluir Todos</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+            </>
+          }
+          ListEmptyComponent={
+            <View style={[styles.txContainer, { backgroundColor: colors.card, borderColor: colors.border, padding: 20 }]}>
+              <Text style={[styles.emptyTxText, { color: colors.mutedForeground, textAlign: 'center' }]}>Nenhum gasto nesta fatura.</Text>
             </View>
-          )}
-
-          {/* ─── Action Buttons ───────────────────────────────────── */}
-          {!isAll && (
-            <View style={styles.actionButtonsRow}>
-              <TouchableOpacity
-                style={[styles.payButton, { backgroundColor: pendingInvoice > 0 ? colors.primary : colors.border, flex: 1 }]}
-                disabled={pendingInvoice <= 0}
-                onPress={handlePayInvoice}
-              >
-                <Ionicons name={pendingInvoice > 0 ? 'wallet-outline' : 'checkmark-circle-outline'} size={20} color={pendingInvoice > 0 ? '#FFF' : colors.mutedForeground} />
-                <Text style={[styles.payButtonText, { color: pendingInvoice > 0 ? '#FFF' : colors.mutedForeground }]}>
-                  {pendingInvoice > 0 ? `Pagar Fatura` : 'Paga'}
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.payButton, { backgroundColor: globalPendingDebt > 0 ? colors.secondary : colors.border, marginLeft: 12, paddingHorizontal: 16 }]}
-                disabled={globalPendingDebt <= 0}
-                onPress={handleOpenAnticipate}
-              >
-                <Ionicons name="flash-outline" size={20} color={globalPendingDebt > 0 ? colors.foreground : colors.mutedForeground} />
-                <Text style={[styles.payButtonText, { color: globalPendingDebt > 0 ? colors.foreground : colors.mutedForeground }]}>
-                  Antecipar
-                </Text>
-              </TouchableOpacity>
-            </View>
-          )}
-
-          {/* ─── Simulation Button ───────────────────────────────── */}
-          <TouchableOpacity
-            style={[styles.simButton, { backgroundColor: colors.primary + '15', borderColor: colors.primary + '40' }]}
-            onPress={openSimModal}
-          >
-            <Ionicons name="calculator-outline" size={20} color={colors.primary} />
-            <Text style={[styles.simButtonText, { color: colors.primary }]}>Simular Compra</Text>
-            <Ionicons name="chevron-forward" size={16} color={colors.primary} style={{ marginLeft: 'auto' }} />
-          </TouchableOpacity>
-
-          {/* ─── Invoice items ────────────────────────────────────── */}
-          <View style={styles.sectionHeader}>
-            <View>
-              <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>ITENS DA FATURA</Text>
-              <Text style={[styles.itemCount, { color: colors.mutedForeground }]}>{invoiceTransactions.length} itens</Text>
-            </View>
-
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              {invoiceTransactions.length > 0 && (
-                <TouchableOpacity
-                  style={[styles.exportBtn, { backgroundColor: colors.primary + '15' }]}
-                  onPress={handleExportCSV}
-                >
-                  <Ionicons name="download-outline" size={16} color={colors.primary} />
-                  <Text style={[styles.exportText, { color: colors.primary }]}>Exportar</Text>
-                </TouchableOpacity>
-              )}
-
-              {invoiceTransactions.length > 0 && !isAll && (
-                <TouchableOpacity style={styles.deleteAllBtn} onPress={handleDeleteAllFromInvoice}>
-                  <Ionicons name="trash-outline" size={16} color={colors.destructive} />
-                  <Text style={[styles.deleteAllText, { color: colors.destructive }]}>Excluir Todos</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          </View>
-
-          <View style={[styles.txContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            {invoiceTransactions.length === 0 ? (
-              <Text style={[styles.emptyTxText, { color: colors.mutedForeground }]}>Nenhum gasto nesta fatura.</Text>
-            ) : (
-              <FlatList data={invoiceTransactions} keyExtractor={(item) => item.id} renderItem={renderTransaction} scrollEnabled={false} />
-            )}
-          </View>
-        </ScrollView>
+          }
+          renderItem={renderTransaction}
+          initialNumToRender={15}
+          maxToRenderPerBatch={10}
+          windowSize={5}
+          removeClippedSubviews={true}
+        />
       )}
 
       {/* ─── Payment Modal ────────────────────────────────────────── */}

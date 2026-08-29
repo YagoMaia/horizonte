@@ -92,12 +92,18 @@ export function useStore() {
     today.setHours(23, 59, 59, 999); 
 
     let hasChanges = false;
-    let updatedAccounts = [...currentAccounts];
+    
+    // Converte para Record (Dicionário) para busca e atualização O(1)
+    const accountsMap: Record<string, Account> = {};
+    for (const acc of currentAccounts) {
+      accountsMap[acc.id] = { ...acc };
+    }
+
     const updatedTransactions = currentTransactions.map(tx => {
       const txDate = new Date(tx.date);
       const isOverdue = txDate <= today;
       
-      const targetAccount = updatedAccounts.find(a => a.id === tx.accountId);
+      const targetAccount = accountsMap[tx.accountId];
       const isCreditCard = targetAccount?.type === 'cartao_credito';
 
       if (!tx.paid && !isCreditCard && isOverdue) {
@@ -106,16 +112,14 @@ export function useStore() {
         }
         hasChanges = true;
         
-        updatedAccounts = updatedAccounts.map(acc => {
-          if (acc.id === tx.accountId) {
-            const delta = tx.type === 'receita' ? tx.amount : -tx.amount;
-            return { ...acc, balance: acc.balance + delta };
-          }
-          if (tx.type === 'transferencia' && acc.id === tx.targetAccountId) {
-            return { ...acc, balance: acc.balance + tx.amount };
-          }
-          return acc;
-        });
+        if (targetAccount) {
+          const delta = tx.type === 'receita' ? tx.amount : -tx.amount;
+          targetAccount.balance += delta;
+        }
+        
+        if (tx.type === 'transferencia' && tx.targetAccountId && accountsMap[tx.targetAccountId]) {
+          accountsMap[tx.targetAccountId].balance += tx.amount;
+        }
 
         return { ...tx, paid: true };
       }
@@ -123,6 +127,7 @@ export function useStore() {
     });
 
     if (hasChanges) {
+      const updatedAccounts = Object.values(accountsMap);
       await saveTransactionsAndAccounts(updatedTransactions, updatedAccounts);
     }
   }, [saveTransactionsAndAccounts]);
@@ -670,30 +675,26 @@ export function useStore() {
     return sum + a.balance;
   }, 0), [accounts]);
 
-  const monthlyIncome = useMemo(() => {
+  const { monthlyIncome, monthlyExpense } = useMemo(() => {
     const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
-    return transactions
-      .filter((t) => {
-        if (t.type !== 'receita' || !t.paid) return false;
-        const d = new Date(t.date);
-        return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
-      })
-      .reduce((sum, t) => sum + t.amount, 0);
-  }, [transactions]);
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const currentMonthPrefix = `${year}-${month}`;
 
-  const monthlyExpense = useMemo(() => {
-    const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
-    return transactions
-      .filter((t) => {
-        if (t.type !== 'despesa' || !t.paid) return false;
-        const d = new Date(t.date);
-        return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
-      })
-      .reduce((sum, t) => sum + t.amount, 0);
+    let income = 0;
+    let expense = 0;
+
+    for (let i = 0; i < transactions.length; i++) {
+      const t = transactions[i];
+      if (!t.paid || !t.date || !t.date.startsWith(currentMonthPrefix)) continue;
+      if (t.type === 'receita') {
+        income += t.amount;
+      } else if (t.type === 'despesa') {
+        expense += t.amount;
+      }
+    }
+
+    return { monthlyIncome: income, monthlyExpense: expense };
   }, [transactions]);
 
   const payCreditCardInvoice = useCallback(

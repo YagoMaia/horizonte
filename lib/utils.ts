@@ -1,25 +1,30 @@
 import { Account, Transaction } from '@/constants/types';
 
+// Cached formatters — avoids re-instantiating Intl objects on every call
+const currencyFormatter = new Intl.NumberFormat('pt-BR', {
+  style: 'currency',
+  currency: 'BRL',
+});
+const dateFormatter = new Intl.DateTimeFormat('pt-BR', {
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+});
+const dateShortFormatter = new Intl.DateTimeFormat('pt-BR', {
+  day: '2-digit',
+  month: 'short',
+});
+
 export function formatCurrency(value: number): string {
-  return new Intl.NumberFormat('pt-BR', {
-    style: 'currency',
-    currency: 'BRL',
-  }).format(value);
+  return currencyFormatter.format(value);
 }
 
 export function formatDate(dateString: string): string {
-  return new Intl.DateTimeFormat('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  }).format(new Date(dateString));
+  return dateFormatter.format(new Date(dateString));
 }
 
 export function formatDateShort(dateString: string): string {
-  return new Intl.DateTimeFormat('pt-BR', {
-    day: '2-digit',
-    month: 'short',
-  }).format(new Date(dateString));
+  return dateShortFormatter.format(new Date(dateString));
 }
 
 export function getDaysInMonth(year: number, month: number): number {

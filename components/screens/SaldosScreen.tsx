@@ -1,5 +1,5 @@
 // components/screens/SaldosScreen.tsx
-import React, { useMemo, useState, useRef } from 'react';
+import React, { useMemo, useState, useRef, useCallback } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   View,
@@ -76,6 +76,28 @@ export function SaldosScreen() {
     loadActiveAccounts();
   }, []);
 
+  const accountsMap = useMemo(() => {
+    const map = new Map<string, Account>();
+    accounts.forEach((a) => map.set(a.id, a));
+    return map;
+  }, [accounts]);
+
+  const goalsMap = useMemo(() => {
+    const map = new Map<string, typeof goals[0]>();
+    goals.forEach((g) => map.set(g.id, g));
+    return map;
+  }, [goals]);
+
+  const cardInvoicesMap = useMemo(() => {
+    const map = new Map<string, number>();
+    accounts.forEach((acc) => {
+      if (acc.type === 'cartao_credito') {
+        map.set(acc.id, calculateCreditCardInvoice(acc, transactions));
+      }
+    });
+    return map;
+  }, [accounts, transactions]);
+
   const customTotalBalance = useMemo(() => {
     if (activeAccountIds.length === 0) return totalBalance;
     return accounts.reduce((acc, account) => {
@@ -86,11 +108,10 @@ export function SaldosScreen() {
   }, [accounts, activeAccountIds, totalBalance]);
   
   const overduePendingTransactions = useMemo(() => {
-    const today = new Date();
-    today.setHours(23, 59, 59, 999);
+    const todayStr = new Date().toISOString().substring(0, 10); // YYYY-MM-DD
     return transactions.filter(tx => 
       !tx.paid && 
-      new Date(tx.date) <= today && 
+      tx.date && tx.date.substring(0, 10) <= todayStr && 
       tx.reminderEnabled
     );
   }, [transactions]);
@@ -137,25 +158,22 @@ export function SaldosScreen() {
     let expenseDebit = 0;
     let expenseCredit = 0;
 
-    transactions.forEach((tx) => {
-      const txDate = new Date(tx.date);
-      // Filtra pelo mês atual
-      if (
-        txDate.getMonth() === currentDate.getMonth() &&
-        txDate.getFullYear() === currentDate.getFullYear()
-      ) {
-        if (tx.type === 'receita' && tx.paid) {
-          income += tx.amount;
-        } else if (tx.type === 'despesa') {
-          // Ignora o pagamento da fatura em si para não duplicar o gasto
-          // (já que as compras no crédito individuais já estão sendo somadas)
-          const isInvoicePayment = tx.description.startsWith('Pagamento Fatura -') || tx.description.startsWith('Antecipação Fatura -');
+    const targetYear = currentDate.getFullYear();
+    const targetMonth = String(currentDate.getMonth() + 1).padStart(2, '0');
+    const targetPrefix = `${targetYear}-${targetMonth}`;
 
-          if (tx.paymentMethod === 'credito') {
-            expenseCredit += tx.amount;
-          } else if (tx.paid && !isInvoicePayment) {
-            expenseDebit += tx.amount;
-          }
+    transactions.forEach((tx) => {
+      if (!tx.date || !tx.date.startsWith(targetPrefix)) return;
+
+      if (tx.type === 'receita' && tx.paid) {
+        income += tx.amount;
+      } else if (tx.type === 'despesa') {
+        const isInvoicePayment = tx.description.startsWith('Pagamento Fatura -') || tx.description.startsWith('Antecipação Fatura -');
+
+        if (tx.paymentMethod === 'credito') {
+          expenseCredit += tx.amount;
+        } else if (tx.paid && !isInvoicePayment) {
+          expenseDebit += tx.amount;
         }
       }
     });
@@ -165,12 +183,14 @@ export function SaldosScreen() {
 
   // MOTOR DE BUSCA ATUALIZADO (Filtro por Mês)
   const displayedTransactions = useMemo(() => {
+    const targetYear = currentDate.getFullYear();
+    const targetMonth = String(currentDate.getMonth() + 1).padStart(2, '0');
+    const targetPrefix = `${targetYear}-${targetMonth}`;
+
     return transactions
       .filter((tx) => {
-        const txDate = new Date(tx.date);
-
         // Regra 1: Filtro de Mês e Ano
-        if (txDate.getMonth() !== currentDate.getMonth() || txDate.getFullYear() !== currentDate.getFullYear()) {
+        if (!tx.date || !tx.date.startsWith(targetPrefix)) {
           return false;
         }
 
@@ -186,7 +206,7 @@ export function SaldosScreen() {
 
         return true;
       })
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      .sort((a, b) => a.date < b.date ? 1 : -1); // Compara strings ISO diretamente
   }, [transactions, currentDate, filterType, filterAccountId]);
 
   const paginatedTransactions = useMemo(() => {
@@ -345,7 +365,7 @@ export function SaldosScreen() {
     }
   };
 
-  const handleDeletePrompt = (txId: string) => {
+  const handleDeletePrompt = useCallback((txId: string) => {
     const tx = transactions.find((t) => t.id === txId);
     if (!tx) return;
     const isFamily = tx.groupId || tx.id.includes('-');
@@ -356,9 +376,9 @@ export function SaldosScreen() {
       closeCurrentlyOpenRow();
       setSimpleDeleteData(tx);
     }
-  };
+  }, [transactions]);
 
-  const renderRightActions = (txId: string) => (
+  const renderRightActions = useCallback((txId: string) => (
     <TouchableOpacity
       style={[styles.hiddenAction, styles.hiddenActionRight, { backgroundColor: colors.destructive }]}
       onPress={() => handleDeletePrompt(txId)}
@@ -366,7 +386,7 @@ export function SaldosScreen() {
       <Ionicons name='trash-outline' size={24} color='#FFF' />
       <Text style={styles.hiddenActionText}>Apagar</Text>
     </TouchableOpacity>
-  );
+  ), [colors.destructive, handleDeletePrompt]);
 
   const renderHeader = () => (
     <View style={{ gap: 16, paddingBottom: 8 }}>
@@ -428,9 +448,9 @@ export function SaldosScreen() {
           {accounts.map((acc: Account) => {
             const isCreditCard = acc.type === 'cartao_credito';
 
-            // Calcula a fatura atual se for cartão
+            // Usa o Map memoizado em vez de recalcular a fatura dentro do render
             const currentInvoice = isCreditCard
-              ? calculateCreditCardInvoice(acc, transactions)
+              ? (cardInvoicesMap.get(acc.id) ?? 0)
               : 0;
 
             // Define o valor principal: 
@@ -553,16 +573,16 @@ export function SaldosScreen() {
   // Determine which data source to use based on search state
   const listData = isSearchActive ? displayedResults : paginatedTransactions;
 
-  const renderItem = ({ item: tx, index }: { item: Transaction; index: number }) => {
+  const renderItem = useCallback(({ item: tx, index }: { item: Transaction; index: number }) => {
     const isFirst = index === 0;
     const isLast = index === listData.length - 1;
     let sourceName = '';
-    const account = accounts.find((a) => a.id === tx.accountId);
+    const account = accountsMap.get(tx.accountId);
     if (account) {
       sourceName = account.name;
     } else if (tx.accountId?.startsWith('goal_')) {
       const goalId = tx.accountId.replace('goal_', '');
-      const goal = goals.find((g) => g.id === goalId);
+      const goal = goalsMap.get(goalId);
       sourceName = goal ? `Meta: ${goal.name}` : 'Meta';
     }
     
@@ -572,10 +592,10 @@ export function SaldosScreen() {
     if (tx.type === 'transferencia' && tx.targetAccountId) {
       if (tx.targetAccountId.startsWith('goal_')) {
         const goalId = tx.targetAccountId.replace('goal_', '');
-        const goal = goals.find((g) => g.id === goalId);
+        const goal = goalsMap.get(goalId);
         destName = goal ? `Meta: ${goal.name}` : 'Meta';
       } else {
-        const destAcc = accounts.find((a) => a.id === tx.targetAccountId);
+        const destAcc = accountsMap.get(tx.targetAccountId);
         destName = destAcc ? destAcc.name : 'Conta';
       }
     }
@@ -610,7 +630,7 @@ export function SaldosScreen() {
         </TouchableOpacity>
       </Swipeable>
     );
-  };
+  }, [listData.length, accountsMap, goalsMap, colors, renderRightActions]);
 
   if (loading) return <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}><ActivityIndicator size='large' color={colors.primary} /></View>;
 
@@ -640,7 +660,7 @@ export function SaldosScreen() {
           initialNumToRender={10}
           maxToRenderPerBatch={5}
           windowSize={5}
-          removeClippedSubviews={false}
+          removeClippedSubviews={true}
           getItemLayout={(_, index) => ({
             length: 72, 
             offset: 72 * index,
