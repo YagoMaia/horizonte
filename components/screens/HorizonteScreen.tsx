@@ -627,7 +627,7 @@ export function HorizonteScreen() {
           <View style={styles.indicatorLine}>
             <Ionicons
               name="arrow-up-circle"
-              size={16}
+              size={15}
               color={d.income > 0 ? colors.success : colors.border}
             />
             <Text
@@ -640,6 +640,7 @@ export function HorizonteScreen() {
                       : colors.mutedForeground,
                 },
               ]}
+              numberOfLines={1}
             >
               {formatShort(d.income)}
             </Text>
@@ -648,7 +649,7 @@ export function HorizonteScreen() {
           <View style={styles.indicatorLine}>
             <Ionicons
               name="arrow-down-circle"
-              size={16}
+              size={15}
               color={d.expense > 0 ? colors.destructive : colors.border}
             />
             <Text
@@ -662,6 +663,7 @@ export function HorizonteScreen() {
                   fontWeight: d.expense > 0 ? "700" : "400",
                 },
               ]}
+              numberOfLines={1}
             >
               {formatShort(d.expense)}
             </Text>
@@ -671,7 +673,7 @@ export function HorizonteScreen() {
             <View style={styles.indicatorLine}>
               <Ionicons
                 name="swap-horizontal"
-                size={16}
+                size={15}
                 color={colors.warning}
               />
               <Text
@@ -679,6 +681,7 @@ export function HorizonteScreen() {
                   styles.indicatorText,
                   { color: colors.foreground },
                 ]}
+                numberOfLines={1}
               >
                 {formatShort(d.transferOut)}
               </Text>
@@ -689,7 +692,7 @@ export function HorizonteScreen() {
             <View style={styles.indicatorLine}>
               <Ionicons
                 name="card-outline"
-                size={16}
+                size={15}
                 color={colors.destructive}
               />
               <Text
@@ -697,6 +700,7 @@ export function HorizonteScreen() {
                   styles.indicatorText,
                   { color: colors.foreground },
                 ]}
+                numberOfLines={1}
               >
                 {formatShort(d.creditExpense)}
               </Text>
@@ -718,6 +722,7 @@ export function HorizonteScreen() {
                   styles.indicatorText,
                   { color: colors.mutedForeground },
                 ]}
+                numberOfLines={1}
               >
                 {formatShort(d.dailyPlan || 0)}
               </Text>
@@ -736,6 +741,7 @@ export function HorizonteScreen() {
                           styles.savingText,
                           { color: colors.success },
                         ]}
+                        numberOfLines={1}
                       >{`+ ${formatShort(valorDiferenca)}`}</Text>
                     </View>
                   )}
@@ -751,6 +757,7 @@ export function HorizonteScreen() {
                           styles.savingText,
                           { color: colors.destructive },
                         ]}
+                        numberOfLines={1}
                       >{`- ${formatShort(valorDiferenca)}`}</Text>
                     </View>
                   )}
@@ -763,7 +770,11 @@ export function HorizonteScreen() {
         <View
           style={[styles.colSaldoVisual, { backgroundColor: saldoBg }]}
         >
-          <Text style={[styles.saldoTextLarge, { color: saldoColor }]}>
+          <Text
+            style={[styles.saldoTextLarge, { color: saldoColor }]}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+          >
             {formatShort(d.balance)}
           </Text>
         </View>
@@ -802,18 +813,19 @@ export function HorizonteScreen() {
           { borderBottomColor: colors.border, backgroundColor: colors.card },
         ]}
       >
-        <TouchableOpacity onPress={prevMonth} style={styles.navBtn}>
+        <TouchableOpacity onPress={prevMonth} style={styles.navBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <Ionicons name="chevron-back" size={22} color={colors.foreground} />
         </TouchableOpacity>
 
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-          <Text style={[styles.monthTitle, { color: colors.foreground }]}>
+        <View style={styles.monthNavCenter}>
+          <Text style={[styles.monthTitle, { color: colors.foreground }]} numberOfLines={1}>
             {MONTH_NAMES[month]} {year}
           </Text>
-          <View style={{ flexDirection: "row", gap: 6 }}>
+          <View style={styles.monthNavActions}>
             <TouchableOpacity
               onPress={toggleViewMode}
               style={[styles.configBtn, { backgroundColor: colors.secondary }]}
+              hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
             >
               <Ionicons
                 name={viewMode === "list" ? "grid" : "list"}
@@ -824,13 +836,14 @@ export function HorizonteScreen() {
             <TouchableOpacity
               onPress={() => setConfigModalVisible(true)}
               style={[styles.configBtn, { backgroundColor: colors.secondary }]}
+              hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
             >
               <Ionicons name="options" size={16} color={colors.foreground} />
             </TouchableOpacity>
           </View>
         </View>
 
-        <TouchableOpacity onPress={nextMonth} style={styles.navBtn}>
+        <TouchableOpacity onPress={nextMonth} style={styles.navBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <Ionicons
             name="chevron-forward"
             size={22}
@@ -856,6 +869,7 @@ export function HorizonteScreen() {
                 styles.budgetLabel,
                 { color: colors.mutedForeground },
               ]}
+              numberOfLines={1}
             >
               Saldo Disponível (Hoje){" "}
               {activeAccountIds.length > 0 &&
@@ -863,11 +877,13 @@ export function HorizonteScreen() {
             </Text>
             <Text
               style={[styles.budgetValue, { color: colors.foreground }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
             >
               {formatCurrency(activeBalance)}
             </Text>
             {activeGoalIds.length > 0 && activeGoalsBalance > 0 && (
-              <Text style={{ fontSize: 11, color: colors.mutedForeground, marginTop: 2 }}>
+              <Text style={{ fontSize: 11, color: colors.mutedForeground, marginTop: 2 }} numberOfLines={1}>
                 {`inclui ${activeGoalIds.length} meta${activeGoalIds.length > 1 ? 's' : ''} · `}
                 <Text style={{ color: '#388E3C' }}>{formatCurrency(activeGoalsBalance)}</Text>
               </Text>
@@ -876,19 +892,27 @@ export function HorizonteScreen() {
           <View style={styles.budgetRight}>
             <Text
               style={[styles.dailyLabel, { color: colors.mutedForeground }]}
+              numberOfLines={1}
             >
               Meta Diária Hoje
             </Text>
             {currentBudget > 0 ? (
-              <Text style={[styles.dailyValue, { color: colors.primary }]}>
+              <Text
+                style={[styles.dailyValue, { color: colors.primary }]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+              >
                 {formatShort(currentDailyPlan)}
               </Text>
             ) : (
-              <TouchableOpacity onPress={() => setConfigModalVisible(true)}>
+              <TouchableOpacity
+                onPress={() => setConfigModalVisible(true)}
+                style={[styles.setBudgetBtn, { backgroundColor: colors.secondary }]}
+              >
                 <Text
                   style={[
-                    styles.dailyValue,
-                    { color: colors.mutedForeground, fontSize: 12 },
+                    styles.setBudgetBtnText,
+                    { color: colors.primary },
                   ]}
                 >
                   Definir Meta
@@ -914,7 +938,7 @@ export function HorizonteScreen() {
           >
             Entradas
           </Text>
-          <Text style={[styles.summaryValue, { color: colors.success }]}>
+          <Text style={[styles.summaryValue, { color: colors.success }]} numberOfLines={1} adjustsFontSizeToFit>
             +{formatShort(totalIncome)}
           </Text>
         </View>
@@ -932,6 +956,8 @@ export function HorizonteScreen() {
           </Text>
           <Text
             style={[styles.summaryValue, { color: colors.destructive }]}
+            numberOfLines={1}
+            adjustsFontSizeToFit
           >
             -{formatShort(totalExpenseWithCredit)}
           </Text>
@@ -956,6 +982,8 @@ export function HorizonteScreen() {
                   endBalance >= 0 ? colors.success : colors.destructive,
               },
             ]}
+            numberOfLines={1}
+            adjustsFontSizeToFit
           >
             {formatShort(endBalance)}
           </Text>
@@ -973,9 +1001,11 @@ export function HorizonteScreen() {
           showsVerticalScrollIndicator={false}
           initialNumToRender={15}
           maxToRenderPerBatch={10}
-          windowSize={5}
-          removeClippedSubviews={true}
-          ListFooterComponent={<View style={{ height: 50 }} />}
+          windowSize={10}
+          removeClippedSubviews={Platform.OS === "android"}
+          style={styles.list}
+          contentContainerStyle={styles.listContent}
+          ListFooterComponent={<View style={{ height: 60 }} />}
         />
       )}
 
@@ -1370,12 +1400,27 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  monthTitle: { fontSize: 18, fontWeight: "700" },
-  navBtn: { padding: 8 },
-  configBtn: { padding: 8, borderRadius: 12 },
+  monthNavCenter: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginHorizontal: 8,
+  },
+  monthTitle: { fontSize: 17, fontWeight: "700" },
+  monthNavActions: { flexDirection: "row", gap: 6 },
+  navBtn: { padding: 6, alignItems: "center", justifyContent: "center" },
+  configBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
 
   alertBanner: {
     flexDirection: "row",
@@ -1401,68 +1446,102 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
   },
-  budgetInfo: { gap: 2 },
+  budgetInfo: { flex: 1, marginRight: 12, gap: 2 },
   budgetLabel: {
     fontSize: 11,
     fontWeight: "500",
     textTransform: "uppercase",
     letterSpacing: 0.4,
   },
-  budgetValue: { fontSize: 20, fontWeight: "700" },
-  budgetRight: { alignItems: "flex-end", gap: 2 },
+  budgetValue: { fontSize: 19, fontWeight: "700" },
+  budgetRight: { alignItems: "flex-end", justifyContent: "center", gap: 2 },
   dailyLabel: { fontSize: 10, fontWeight: "500", textTransform: "uppercase" },
-  dailyValue: { fontSize: 16, fontWeight: "700" },
+  dailyValue: { fontSize: 15, fontWeight: "700" },
+  setBudgetBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    marginTop: 2,
+  },
+  setBudgetBtnText: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
 
   summaryStrip: {
     flexDirection: "row",
     alignItems: "center",
     paddingVertical: 8,
+    paddingHorizontal: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  summaryItem: { flex: 1, alignItems: "center", gap: 1 },
+  summaryItem: { flex: 1, alignItems: "center", justifyContent: "center", gap: 1, paddingHorizontal: 2 },
   summaryLabel: { fontSize: 10, fontWeight: "500", textTransform: "uppercase" },
   summaryValue: { fontSize: 12, fontWeight: "700" },
   summaryDivider: { width: 1, height: 20 },
 
+  list: {
+    flex: 1,
+  },
+  listContent: {
+    flexGrow: 1,
+    paddingBottom: 24,
+  },
+
   row: {
     flexDirection: "row",
     borderBottomWidth: StyleSheet.hairlineWidth,
-    minHeight: 90,
+    minHeight: 76,
+    alignItems: "stretch",
   },
   colDia: {
-    width: 55,
+    width: 52,
     justifyContent: "center",
     alignItems: "center",
+    paddingVertical: 8,
     borderRightWidth: StyleSheet.hairlineWidth,
-    borderRightColor: "rgba(0,0,0,0.05)",
+    borderRightColor: "rgba(0,0,0,0.06)",
   },
-  dayNumber: { fontSize: 18, fontWeight: "700" },
-  weekDay: { fontSize: 11, textTransform: "capitalize" },
-  colIndicators: { flex: 1, padding: 12, gap: 6, justifyContent: "center" },
-  indicatorLine: { flexDirection: "row", alignItems: "center", gap: 10 },
-  indicatorText: { fontSize: 13 },
+  dayNumber: { fontSize: 17, fontWeight: "700" },
+  weekDay: { fontSize: 11, textTransform: "capitalize", marginTop: 2 },
+  colIndicators: {
+    flex: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    gap: 4,
+    justifyContent: "center",
+    minWidth: 0,
+  },
+  indicatorLine: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    flexWrap: "nowrap",
+  },
+  indicatorText: { fontSize: 12, fontWeight: "500" },
   miniBadge: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
+    width: 15,
+    height: 15,
+    borderRadius: 7.5,
     alignItems: "center",
     justifyContent: "center",
   },
-  miniBadgeText: { color: "#FFF", fontSize: 9, fontWeight: "bold" },
+  miniBadgeText: { color: "#FFF", fontSize: 8, fontWeight: "bold" },
   savingBadge: {
-    paddingHorizontal: 6,
+    paddingHorizontal: 5,
     paddingVertical: 2,
     borderRadius: 4,
-    marginLeft: 8,
+    marginLeft: 4,
   },
-  savingText: { fontSize: 11, fontWeight: "700" },
+  savingText: { fontSize: 10, fontWeight: "700" },
   colSaldoVisual: {
-    width: 120,
+    width: 110,
     justifyContent: "center",
     alignItems: "flex-end",
-    paddingRight: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
   },
-  saldoTextLarge: { fontSize: 15, fontWeight: "700" },
+  saldoTextLarge: { fontSize: 13, fontWeight: "700", textAlign: "right" },
 
   // 👉 ESTILOS DO NOVO GRID (HEATMAP)
   gridWrapper: { flex: 1, paddingHorizontal: 16, paddingTop: 16 },

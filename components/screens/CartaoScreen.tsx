@@ -555,7 +555,7 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
           data={invoiceTransactions}
           keyExtractor={(item) => item.id}
           ListHeaderComponent={
-            <>
+            <View style={{ gap: 16, paddingBottom: 16 }}>
               {/* Month navigator */}
               <View style={styles.monthNav}>
                 <TouchableOpacity onPress={() => setMonthOffset((m) => m - 1)} style={styles.navBtn}>
@@ -719,7 +719,7 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
                   )}
                 </View>
               </View>
-            </>
+            </View>
           }
           ListEmptyComponent={
             <View style={[styles.txContainer, { backgroundColor: colors.card, borderColor: colors.border, padding: 20 }]}>

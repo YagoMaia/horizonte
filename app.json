@@ -2,7 +2,7 @@
   "expo": {
     "name": "Horizonte",
     "slug": "horizonte",
-    "version": "1.0.1",
+    "version": "1.0.5",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "splash": {
@@ -26,9 +26,12 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "backgroundColor": "#FF7043"
       },
-      "package": "com.horizonte.financas"
+      "package": "com.horizonte.financas",
+      "versionCode": 5
     },
-    "plugins": ["expo-router"],
+    "plugins": [
+      "expo-router"
+    ],
     "experiments": {
       "typedRoutes": true
     }

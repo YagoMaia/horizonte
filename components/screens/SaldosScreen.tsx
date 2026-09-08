@@ -120,6 +120,8 @@ export function SaldosScreen() {
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
   const [filterType, setFilterType] = useState<TransactionType | 'todas'>('todas');
   const [filterAccountId, setFilterAccountId] = useState<string | 'todas'>('todas');
+  // Por padrão só mostra débito — crédito fica escondido para o extrato não pesar com faturas
+  const [filterPaymentMethod, setFilterPaymentMethod] = useState<'debito' | 'credito' | 'todas'>('debito');
 
   // ESTADOS PARA NAVEGAÇÃO DE DATA
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -135,9 +137,11 @@ export function SaldosScreen() {
     hasMore: searchHasMore,
   } = useTransactionSearch(transactions, { type: filterType, accountId: filterAccountId });
 
+  // filterPaymentMethod 'debito' é o default, não conta como "filtro ativo" pro badge
   const activeFiltersCount =
     (filterType !== 'todas' ? 1 : 0) +
-    (filterAccountId !== 'todas' ? 1 : 0);
+    (filterAccountId !== 'todas' ? 1 : 0) +
+    (filterPaymentMethod !== 'debito' ? 1 : 0);
 
   const rowRefs = React.useRef(new Map()).current;
   const currentlyOpenRowRef = useRef<string | null>(null);
@@ -204,10 +208,18 @@ export function SaldosScreen() {
           }
         }
 
+        // Regra 4: Filtro de Método de Pagamento
+        // 'debito' = exclui transações de crédito (cartão), mostrando só débito/dinheiro
+        if (filterPaymentMethod === 'debito') {
+          if (tx.paymentMethod === 'credito') return false;
+        } else if (filterPaymentMethod === 'credito') {
+          if (tx.paymentMethod !== 'credito') return false;
+        }
+
         return true;
       })
       .sort((a, b) => a.date < b.date ? 1 : -1); // Compara strings ISO diretamente
-  }, [transactions, currentDate, filterType, filterAccountId]);
+  }, [transactions, currentDate, filterType, filterAccountId, filterPaymentMethod]);
 
   const paginatedTransactions = useMemo(() => {
     return displayedTransactions.slice(0, displayLimit);
@@ -222,11 +234,12 @@ export function SaldosScreen() {
   React.useEffect(() => {
     setDisplayLimit(20);
     closeCurrentlyOpenRow();
-  }, [currentDate, filterType, filterAccountId]);
+  }, [currentDate, filterType, filterAccountId, filterPaymentMethod]);
 
   const clearFilters = () => {
     setFilterType('todas');
     setFilterAccountId('todas');
+    setFilterPaymentMethod('debito'); // reseta para o default
   };
 
   const [exportModalVisible, setExportModalVisible] = useState(false);
@@ -539,6 +552,32 @@ export function SaldosScreen() {
         </View>
       </View>
 
+      {/* Indicador de filtro ativo — mostra qual método está selecionado */}
+      <View style={{ flexDirection: 'row', gap: 6, paddingHorizontal: 0, marginBottom: 4, flexWrap: 'wrap' }}>
+        {filterPaymentMethod !== 'todas' && (
+          <TouchableOpacity
+            onPress={() => setIsFilterModalOpen(true)}
+            style={[styles.activeFilterPill, { backgroundColor: colors.primary + '18', borderColor: colors.primary + '40' }]}
+          >
+            <Ionicons name="card-outline" size={12} color={colors.primary} />
+            <Text style={[styles.activeFilterPillText, { color: colors.primary }]}>
+              {filterPaymentMethod === 'debito' ? 'Só Débito' : 'Só Crédito'}
+            </Text>
+            <Ionicons name="chevron-down" size={11} color={colors.primary} />
+          </TouchableOpacity>
+        )}
+        {filterType !== 'todas' && (
+          <TouchableOpacity
+            onPress={() => setIsFilterModalOpen(true)}
+            style={[styles.activeFilterPill, { backgroundColor: colors.primary + '18', borderColor: colors.primary + '40' }]}
+          >
+            <Text style={[styles.activeFilterPillText, { color: colors.primary }]}>
+              {filterType.charAt(0).toUpperCase() + filterType.slice(1)}
+            </Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
       {/* 4. BARRA DE NAVEGAÇÃO DOS MESES (Agora abaixo do botão de filtros) */}
       {isSearchActive ? (
         <View style={[styles.searchModeLabel, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -657,15 +696,9 @@ export function SaldosScreen() {
           keyboardDismissMode="on-drag"
           style={{ flex: 1 }}
           contentContainerStyle={styles.content}
-          initialNumToRender={10}
-          maxToRenderPerBatch={5}
-          windowSize={5}
-          removeClippedSubviews={true}
-          getItemLayout={(_, index) => ({
-            length: 72, 
-            offset: 72 * index,
-            index,
-          })}
+          initialNumToRender={15}
+          maxToRenderPerBatch={8}
+          windowSize={7}
           ListEmptyComponent={
             <View style={[styles.emptyState, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <Ionicons name={isSearchActive ? 'search-outline' : 'calendar-outline'} size={40} color={colors.mutedForeground} />
@@ -748,7 +781,35 @@ export function SaldosScreen() {
                 ))}
               </View>
 
-              {/* FILTRO POR CONTA (O que estava faltando) */}
+              {/* FILTRO POR MÉTODO DE PAGAMENTO */}
+              <Text style={[styles.filterGroupLabel, { color: colors.mutedForeground, marginTop: 20 }]}>
+                Método de Pagamento
+              </Text>
+              <View style={styles.chipRow}>
+                {([
+                  { value: 'debito', label: '💳 Só Débito', desc: 'Padrão' },
+                  { value: 'credito', label: '🔴 Só Crédito', desc: '' },
+                  { value: 'todas', label: '📋 Todos', desc: '' },
+                ] as const).map((opt) => (
+                  <TouchableOpacity
+                    key={opt.value}
+                    style={[
+                      styles.chip,
+                      {
+                        borderColor: colors.border,
+                        backgroundColor: filterPaymentMethod === opt.value ? colors.primary : 'transparent',
+                      },
+                    ]}
+                    onPress={() => setFilterPaymentMethod(opt.value)}
+                  >
+                    <Text style={[styles.chipText, { color: filterPaymentMethod === opt.value ? '#FFF' : colors.foreground }]}>
+                      {opt.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {/* FILTRO POR CONTA */}
               <Text style={[styles.filterGroupLabel, { color: colors.mutedForeground, marginTop: 20 }]}>
                 Contas
               </Text>
@@ -1085,5 +1146,18 @@ const styles = StyleSheet.create({
   exportOptionDesc: {
     fontSize: 12,
     marginTop: 2,
+  },
+  activeFilterPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  activeFilterPillText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   });
