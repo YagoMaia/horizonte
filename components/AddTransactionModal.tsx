@@ -61,7 +61,7 @@ const RECURRENCE_OPTIONS: { value: RecurrenceType; label: string }[] = [
   { value: 'anual', label: 'Anual' },
 ];
 
-export function AddTransactionModal({
+export const AddTransactionModal = React.memo(function AddTransactionModal({
   visible,
   onClose,
   onAdd,
@@ -73,7 +73,7 @@ export function AddTransactionModal({
   initialType,
 }: AddTransactionModalProps) {
   // Early bail: quando o modal está fechado, não executa nenhuma lógica pesada
-  if (!visible && !transactionToEdit) return null;
+  if (!visible) return null;
 
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
