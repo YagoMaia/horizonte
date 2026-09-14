@@ -1,6 +1,6 @@
 // constants/types.ts
 
-export type TabType = 'saldos' | 'horizonte' | 'contas' | 'menu' | 'cartao' | 'metas' | 'relatorios' | 'orcamento'
+export type TabType = 'saldos' | 'horizonte' | 'contas' | 'menu' | 'cartao' | 'metas' | 'relatorios' | 'orcamento' | 'viagens'
 
 // Categoria para classificar o gasto recorrente no orçamento teórico
 export type RecurringExpenseCategory = 'fixo' | 'variavel' | 'investimento' | 'outros' | 'ignorado'
@@ -66,6 +66,7 @@ export interface Transaction {
   groupId?: string
   groupIndex?: number;
   reminderEnabled?: boolean // If true, the app will notify and NOT auto-process as paid
+  tripId?: string;
 }
 
 export interface DailyBalance {
@@ -135,3 +136,20 @@ export interface CreateGoalRecurrenceInput {
   startDate: string
   endDate?: string | null
 }
+
+export interface Trip {
+  id: string;
+  name: string;
+  destination?: string;
+  notes?: string;
+  budget?: number; // Orçamento opcional
+  startDate: string; // ISO date
+  endDate: string; // ISO date
+  icon: string;
+  color: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type CreateTripInput = Omit<Trip, 'id' | 'createdAt' | 'updatedAt'>;
+export type UpdateTripInput = Partial<CreateTripInput>;

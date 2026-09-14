@@ -47,9 +47,11 @@ interface AddTransactionModalProps {
   onUpdate?: (tx: any, mode: 'single' | 'future' | 'all') => void;
   accounts: Account[];
   goals?: SavingsGoal[];
+  trips?: import('@/constants/types').Trip[];
   transactionToEdit?: Transaction | null;
   initialAccountId?: string;
   initialType?: TransactionType;
+  initialTripId?: string;
 }
 
 const RECURRENCE_OPTIONS: { value: RecurrenceType; label: string }[] = [
@@ -68,9 +70,11 @@ export const AddTransactionModal = React.memo(function AddTransactionModal({
   onUpdate,
   accounts,
   goals,
+  trips = [],
   transactionToEdit,
   initialAccountId,
   initialType,
+  initialTripId,
 }: AddTransactionModalProps) {
   // Early bail: quando o modal está fechado, não executa nenhuma lógica pesada
   if (!visible) return null;
@@ -110,6 +114,7 @@ export const AddTransactionModal = React.memo(function AddTransactionModal({
   const [paid, setPaid] = useState(true);
   const [reminderEnabled, setReminderEnabled] = useState(false);
   const [targetAccountId, setTargetAccountId] = useState('');
+  const [tripId, setTripId] = useState(initialTripId ?? '');
   const [recurrenceActionVisible, setRecurrenceActionVisible] = useState(false);
   const [pendingTxData, setPendingTxData] = useState<any>(null);
 
@@ -167,6 +172,7 @@ export const AddTransactionModal = React.memo(function AddTransactionModal({
     setRecurrenceEnd('');
     setCalendarTarget(null);
     setTargetAccountId('');
+    setTripId(initialTripId ?? '');
     setIsFastNavOpen(false);
   };
 
@@ -182,6 +188,7 @@ export const AddTransactionModal = React.memo(function AddTransactionModal({
         setReminderEnabled(transactionToEdit.reminderEnabled || false);
         setInstallments(transactionToEdit.totalInstallments || 1);
         setTargetAccountId(transactionToEdit.targetAccountId || '');
+        setTripId(transactionToEdit.tripId || '');
         const d = new Date(transactionToEdit.date);
         setDate(
           `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`,
@@ -460,6 +467,7 @@ export const AddTransactionModal = React.memo(function AddTransactionModal({
       paymentMethod: isCreditCardSelected ? 'credito' : 'debito',
       targetAccountId: type === 'transferencia' ? targetAccountId : undefined,
       calculatedRecurrenceCount: calculatedMaxRecurrences,
+      tripId: tripId || undefined,
     };
 
     if (isEditing && onUpdate) {
@@ -787,6 +795,51 @@ export const AddTransactionModal = React.memo(function AddTransactionModal({
               />
             </View>
 
+            {/* Trips */}
+            {trips && trips.length > 0 && type === 'despesa' && (
+              <View style={styles.field}>
+                <Text style={[styles.label, { color: colors.mutedForeground }]}>
+                  Vincular a uma Viagem (Opcional)
+                </Text>
+                <View style={styles.chipRow}>
+                  <TouchableOpacity
+                    style={[
+                      styles.chip,
+                      {
+                        borderColor: colors.border,
+                        backgroundColor: tripId === '' ? colors.secondary : 'transparent',
+                      },
+                    ]}
+                    onPress={() => setTripId('')}
+                  >
+                    <Text style={[styles.chipText, { color: colors.foreground }]}>Nenhuma</Text>
+                  </TouchableOpacity>
+                  {trips.map((trip) => (
+                    <TouchableOpacity
+                      key={trip.id}
+                      style={[
+                        styles.chip,
+                        {
+                          borderColor: trip.color,
+                          backgroundColor: tripId === trip.id ? trip.color : 'transparent',
+                        },
+                      ]}
+                      onPress={() => setTripId(trip.id)}
+                    >
+                      <Text
+                        style={[
+                          styles.chipText,
+                          { color: tripId === trip.id ? '#FFF' : trip.color },
+                        ]}
+                      >
+                        {trip.name}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            )}
+
             {isCreditCardSelected && !isEditing && recurrence === 'unica' && (
               <View style={styles.field}>
                 <Text style={[styles.label, { color: colors.mutedForeground }]}>
@@ -1045,7 +1098,7 @@ export const AddTransactionModal = React.memo(function AddTransactionModal({
       </KeyboardAvoidingView>
     </Modal>
   );
-}
+});
 
 const styles = StyleSheet.create({
   header: {

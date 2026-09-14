@@ -55,7 +55,9 @@ horizonte-rn/
 │       ├── OrcamentoScreen.tsx # Envelopes de orçamento por categoria
 │       ├── ReportsScreen.tsx   # Relatórios analíticos e evolução patrimonial
 │       ├── ContasScreen.tsx    # Gerenciamento de contas e ajuste auditável de saldos
-│       └── MenuScreen.tsx      # Configurações, temas e resumo financeiro
+│       ├── MenuScreen.tsx      # Configurações, temas e resumo financeiro
+│       ├── ViagensScreen.tsx   # Planejamento de viagens (módulo em evolução)
+│       └── TripDetailScreen.tsx# Detalhes e lançamentos associados à viagem
 ├── context/                    # Provedores de contexto React
 │   ├── StoreContext.tsx        # Contexto global de contas, transações e estado financeiro
 │   └── ThemeContext.tsx        # Contexto de tema dinâmico (Claro / Escuro / Sistema)
@@ -67,7 +69,8 @@ horizonte-rn/
 │   ├── useSavingsGoals.ts      # Gestão de metas, depósitos, resgates e sincronização
 │   ├── useReportsData.ts       # Agregações e métricas para relatórios
 │   ├── useTheme.ts             # Consumo simplificado do tema ativo
-│   └── useTransactionSearch.ts # Mecanismo de busca e filtragem avançada
+│   ├── useTransactionSearch.ts # Mecanismo de busca e filtragem avançada
+│   └── useTrips.ts             # Estado e operações do módulo de viagens
 └── lib/                        # Utilitários e funções puras de domínio
     ├── utils.ts                # Formatação de moeda, datas e cálculos auxiliares
     ├── goalUtils.ts            # Cálculo de progresso, prazos e status de metas

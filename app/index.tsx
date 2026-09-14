@@ -6,6 +6,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
+  Alert,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
@@ -24,22 +25,34 @@ import { GoalDetailScreen } from '@/components/screens/GoalDetailScreen'
 import { ReportsScreen } from '@/components/screens/ReportsScreen'
 import { OrcamentoScreen } from '@/components/screens/OrcamentoScreen'
 import { useSavingsGoals } from '@/hooks/useSavingsGoals'
+import { useTrips } from '@/hooks/useTrips'
+import { ViagensScreen } from '@/components/screens/ViagensScreen'
+import { TripDetailScreen } from '@/components/screens/TripDetailScreen'
+import { TripFormModal } from '@/components/TripFormModal'
+import { Trip } from '@/constants/types'
 
 export default function HomePage() {
   const { colors } = useTheme()
   const store = useStoreContext()
   const savingsGoalsProps = useSavingsGoals()
+  const tripsProps = useTrips()
   const { goals, deposits, processOverdueRecurrences, syncWithTransactions, addDeposit } = savingsGoalsProps
   const [activeTab, setActiveTab] = useState<TabType>('saldos')
   const [modalVisible, setModalVisible] = useState(false)
+  const [tripFormVisible, setTripFormVisible] = useState(false)
   
   // Internal navigation state for "metas" tab (stores selected goal object)
   const [selectedGoal, setSelectedGoal] = useState<SavingsGoal | null>(null)
+
+  // Internal navigation state for "viagens" tab
+  const [selectedTrip, setSelectedTrip] = useState<Trip | null>(null)
+  const [tripToEdit, setTripToEdit] = useState<Trip | undefined>()
 
   // 👉 Estado para armazenar valores padrão dinâmicos para o modal
   const [defaultValues, setDefaultValues] = useState<{
     accountId?: string;
     type?: 'despesa' | 'receita' | 'transferencia';
+    tripId?: string;
   }>({});
 
   const handleSelectCard = useCallback((card: Account | null) => {
@@ -114,7 +127,59 @@ export default function HomePage() {
         )
       case 'relatorios': return <ReportsScreen />
       case 'orcamento': return <OrcamentoScreen />
-      case 'menu': return <MenuScreen />
+      case 'menu': return (
+        <MenuScreen
+          onNavigate={(tab) => setActiveTab(tab)}
+          trips={tripsProps.trips}
+          onCreateTrip={() => {
+            setTripToEdit(undefined);
+            setActiveTab('viagens');
+            setTripFormVisible(true);
+          }}
+          onAddTripExpense={(trip) => {
+            setDefaultValues({ type: 'despesa', tripId: trip.id });
+            setModalVisible(true);
+          }}
+        />
+      )
+      case 'viagens':
+        if (selectedTrip) {
+          return (
+            <TripDetailScreen
+              trip={selectedTrip}
+              onBack={() => setSelectedTrip(null)}
+              onEdit={() => {
+                setTripToEdit(selectedTrip);
+                setSelectedTrip(null);
+              }}
+              onDelete={() => Alert.alert(
+                'Excluir viagem?',
+                `A viagem “${selectedTrip.name}” será removida, mas as transações permanecerão no extrato.`,
+                [
+                  { text: 'Cancelar', style: 'cancel' },
+                  { text: 'Excluir', style: 'destructive', onPress: async () => {
+                    await tripsProps.deleteTrip(selectedTrip.id);
+                    setSelectedTrip(null);
+                  } },
+                ],
+              )}
+              onAddTransaction={() => {
+                setDefaultValues({ type: 'despesa', tripId: selectedTrip.id });
+                setModalVisible(true);
+              }}
+            />
+          );
+        }
+        return (
+          <ViagensScreen
+            trips={tripsProps.trips}
+            createTrip={tripsProps.createTrip}
+            updateTrip={tripsProps.updateTrip}
+            editTrip={tripToEdit}
+            onEditConsumed={() => setTripToEdit(undefined)}
+            onTripPress={(trip) => setSelectedTrip(trip)}
+          />
+        );
       default: return <SaldosScreen />
     }
   }
@@ -187,6 +252,7 @@ export default function HomePage() {
         onTabChange={(tab) => {
           if (tab !== 'cartao') setDefaultValues({});
           if (tab !== 'metas') setSelectedGoal(null);
+          if (tab !== 'viagens') setSelectedTrip(null);
           setActiveTab(tab);
         }}
         onAddClick={() => setModalVisible(true)}
@@ -212,7 +278,18 @@ export default function HomePage() {
         accounts={store.accounts}
         initialAccountId={defaultValues.accountId}
         initialType={defaultValues.type}
+        initialTripId={defaultValues.tripId}
         goals={goals}
+        trips={tripsProps.trips}
+      />
+
+      <TripFormModal
+        visible={tripFormVisible}
+        onClose={() => setTripFormVisible(false)}
+        onSubmit={async (input) => {
+          await tripsProps.createTrip(input);
+          setTripFormVisible(false);
+        }}
       />
     </SafeAreaView>
   )

@@ -114,6 +114,7 @@ npx tsc --noEmit
 ## 📖 Documentação Adicional
 
 Para entender a fundo a implementação e as regras financeiras:
+- [Mapa do Projeto (docs/MAPA_PROJETO.md)](docs/MAPA_PROJETO.md)
 - [Documentação de Arquitetura Técnica (docs/ARCHITECTURE.md)](docs/ARCHITECTURE.md)
 - [Manual de Regras de Domínio Financeiro (docs/DOMINIO_FINANCEIRO.md)](docs/DOMINIO_FINANCEIRO.md)
 - [Manual Operacional de IA (GEMINI.md)](GEMINI.md)

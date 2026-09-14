@@ -19,6 +19,7 @@ import * as Sharing from 'expo-sharing'
 import * as DocumentPicker from 'expo-document-picker'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { PRIMARY_COLORS } from '@/constants/theme'
+import { TabType, Trip } from '@/constants/types'
 
 interface MenuItemProps {
   icon: string
@@ -58,9 +59,13 @@ function MenuItem({ icon, label, value, onPress, danger, colors }: MenuItemProps
 }
 
 interface MenuScreenProps {
+  onNavigate?: (tab: TabType) => void;
+  trips?: Trip[];
+  onCreateTrip?: () => void;
+  onAddTripExpense?: (trip: Trip) => void;
 }
 
-export function MenuScreen({ }: MenuScreenProps) {
+export function MenuScreen({ onNavigate, trips = [], onCreateTrip, onAddTripExpense }: MenuScreenProps) {
   const { colors, themeMode, setThemeMode, primaryColor, setPrimaryColor } = useTheme()
   // Puxamos a função 'monthlyBudgets' caso você a tenha exportado no StoreContext
   const { accounts, transactions, monthlyBudgets, totalBalance, clearAllData } = useStoreContext()
@@ -75,6 +80,11 @@ export function MenuScreen({ }: MenuScreenProps) {
   }[themeMode]
 
   const currentColorLabel = PRIMARY_COLORS.find(c => c.value === primaryColor)?.label || 'Customizada'
+  const today = new Date();
+  const upcomingTrip = trips
+    .filter((trip) => new Date(trip.endDate) >= today)
+    .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime())[0];
+  const activeTrip = trips.find((trip) => new Date(trip.startDate) <= today && new Date(trip.endDate) >= today);
 
   // --- EXPORTAR PARA EXCEL (CSV) ---
   const handleExportCSV = async () => {
@@ -355,6 +365,40 @@ export function MenuScreen({ }: MenuScreenProps) {
             {formatCurrency(totalBalance)}
           </Text>
         </View>
+      </View>
+
+      {/* Viagens */}
+      <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>ORGANIZAÇÃO</Text>
+      <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <MenuItem
+          icon="airplane-outline"
+          label="Gerenciar Viagens"
+          onPress={() => onNavigate?.('viagens')}
+          colors={colors}
+        />
+        <MenuItem
+          icon="add-circle-outline"
+          label="Nova viagem"
+          onPress={onCreateTrip || (() => onNavigate?.('viagens'))}
+          colors={colors}
+        />
+        {upcomingTrip && (
+          <MenuItem
+            icon="calendar-outline"
+            label={activeTrip ? 'Viagem em andamento' : 'Próxima viagem'}
+            value={upcomingTrip.name}
+            onPress={() => onNavigate?.('viagens')}
+            colors={colors}
+          />
+        )}
+        {activeTrip && onAddTripExpense && (
+          <MenuItem
+            icon="receipt-outline"
+            label="Registrar gasto da viagem"
+            onPress={() => onAddTripExpense(activeTrip)}
+            colors={colors}
+          />
+        )}
       </View>
 
       {/* Settings */}
