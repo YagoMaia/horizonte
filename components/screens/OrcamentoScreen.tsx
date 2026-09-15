@@ -5,39 +5,46 @@ import {
   Text,
   StyleSheet,
   ScrollView,
+  FlatList,
   TouchableOpacity,
   Modal,
   Pressable,
+  Platform,
 } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { useTheme } from '@/hooks/useTheme'
 import { useStoreContext } from '@/context/StoreContext'
 import { RecurringExpenseCategory, BudgetAllocation } from '@/constants/types'
 import { AllocationEditorModal } from './orcamento/AllocationEditorModal'
+import { Layout, ThemeColors } from '@/constants/theme'
 
 // ────────────────────────────────────────────────────────────────────────────────
 // Dados estáticos auxiliares
 // ────────────────────────────────────────────────────────────────────────────────
 
-export const CATEGORY_META: Record<
-  Exclude<RecurringExpenseCategory, 'ignorado'>,
-  { label: string; icon: string; color: string }
-> = {
-  investimento: { label: 'Investimento', icon: 'trending-up-outline',        color: '#388E3C' },
-  fixo:         { label: 'Fixo',         icon: 'home-outline',               color: '#1976D2' },
-  variavel:     { label: 'Variável',     icon: 'swap-horizontal-outline',    color: '#F57C00' },
-  outros:       { label: 'Outros',       icon: 'ellipsis-horizontal-outline', color: '#7B1FA2' },
-}
+type BudgetCategory = Exclude<RecurringExpenseCategory, 'ignorado'>
 
-const ALLOCATION_META: Record<
+const CATEGORIES: BudgetCategory[] = ['investimento', 'fixo', 'variavel', 'outros']
+
+const getCategoryMeta = (colors: ThemeColors): Record<
+  BudgetCategory,
+  { label: string; icon: string; color: string }
+> => ({
+  investimento: { label: 'Investimento', icon: 'trending-up-outline',         color: colors.categoryInvestment },
+  fixo:         { label: 'Fixo',         icon: 'home-outline',                color: colors.categoryFixed },
+  variavel:     { label: 'Variável',     icon: 'swap-horizontal-outline',     color: colors.categoryVariable },
+  outros:       { label: 'Outros',       icon: 'ellipsis-horizontal-outline', color: colors.categoryOther },
+})
+
+const getAllocationMeta = (colors: ThemeColors): Record<
   keyof BudgetAllocation,
   { label: string; color: string; icon: string }
-> = {
-  investimento: { label: 'Investimentos',    color: '#388E3C', icon: 'trending-up-outline' },
-  fixo:         { label: 'Gastos Fixos',     color: '#1976D2', icon: 'home-outline' },
-  variavel:     { label: 'Gastos Variáveis', color: '#F57C00', icon: 'swap-horizontal-outline' },
-  outros:       { label: 'Outras Demandas',  color: '#7B1FA2', icon: 'ellipsis-horizontal-outline' },
-}
+> => ({
+  investimento: { label: 'Investimentos',    color: colors.categoryInvestment, icon: 'trending-up-outline' },
+  fixo:         { label: 'Gastos Fixos',     color: colors.categoryFixed,      icon: 'home-outline' },
+  variavel:     { label: 'Gastos Variáveis', color: colors.categoryVariable,   icon: 'swap-horizontal-outline' },
+  outros:       { label: 'Outras Demandas',  color: colors.categoryOther,      icon: 'ellipsis-horizontal-outline' },
+})
 
 const RECURRENCE_LABEL: Record<string, string> = {
   mensal:          'Mensal',
@@ -46,8 +53,6 @@ const RECURRENCE_LABEL: Record<string, string> = {
   diaria:          'Diária',
   quinto_dia_util: '5º dia útil',
 }
-
-const CATEGORIES: Exclude<RecurringExpenseCategory, 'ignorado'>[] = ['investimento', 'fixo', 'variavel', 'outros']
 
 // ────────────────────────────────────────────────────────────────────────────────
 // Tipos
@@ -65,8 +70,8 @@ interface BudgetItem {
   type: 'despesa' | 'transferencia'
   sourceAccountName: string
   targetAccountName?: string   // para transferências
-  autoCategory: Exclude<RecurringExpenseCategory, 'ignorado'>
-  category: Exclude<RecurringExpenseCategory, 'ignorado'> // final (auto ou override do usuário)
+  autoCategory: BudgetCategory
+  category: BudgetCategory // final (auto ou override do usuário)
 }
 
 // ────────────────────────────────────────────────────────────────────────────────
@@ -85,11 +90,12 @@ interface CategoryPickerProps {
   item: BudgetItem | null
   onClose: () => void
   onSelect: (id: string, category: RecurringExpenseCategory) => void
-  colors: any
+  colors: ThemeColors
 }
 
 function CategoryPickerModal({ visible, item, onClose, onSelect, colors }: CategoryPickerProps) {
   if (!item) return null
+  const categoryMeta = getCategoryMeta(colors)
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -103,7 +109,7 @@ function CategoryPickerModal({ visible, item, onClose, onSelect, colors }: Categ
           </Text>
 
           {CATEGORIES.map((cat) => {
-            const meta = CATEGORY_META[cat]
+            const meta = categoryMeta[cat]
             const isSelected = item.category === cat
             return (
               <TouchableOpacity
@@ -140,8 +146,8 @@ function CategoryPickerModal({ visible, item, onClose, onSelect, colors }: Categ
             style={[
               pickerStyles.option,
               {
-                backgroundColor: '#D32F2F12',
-                borderColor: '#D32F2F',
+                backgroundColor: colors.dangerLight,
+                borderColor: colors.destructive,
                 borderWidth: 1,
                 marginTop: 4,
               },
@@ -152,10 +158,10 @@ function CategoryPickerModal({ visible, item, onClose, onSelect, colors }: Categ
             }}
             activeOpacity={0.7}
           >
-            <View style={[pickerStyles.optionIcon, { backgroundColor: '#D32F2F20' }]}>
-              <Ionicons name="eye-off-outline" size={18} color="#D32F2F" />
+            <View style={[pickerStyles.optionIcon, { backgroundColor: colors.dangerLight }]}>
+              <Ionicons name="eye-off-outline" size={18} color={colors.destructive} />
             </View>
-            <Text style={[pickerStyles.optionLabel, { color: '#D32F2F' }]}>
+            <Text style={[pickerStyles.optionLabel, { color: colors.destructive }]}>
               Ignorar no Orçamento
             </Text>
           </TouchableOpacity>
@@ -169,15 +175,79 @@ function CategoryPickerModal({ visible, item, onClose, onSelect, colors }: Categ
   )
 }
 
+interface BudgetItemRowProps {
+  item: BudgetItem
+  colors: ThemeColors
+  isOverridden: boolean
+  onEdit: (item: BudgetItem) => void
+}
+
+const BudgetItemRow = React.memo(function BudgetItemRow({
+  item,
+  colors,
+  isOverridden,
+  onEdit,
+}: BudgetItemRowProps) {
+  const meta = getCategoryMeta(colors)[item.category]
+  const isPaid = item.paid ?? false
+  const statusLabel = isPaid ? 'Pago' : 'A pagar'
+  const statusIcon = isPaid ? 'checkmark-circle-outline' : 'time-outline'
+  const statusBackground = isPaid ? colors.successLight : colors.warningLight
+  const statusColor = isPaid ? colors.success : colors.warning
+
+  return (
+    <View style={[styles.expenseItem, styles.virtualizedItem, {
+      backgroundColor: colors.card,
+      borderColor: colors.border,
+    }]}>
+      <View style={[styles.itemIcon, { backgroundColor: meta.color + '18' }]}>
+        <Ionicons name={meta.icon as any} size={18} color={meta.color} />
+      </View>
+
+      <View style={styles.itemDetails}>
+        <Text style={[styles.itemName, { color: colors.foreground }]} numberOfLines={1}>
+          {item.description}
+        </Text>
+        <View style={styles.itemMeta}>
+          <View style={[styles.statusPill, { backgroundColor: statusBackground }]}>
+            <Ionicons name={statusIcon as any} size={10} color={statusColor} />
+            <Text style={[styles.statusPillText, { color: statusColor }]}>{statusLabel}</Text>
+          </View>
+          <Text style={[styles.accountFlow, { color: colors.mutedForeground }]} numberOfLines={1}>
+            {item.type === 'transferencia' && item.targetAccountName
+              ? `${item.sourceAccountName} → ${item.targetAccountName}`
+              : item.sourceAccountName}
+          </Text>
+        </View>
+      </View>
+
+      <View style={styles.itemRight}>
+        <Text style={[styles.itemAmount, { color: colors.foreground }]}>{fmt(item.amount)}</Text>
+        <TouchableOpacity
+          style={[styles.catBadge, { backgroundColor: meta.color + '18', borderColor: meta.color }]}
+          onPress={() => onEdit(item)}
+          activeOpacity={0.7}
+        >
+          <Ionicons name={meta.icon as any} size={10} color={meta.color} />
+          <Text style={[styles.catBadgeText, { color: meta.color }]}>{meta.label}</Text>
+          {isOverridden && <Ionicons name="pencil" size={9} color={meta.color} />}
+        </TouchableOpacity>
+      </View>
+    </View>
+  )
+})
+
 // ────────────────────────────────────────────────────────────────────────────────
 // Tela principal: OrcamentoScreen
 // ────────────────────────────────────────────────────────────────────────────────
 
 export function OrcamentoScreen() {
   const { colors } = useTheme()
+  const categoryMeta = useMemo(() => getCategoryMeta(colors), [colors])
+  const allocationMeta = useMemo(() => getAllocationMeta(colors), [colors])
   const store = useStoreContext()
   const {
-    transactions,
+    transactionIndexes,
     accounts,
     budgetAllocation,
     saveBudgetAllocation,
@@ -221,6 +291,15 @@ export function OrcamentoScreen() {
     'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro',
   ]
   const monthLabel = `${MONTH_NAMES[selectedDate.month]} ${selectedDate.year}`
+  const selectedMonthPrefix = `${selectedDate.year}-${String(selectedDate.month + 1).padStart(2, '0')}`
+  const selectedCalendarTransactions = useMemo(
+    () => transactionIndexes.byMonth.get(selectedMonthPrefix) ?? [],
+    [transactionIndexes, selectedMonthPrefix],
+  )
+  const accountsById = useMemo(
+    () => new Map(accounts.map(account => [account.id, account])),
+    [accounts],
+  )
 
   // ── Receitas do mês selecionado ──────────────────────────────────────────────
   // Calcula receitas pagas e a receber para o mês selecionado
@@ -228,34 +307,35 @@ export function OrcamentoScreen() {
     let paid = 0
     let pending = 0
 
-    transactions.forEach(tx => {
+    selectedCalendarTransactions.forEach(tx => {
       if (tx.type !== 'receita') return
-      const d = new Date(tx.date)
-      if (d.getMonth() === selectedDate.month && d.getFullYear() === selectedDate.year) {
-        if (tx.paid) {
-          paid += tx.amount
-        } else {
-          pending += tx.amount
-        }
-      }
+      if (tx.paid) paid += tx.amount
+      else pending += tx.amount
     })
 
     const total = paid + pending
     return { paid, pending, total }
-  }, [transactions, selectedDate])
+  }, [selectedCalendarTransactions])
 
   const selectedMonthIncome = incomeSummary.total
 
   // ── Composição dos gastos e transferências do mês ───────────────────────────
   const detectedItems = useMemo((): BudgetItem[] => {
     const items: BudgetItem[] = []
+    const candidates = new Map(selectedCalendarTransactions.map(tx => [tx.id, tx]))
+    for (const card of accounts) {
+      if (card.type !== 'cartao_credito') continue
+      for (const transaction of transactionIndexes.creditByCard.get(card.id) ?? []) {
+        candidates.set(transaction.id, transaction)
+      }
+    }
 
-    for (const tx of transactions) {
+    for (const tx of candidates.values()) {
       if (tx.type === 'receita') continue
       // Ignora lançamento de pagamento de fatura para não duplicar com as compras no cartão
       if (tx.description?.startsWith('Pagamento Fatura')) continue
 
-      const sourceAcc = accounts.find(a => a.id === tx.accountId)
+      const sourceAcc = accountsById.get(tx.accountId)
       const sourceAccountName = sourceAcc?.name ?? 'Conta'
       const isCard = tx.paymentMethod === 'credito' || sourceAcc?.type === 'cartao_credito'
 
@@ -326,7 +406,7 @@ export function OrcamentoScreen() {
               autoCategory = 'investimento'
               targetAccountName = 'Meta de Poupança'
             } else {
-              const destAcc = accounts.find(a => a.id === destId)
+              const destAcc = destId ? accountsById.get(destId) : undefined
               targetAccountName = destAcc?.name
               if (destAcc?.type === 'investimento') {
                 autoCategory = 'investimento'
@@ -374,7 +454,7 @@ export function OrcamentoScreen() {
     }
 
     return items
-  }, [transactions, accounts, recurringOverrides, selectedDate])
+  }, [selectedCalendarTransactions, transactionIndexes, accounts, accountsById, recurringOverrides, selectedDate])
 
   // ── Totais por categoria ─────────────────────────────────────────────────────
   const totals = useMemo(() => {
@@ -418,11 +498,27 @@ export function OrcamentoScreen() {
   )
 
   return (
-    <ScrollView
-      style={[styles.container, { backgroundColor: colors.background }]}
-      contentContainerStyle={styles.content}
-      showsVerticalScrollIndicator={false}
-    >
+    <>
+      <FlatList
+        style={[styles.container, { backgroundColor: colors.background }]}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        data={filteredItems}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => (
+          <BudgetItemRow
+            item={item}
+            colors={colors}
+            isOverridden={Boolean(recurringOverrides[item.id])}
+            onEdit={setPickerItem}
+          />
+        )}
+        initialNumToRender={12}
+        maxToRenderPerBatch={8}
+        windowSize={7}
+        removeClippedSubviews={Platform.OS === 'android'}
+        ListHeaderComponent={(
+          <>
       {/* ── Cabeçalho com seletor de mês ── */}
       <View style={styles.screenHeader}>
         <TouchableOpacity
@@ -450,12 +546,12 @@ export function OrcamentoScreen() {
           <Text style={[styles.monthNavLabel, { color: colors.foreground }]}>{monthLabel}</Text>
           {isCurrentMonth && (
             <View style={[styles.currentMonthBadge, { backgroundColor: colors.primary + '20' }]}>
-              <Text style={[styles.currentMonthBadgeText, { color: colors.primary }]}>Mês atual</Text>
+              <Text style={[styles.currentMonthBadgeText, { color: colors.primaryText }]}>Mês atual</Text>
             </View>
           )}
           {isFutureMonth && (
-            <View style={[styles.currentMonthBadge, { backgroundColor: '#F57C0020' }]}>
-              <Text style={[styles.currentMonthBadgeText, { color: '#F57C00' }]}>Projeção</Text>
+            <View style={[styles.currentMonthBadge, { backgroundColor: colors.warningLight }]}>
+              <Text style={[styles.currentMonthBadgeText, { color: colors.warning }]}>Projeção</Text>
             </View>
           )}
         </TouchableOpacity>
@@ -470,8 +566,8 @@ export function OrcamentoScreen() {
         {/* Top Header Row */}
         <View style={styles.incomeCardHeader}>
           <View style={styles.incomeCardTitleRow}>
-            <View style={[styles.incomeIconWrap, { backgroundColor: '#388E3C18' }]}>
-              <Ionicons name="cash-outline" size={16} color="#388E3C" />
+            <View style={[styles.incomeIconWrap, { backgroundColor: colors.successLight }]}>
+              <Ionicons name="cash-outline" size={16} color={colors.success} />
             </View>
             <Text style={[styles.incomeLabel, { color: colors.mutedForeground }]}>
               {incomeSummary.total > 0
@@ -481,12 +577,12 @@ export function OrcamentoScreen() {
           </View>
           <View style={[styles.incomeBadge, {
             backgroundColor: incomeSummary.total > 0
-              ? incomeSummary.pending === 0 ? '#388E3C20' : '#F57C0020'
-              : '#73737320',
+              ? incomeSummary.pending === 0 ? colors.successLight : colors.warningLight
+              : colors.muted,
           }]}>
             <Text style={[styles.incomeBadgeText, {
               color: incomeSummary.total > 0
-                ? incomeSummary.pending === 0 ? '#388E3C' : '#F57C00'
+                ? incomeSummary.pending === 0 ? colors.success : colors.warning
                 : colors.mutedForeground,
             }]}>
               {incomeSummary.total > 0
@@ -505,13 +601,13 @@ export function OrcamentoScreen() {
         {incomeSummary.total > 0 && incomeSummary.pending > 0 && incomeSummary.paid > 0 && (
           <View style={[styles.incomeBreakdownRow, { borderTopColor: colors.border }]}>
             <View style={styles.incomeBreakdownItem}>
-              <View style={[styles.incomeDot, { backgroundColor: '#388E3C' }]} />
+              <View style={[styles.incomeDot, { backgroundColor: colors.success }]} />
               <Text style={[styles.incomeBreakdownText, { color: colors.mutedForeground }]}>
                 {fmt(incomeSummary.paid)} recebido
               </Text>
             </View>
             <View style={styles.incomeBreakdownItem}>
-              <View style={[styles.incomeDot, { backgroundColor: '#F57C00' }]} />
+              <View style={[styles.incomeDot, { backgroundColor: colors.warning }]} />
               <Text style={[styles.incomeBreakdownText, { color: colors.mutedForeground }]}>
                 {fmt(incomeSummary.pending)} a receber
               </Text>
@@ -541,7 +637,7 @@ export function OrcamentoScreen() {
               key={key}
               style={[styles.stackedBarSegment, {
                 flex: budgetAllocation[key],
-                backgroundColor: ALLOCATION_META[key].color,
+                backgroundColor: allocationMeta[key].color,
               }]}
             />
           ))}
@@ -549,7 +645,7 @@ export function OrcamentoScreen() {
 
         {/* Linhas de detalhe */}
         {(Object.keys(budgetAllocation) as (keyof BudgetAllocation)[]).map((key) => {
-          const meta = ALLOCATION_META[key]
+          const meta = allocationMeta[key]
           const theoretical = theoreticalAlloc[key]
           const actual = totals[key] ?? 0
           const diff = theoretical - actual
@@ -576,7 +672,7 @@ export function OrcamentoScreen() {
                   {fmt(theoretical)}
                 </Text>
                 {referenceIncome > 0 && (
-                  <Text style={[styles.allocDiff, { color: isOk ? '#388E3C' : '#D32F2F' }]}>
+                  <Text style={[styles.allocDiff, { color: isOk ? colors.success : colors.destructive }]}>
                     {isOk
                       ? diff > 0 ? `+${fmt(diff)} livre` : 'No limite'
                       : `${fmt(Math.abs(diff))} acima`}
@@ -592,7 +688,7 @@ export function OrcamentoScreen() {
       <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <Text style={[styles.sectionCardTitle, { color: colors.foreground }]}>Total por Categoria no Mês</Text>
         {CATEGORIES.map((cat) => {
-          const meta = CATEGORY_META[cat]
+          const meta = categoryMeta[cat]
           return (
             <View key={cat} style={[styles.summaryRow, { borderBottomColor: colors.border }]}>
               <View style={[styles.summaryIcon, { backgroundColor: meta.color + '18' }]}>
@@ -624,8 +720,8 @@ export function OrcamentoScreen() {
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll}>
           {(['all', ...CATEGORIES] as const).map((cat) => {
             const selected = filterCategory === cat
-            const meta = cat !== 'all' ? CATEGORY_META[cat] : null
-            const color = meta ? meta.color : colors.primary
+            const meta = cat !== 'all' ? categoryMeta[cat] : null
+            const color = meta ? meta.color : colors.primaryText
             return (
               <TouchableOpacity
                 key={cat}
@@ -645,90 +741,21 @@ export function OrcamentoScreen() {
             )
           })}
         </ScrollView>
-
-        {/* Itens */}
-        {filteredItems.length === 0 ? (
-          <View style={styles.emptyState}>
+      </View>
+          </>
+        )}
+        ListEmptyComponent={(
+          <View style={[styles.emptyState, styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Ionicons name="receipt-outline" size={40} color={colors.mutedForeground} />
-            <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
-              Nenhum gasto encontrado neste mês
-            </Text>
+            <Text style={[styles.emptyTitle, { color: colors.foreground }]}>Nenhum gasto encontrado neste mês</Text>
             <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
               Lançamentos avulsos, compras no cartão ou recorrências cadastradas aparecerão aqui automaticamente.
             </Text>
           </View>
-        ) : (
-          filteredItems.map((item) => {
-            const meta = CATEGORY_META[item.category]
-            const isOverridden = !!recurringOverrides[item.id]
-            
-            // Status de pagamento (Pago vs A pagar)
-            const isPaid = item.paid ?? false
-            const statusLabel = isPaid ? 'Pago' : 'A pagar'
-            const statusIcon = isPaid ? 'checkmark-circle-outline' : 'time-outline'
-            const statusBg = isPaid ? '#388E3C18' : '#F57C0018'
-            const statusTextColor = isPaid ? '#388E3C' : '#F57C00'
-
-            return (
-              <View key={item.id} style={[styles.expenseItem, { borderBottomColor: colors.border }]}>
-                {/* Ícone do tipo */}
-                <View style={[styles.itemIcon, { backgroundColor: meta.color + '18' }]}>
-                  <Ionicons name={meta.icon as any} size={18} color={meta.color} />
-                </View>
-
-                {/* Detalhes */}
-                <View style={styles.itemDetails}>
-                  <Text style={[styles.itemName, { color: colors.foreground }]} numberOfLines={1}>
-                    {item.description}
-                  </Text>
-                  <View style={styles.itemMeta}>
-                    {/* Badge de status (Pago vs A pagar) */}
-                    <View style={[styles.statusPill, { backgroundColor: statusBg }]}>
-                      <Ionicons name={statusIcon as any} size={10} color={statusTextColor} />
-                      <Text style={[styles.statusPillText, { color: statusTextColor }]}>
-                        {statusLabel}
-                      </Text>
-                    </View>
-
-                    {/* Conta de origem → destino */}
-                    {item.type === 'transferencia' && item.targetAccountName ? (
-                      <Text style={[styles.accountFlow, { color: colors.mutedForeground }]} numberOfLines={1}>
-                        {item.sourceAccountName} → {item.targetAccountName}
-                      </Text>
-                    ) : (
-                      <Text style={[styles.accountFlow, { color: colors.mutedForeground }]} numberOfLines={1}>
-                        {item.sourceAccountName}
-                      </Text>
-                    )}
-                  </View>
-                </View>
-
-                {/* Valor + badge de categoria (tocável) */}
-                <View style={styles.itemRight}>
-                  <Text style={[styles.itemAmount, { color: colors.foreground }]}>
-                    {fmt(item.amount)}
-                  </Text>
-                  <TouchableOpacity
-                    style={[styles.catBadge, { backgroundColor: meta.color + '18', borderColor: meta.color }]}
-                    onPress={() => setPickerItem(item)}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons name={meta.icon as any} size={10} color={meta.color} />
-                    <Text style={[styles.catBadgeText, { color: meta.color }]}>{meta.label}</Text>
-                    {isOverridden && (
-                      <Ionicons name="pencil" size={9} color={meta.color} />
-                    )}
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )
-          })
         )}
-      </View>
+        ListFooterComponent={<View style={{ height: 32 }} />}
+      />
 
-      <View style={{ height: 32 }} />
-
-      {/* Modais */}
       <CategoryPickerModal
         visible={!!pickerItem}
         item={pickerItem}
@@ -743,7 +770,7 @@ export function OrcamentoScreen() {
         onSave={saveBudgetAllocation}
         colors={colors}
       />
-    </ScrollView>
+    </>
   )
 }
 
@@ -753,7 +780,7 @@ export function OrcamentoScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  content: { padding: 20, paddingBottom: 32 },
+  content: { padding: Layout.page, paddingBottom: 32 },
 
   screenHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   screenTitle: { fontSize: 22, fontWeight: '700', letterSpacing: -0.3 },
@@ -840,6 +867,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
     paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, gap: 10,
   },
+  virtualizedItem: {
+    borderWidth: 1,
+    borderRadius: Layout.controlRadius,
+    paddingHorizontal: 14,
+    marginBottom: 8,
+  },
   itemIcon: { width: 38, height: 38, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   itemDetails: { flex: 1 },
   itemName: { fontSize: 14, fontWeight: '600', marginBottom: 4 },
@@ -858,6 +891,7 @@ const styles = StyleSheet.create({
   catBadgeText: { fontSize: 11, fontWeight: '600' },
 
   emptyState: { alignItems: 'center', paddingVertical: 28, gap: 8 },
+  emptyCard: { borderWidth: 1, borderRadius: Layout.controlRadius, paddingHorizontal: 20 },
   emptyTitle: { fontSize: 15, fontWeight: '600' },
   emptyText: { fontSize: 13, textAlign: 'center', lineHeight: 20 },
 })

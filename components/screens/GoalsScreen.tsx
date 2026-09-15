@@ -88,6 +88,14 @@ export function GoalsScreen({ onGoalPress, goals, loading, error, createGoal, re
   if (goals.length === 0) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <ScrollView contentContainerStyle={styles.content}>
+          <ScreenState
+            kind="empty"
+            title="Comece pela sua primeira meta"
+            description="Defina um valor e acompanhe seu progresso até chegar lá."
+            action={{ label: 'Criar minha primeira meta', onPress: () => setFormModalVisible(true) }}
+          />
+        </ScrollView>
         <GoalFormModal
           visible={formModalVisible}
           onClose={() => setFormModalVisible(false)}
@@ -137,14 +145,14 @@ export function GoalsScreen({ onGoalPress, goals, loading, error, createGoal, re
                   </Text>
                   <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
                     {isInHorizonte && (
-                      <View style={[styles.horizonteBadge, { backgroundColor: '#1976D215', borderColor: '#1976D2' }]}>
-                        <Ionicons name="trending-up-outline" size={10} color="#1976D2" />
-                        <Text style={[styles.horizonteBadgeText, { color: '#1976D2' }]}>Horizonte</Text>
+                      <View style={[styles.horizonteBadge, { backgroundColor: colors.infoLight, borderColor: colors.info }]}>
+                        <Ionicons name="trending-up-outline" size={10} color={colors.info} />
+                        <Text style={[styles.horizonteBadgeText, { color: colors.info }]}>Horizonte</Text>
                       </View>
                     )}
                     {isCompleted && (
-                      <View style={[styles.checkmark, { backgroundColor: '#4CAF50' }]}>
-                        <Ionicons name="checkmark" size={14} color="#FFF" />
+                      <View style={[styles.checkmark, { backgroundColor: colors.success }]}>
+                        <Ionicons name="checkmark" size={14} color={colors.successForeground} />
                       </View>
                     )}
                   </View>
@@ -192,9 +200,9 @@ export function GoalsScreen({ onGoalPress, goals, loading, error, createGoal, re
                       ? `${diffDays}d restantes`
                       : deadline.toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' });
                     return (
-                      <View style={[styles.deadlineBadge, { backgroundColor: isLate ? '#D32F2F15' : colors.muted, borderColor: isLate ? '#D32F2F' : colors.border }]}>
-                        <Ionicons name="calendar-outline" size={10} color={isLate ? '#D32F2F' : colors.mutedForeground} />
-                        <Text style={[styles.deadlineText, { color: isLate ? '#D32F2F' : colors.mutedForeground }]}>{label}</Text>
+                      <View style={[styles.deadlineBadge, { backgroundColor: isLate ? colors.dangerLight : colors.muted, borderColor: isLate ? colors.destructive : colors.border }]}>
+                        <Ionicons name="calendar-outline" size={10} color={isLate ? colors.destructive : colors.mutedForeground} />
+                        <Text style={[styles.deadlineText, { color: isLate ? colors.destructive : colors.mutedForeground }]}>{label}</Text>
                       </View>
                     );
                   })()}

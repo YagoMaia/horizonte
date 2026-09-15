@@ -4,6 +4,7 @@ import { Account } from '@/constants/types'
 import { Colors } from '@/constants/theme'
 import HomePage from '@/app/index'
 import { CartaoScreen } from '@/components/screens/CartaoScreen'
+import { buildTransactionIndexes } from '@/lib/transactionIndexes'
 
 jest.mock('@/hooks/useTheme', () => ({ useTheme: () => ({ colors: Colors.light, isDark: false,
   themeMode: 'light', primaryColor: '#E64A19', setThemeMode: jest.fn(), setPrimaryColor: jest.fn() }) }))
@@ -49,6 +50,7 @@ const mockAccounts: Account[] = [
     closingDay: 15, dueDay: 22, creditLimit: 5000 },
 ]
 const mockStore = { accounts: mockAccounts, transactions: [], loading: false, totalBalance: 2000,
+  transactionIndexes: buildTransactionIndexes([]),
   addTransaction: jest.fn(), monthlyBudgets: {}, clearAllData: jest.fn() }
 const mockSavings = { goals: [], deposits: [], loading: false, processOverdueRecurrences: jest.fn(),
   syncWithTransactions: jest.fn(), addDeposit: jest.fn() }
@@ -95,7 +97,7 @@ test('all primary destinations and Menu shortcuts remain reachable', async () =>
   fireEvent.press(screen.getByRole('button', { name: 'Gerenciar contas' }))
   expect(screen.getByText('Contas abertas')).toBeTruthy()
   fireEvent.press(screen.getByRole('tab', { name: 'Início' }))
-  expect(await screen.findByText('Seu dinheiro, com clareza.')).toBeTruthy()
+  expect(await screen.findByText('Seu amanhã começa aqui.')).toBeTruthy()
 })
 
 test('invalid initial IDs fall back; removing the selected card selects the remaining card', async () => {

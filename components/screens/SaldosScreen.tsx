@@ -42,6 +42,7 @@ const MONTHS = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
   'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
 ];
+const EMPTY_TRANSACTIONS: Transaction[] = [];
 
 interface SaldosScreenProps {
   onOpenCreditCard?: (card: Account) => void;
@@ -52,6 +53,7 @@ export function SaldosScreen({ onOpenCreditCard }: SaldosScreenProps) {
   const {
     accounts,
     transactions,
+    transactionIndexes,
     totalBalance,
     addTransaction,
     updateTransaction,
@@ -96,11 +98,14 @@ export function SaldosScreen({ onOpenCreditCard }: SaldosScreenProps) {
     const map = new Map<string, number>();
     accounts.forEach((acc) => {
       if (acc.type === 'cartao_credito') {
-        map.set(acc.id, calculateCreditCardInvoice(acc, transactions));
+        map.set(
+          acc.id,
+          calculateCreditCardInvoice(acc, transactionIndexes.creditByCard.get(acc.id) ?? EMPTY_TRANSACTIONS),
+        );
       }
     });
     return map;
-  }, [accounts, transactions]);
+  }, [accounts, transactionIndexes]);
 
   const customTotalBalance = useMemo(() => {
     if (activeAccountIds.length === 0) return totalBalance;
@@ -129,6 +134,14 @@ export function SaldosScreen({ onOpenCreditCard }: SaldosScreenProps) {
 
   // ESTADOS PARA NAVEGAÇÃO DE DATA
   const [currentDate, setCurrentDate] = useState(new Date());
+  const selectedMonthPrefix = useMemo(
+    () => `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`,
+    [currentDate],
+  );
+  const selectedMonthTransactions = useMemo(
+    () => transactionIndexes.byMonth.get(selectedMonthPrefix) ?? EMPTY_TRANSACTIONS,
+    [transactionIndexes, selectedMonthPrefix],
+  );
 
   // SEARCH HOOK
   const {
@@ -139,7 +152,12 @@ export function SaldosScreen({ onOpenCreditCard }: SaldosScreenProps) {
     displayedResults,
     loadMore: searchLoadMore,
     hasMore: searchHasMore,
-  } = useTransactionSearch(transactions, { type: filterType, accountId: filterAccountId });
+  } = useTransactionSearch(selectedMonthTransactions, {
+    type: filterType,
+    accountId: filterAccountId,
+    monthPrefix: selectedMonthPrefix,
+    paymentMethod: filterPaymentMethod,
+  });
 
   // filterPaymentMethod 'debito' é o default, não conta como "filtro ativo" pro badge
   const activeFiltersCount =
@@ -166,12 +184,8 @@ export function SaldosScreen({ onOpenCreditCard }: SaldosScreenProps) {
     let expenseDebit = 0;
     let expenseCredit = 0;
 
-    const targetYear = currentDate.getFullYear();
-    const targetMonth = String(currentDate.getMonth() + 1).padStart(2, '0');
-    const targetPrefix = `${targetYear}-${targetMonth}`;
-
-    transactions.forEach((tx) => {
-      if (!tx.date || !tx.date.startsWith(targetPrefix)) return;
+    selectedMonthTransactions.forEach((tx) => {
+      if (!tx.date || !tx.date.startsWith(selectedMonthPrefix)) return;
 
       if (tx.type === 'receita' && tx.paid) {
         income += tx.amount;
@@ -187,18 +201,14 @@ export function SaldosScreen({ onOpenCreditCard }: SaldosScreenProps) {
     });
 
     return { income, expense: expenseDebit + expenseCredit, expenseDebit, expenseCredit };
-  }, [transactions, currentDate]);
+  }, [selectedMonthTransactions, selectedMonthPrefix]);
 
   // MOTOR DE BUSCA ATUALIZADO (Filtro por Mês)
   const displayedTransactions = useMemo(() => {
-    const targetYear = currentDate.getFullYear();
-    const targetMonth = String(currentDate.getMonth() + 1).padStart(2, '0');
-    const targetPrefix = `${targetYear}-${targetMonth}`;
-
-    return transactions
+    return selectedMonthTransactions
       .filter((tx) => {
         // Regra 1: Filtro de Mês e Ano
-        if (!tx.date || !tx.date.startsWith(targetPrefix)) {
+        if (!tx.date || !tx.date.startsWith(selectedMonthPrefix)) {
           return false;
         }
 
@@ -223,7 +233,7 @@ export function SaldosScreen({ onOpenCreditCard }: SaldosScreenProps) {
         return true;
       })
       .sort((a, b) => a.date < b.date ? 1 : -1); // Compara strings ISO diretamente
-  }, [transactions, currentDate, filterType, filterAccountId, filterPaymentMethod]);
+  }, [selectedMonthTransactions, selectedMonthPrefix, filterType, filterAccountId, filterPaymentMethod]);
 
   const paginatedTransactions = useMemo(() => {
     return displayedTransactions.slice(0, displayLimit);
@@ -252,10 +262,7 @@ export function SaldosScreen({ onOpenCreditCard }: SaldosScreenProps) {
     const monthStart = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
     const monthEnd = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0, 23, 59, 59);
 
-    const monthTransactions = transactions.filter((tx) => {
-      const d = new Date(tx.date);
-      return d >= monthStart && d <= monthEnd;
-    });
+    const monthTransactions = [...selectedMonthTransactions];
 
     const receitas = monthTransactions.filter(t => t.type === 'receita');
     const despesas = monthTransactions.filter(t => t.type === 'despesa');
@@ -360,7 +367,7 @@ export function SaldosScreen({ onOpenCreditCard }: SaldosScreenProps) {
 
   const shareFile = async (fileName: string, content: string, mimeType: string) => {
     if (Platform.OS === 'web') {
-      const blob = new Blob([content], { type: mimeType });
+      const blob = new Blob([content], { type: mimeType } as any);
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
@@ -583,11 +590,11 @@ export function SaldosScreen({ onOpenCreditCard }: SaldosScreenProps) {
             onPress={() => setIsFilterModalOpen(true)}
             style={[styles.activeFilterPill, { backgroundColor: colors.primary + '18', borderColor: colors.primary + '40' }]}
           >
-            <Ionicons name="card-outline" size={12} color={colors.primary} />
-            <Text style={[styles.activeFilterPillText, { color: colors.primary }]}>
+            <Ionicons name="card-outline" size={12} color={colors.primaryText} />
+            <Text style={[styles.activeFilterPillText, { color: colors.primaryText }]}>
               {filterPaymentMethod === 'debito' ? 'Só Débito' : 'Só Crédito'}
             </Text>
-            <Ionicons name="chevron-down" size={11} color={colors.primary} />
+            <Ionicons name="chevron-down" size={11} color={colors.primaryText} />
           </TouchableOpacity>
         )}
         {filterType !== 'todas' && (
@@ -595,7 +602,7 @@ export function SaldosScreen({ onOpenCreditCard }: SaldosScreenProps) {
             onPress={() => setIsFilterModalOpen(true)}
             style={[styles.activeFilterPill, { backgroundColor: colors.primary + '18', borderColor: colors.primary + '40' }]}
           >
-            <Text style={[styles.activeFilterPillText, { color: colors.primary }]}>
+            <Text style={[styles.activeFilterPillText, { color: colors.primaryText }]}>
               {filterType.charAt(0).toUpperCase() + filterType.slice(1)}
             </Text>
           </TouchableOpacity>
@@ -605,7 +612,7 @@ export function SaldosScreen({ onOpenCreditCard }: SaldosScreenProps) {
       {/* 4. BARRA DE NAVEGAÇÃO DOS MESES (Agora abaixo do botão de filtros) */}
       {isSearchActive ? (
         <View style={[styles.searchModeLabel, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Ionicons name="search" size={18} color={colors.primary} />
+          <Ionicons name="search" size={18} color={colors.primaryText} />
           <Text style={[styles.searchModeLabelText, { color: colors.foreground }]}>
             Resultados da busca
           </Text>
@@ -613,7 +620,7 @@ export function SaldosScreen({ onOpenCreditCard }: SaldosScreenProps) {
       ) : (
         <View style={[styles.dateNavigator, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <TouchableOpacity onPress={() => changeMonth(-1)} style={styles.navArrow}>
-            <Ionicons name="chevron-back" size={20} color={colors.primary} />
+            <Ionicons name="chevron-back" size={20} color={colors.primaryText} />
           </TouchableOpacity>
 
           <View style={styles.dateLabelContainer}>
@@ -626,7 +633,7 @@ export function SaldosScreen({ onOpenCreditCard }: SaldosScreenProps) {
           </View>
 
           <TouchableOpacity onPress={() => changeMonth(1)} style={styles.navArrow}>
-            <Ionicons name="chevron-forward" size={20} color={colors.primary} />
+            <Ionicons name="chevron-forward" size={20} color={colors.primaryText} />
           </TouchableOpacity>
         </View>
       )}
@@ -695,7 +702,7 @@ export function SaldosScreen({ onOpenCreditCard }: SaldosScreenProps) {
     );
   }, [listData.length, accountsMap, goalsMap, colors, renderRightActions]);
 
-  if (loading) return <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}><ActivityIndicator size='large' color={colors.primary} /></View>;
+  if (loading) return <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}><ActivityIndicator size='large' color={colors.primaryText} /></View>;
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -963,7 +970,7 @@ export function SaldosScreen({ onOpenCreditCard }: SaldosScreenProps) {
               onPress={exportAsJson}
             >
               <View style={[styles.exportOptionIcon, { backgroundColor: colors.primary + '15' }]}>
-                <Ionicons name="code-slash-outline" size={22} color={colors.primary} />
+                <Ionicons name="code-slash-outline" size={22} color={colors.primaryText} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.exportOptionTitle, { color: colors.foreground }]}>JSON</Text>

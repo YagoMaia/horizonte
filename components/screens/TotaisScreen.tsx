@@ -203,7 +203,7 @@ export function TotaisScreen() {
           <View>
             <Text style={[styles.statLabel, { color: colors.foreground }]}>Custo de vida</Text>
             <View style={styles.iconRow}>
-              <Ionicons name="cart-outline" size={14} color={colors.primary} />
+              <Ionicons name="cart-outline" size={14} color={colors.primaryText} />
             </View>
           </View>
           <View style={styles.statRight}>

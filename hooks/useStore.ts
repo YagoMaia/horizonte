@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Transaction, Account, RecurringExpense, BudgetAllocation, RecurringExpenseCategory } from '@/constants/types';
+import { buildTransactionIndexes } from '@/lib/transactionIndexes';
 import { 
   scheduleTransactionNotification, 
   scheduleCardClosingNotification, 
@@ -697,6 +698,11 @@ export function useStore() {
     return { monthlyIncome: income, monthlyExpense: expense };
   }, [transactions]);
 
+  const transactionIndexes = useMemo(
+    () => buildTransactionIndexes(transactions),
+    [transactions],
+  );
+
   const payCreditCardInvoice = useCallback(
     (
       creditCardId: string,
@@ -879,6 +885,7 @@ export function useStore() {
 
   return {
     transactions,
+    transactionIndexes,
     accounts,
     monthlyBudgets,
     getEffectiveBudget,

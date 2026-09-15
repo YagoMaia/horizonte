@@ -365,8 +365,8 @@ export function GoalDetailScreen({ goal: initialGoal, onBack, goals, deposits: a
                 </View>
               ) : remainingDays !== null ? (
                 <View style={[styles.deadlineInfo, { backgroundColor: colors.primary + '15' }]}>
-                  <Ionicons name="calendar-outline" size={18} color={colors.primary} />
-                  <Text style={[styles.deadlineInfoText, { color: colors.primary }]}>
+                  <Ionicons name="calendar-outline" size={18} color={colors.primaryText} />
+                  <Text style={[styles.deadlineInfoText, { color: colors.primaryText }]}>
                     {remainingDays} {remainingDays === 1 ? 'dia restante' : 'dias restantes'}
                   </Text>
                 </View>
@@ -397,8 +397,8 @@ export function GoalDetailScreen({ goal: initialGoal, onBack, goals, deposits: a
             style={[styles.actionBtn, { backgroundColor: colors.primary + '15', borderColor: colors.primary }]}
             onPress={() => setShowEditModal(true)}
           >
-            <Ionicons name="create-outline" size={20} color={colors.primary} />
-            <Text style={[styles.actionBtnText, { color: colors.primary }]}>Editar</Text>
+            <Ionicons name="create-outline" size={20} color={colors.primaryText} />
+            <Text style={[styles.actionBtnText, { color: colors.primaryText }]}>Editar</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -426,13 +426,13 @@ export function GoalDetailScreen({ goal: initialGoal, onBack, goals, deposits: a
             <Ionicons
               name={activeRecurrence ? 'repeat' : 'repeat-outline'}
               size={20}
-              color={activeRecurrence ? colors.primary : colors.mutedForeground}
+              color={activeRecurrence ? colors.primaryText : colors.mutedForeground}
             />
           </View>
           <View style={{ flex: 1 }}>
             {activeRecurrence ? (
               <>
-                <Text style={[styles.recurrenceTitle, { color: colors.primary }]}>
+                <Text style={[styles.recurrenceTitle, { color: colors.primaryText }]}>
                   Aporte mensal ativo
                 </Text>
                 <Text style={[styles.recurrenceSub, { color: colors.mutedForeground }]}>

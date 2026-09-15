@@ -23,6 +23,7 @@ import {
   getTransactionVisuals,
 } from '@/lib/utils';
 import { Account, Transaction } from '@/constants/types';
+import { ThemeColors } from '@/constants/theme';
 
 import { AddTransactionModal } from '../AddTransactionModal';
 import { ConfirmDeleteModal } from '../ConfirmDeleteModal';
@@ -44,13 +45,13 @@ const ALL_CARDS_VIRTUAL_ACCOUNT: Account = {
 };
 
 // ─── Status config ────────────────────────────────────────────────────────────
-const STATUS_CONFIG: Record<string, { label: string; emoji: string; color: string; bgOpacity: string }> = {
-  PAGA:        { label: 'Paga',         emoji: '✅', color: '#22c55e', bgOpacity: '22' },
-  ZERADA:      { label: 'Zerada',       emoji: '⬜', color: '#94a3b8', bgOpacity: '18' },
-  ABERTA:      { label: 'Em Aberto',    emoji: '🔓', color: '#f59e0b', bgOpacity: '22' },
-  FUTURA:      { label: 'Futura',       emoji: '🔮', color: '#a78bfa', bgOpacity: '22' },
-  CONSOLIDADA: { label: 'Consolidada',  emoji: '📋', color: '#60a5fa', bgOpacity: '22' },
-};
+const getStatusConfig = (colors: ThemeColors): Record<string, { label: string; emoji: string; color: string; bgOpacity: string }> => ({
+  PAGA:        { label: 'Paga',         emoji: '✅', color: colors.success,       bgOpacity: '22' },
+  ZERADA:      { label: 'Zerada',       emoji: '⬜', color: colors.mutedForeground, bgOpacity: '18' },
+  ABERTA:      { label: 'Em Aberto',    emoji: '🔓', color: colors.warning,       bgOpacity: '22' },
+  FUTURA:      { label: 'Futura',       emoji: '🔮', color: colors.categoryOther, bgOpacity: '22' },
+  CONSOLIDADA: { label: 'Consolidada',  emoji: '📋', color: colors.info,          bgOpacity: '22' },
+});
 
 // ─── Invoice Timeline Item ────────────────────────────────────────────────────
 interface TimelineMonth {
@@ -116,6 +117,7 @@ export function CartaoScreen({ onSelectCard, initialCardId }: CartaoScreenProps)
   const {
     accounts,
     transactions,
+    transactionIndexes,
     payCreditCardInvoice,
     anticipateCreditCardPayment,
     addTransaction,
@@ -217,8 +219,8 @@ export function CartaoScreen({ onSelectCard, initialCardId }: CartaoScreenProps)
         const tValue = targetInvoice.value;
         const openInvoiceValue = getInvoiceForTx(new Date().toISOString(), card).value;
 
-        const cardInvTxs = transactions.filter((tx: Transaction) => {
-          if (tx.accountId !== card.id || tx.paymentMethod !== 'credito') return false;
+        const cardTransactions = transactionIndexes.creditByCard.get(card.id) ?? [];
+        const cardInvTxs = cardTransactions.filter((tx: Transaction) => {
           return getInvoiceForTx(tx.date, card).value === tValue;
         });
 
@@ -227,8 +229,8 @@ export function CartaoScreen({ onSelectCard, initialCardId }: CartaoScreenProps)
         tInvoice += cardInvTxs.reduce((sum: number, tx: Transaction) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount), 0);
         pInvoice += cardInvTxs.filter((t: Transaction) => !t.paid).reduce((sum: number, tx: Transaction) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount), 0);
 
-        const cardDebt = transactions.filter((tx: Transaction) => {
-          if (tx.accountId !== card.id || tx.paymentMethod !== 'credito' || tx.paid) return false;
+        const cardDebt = cardTransactions.filter((tx: Transaction) => {
+          if (tx.paid) return false;
           return getInvoiceForTx(tx.date, card).value >= openInvoiceValue;
         }).reduce((sum: number, tx: Transaction) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount), 0);
 
@@ -259,9 +261,9 @@ export function CartaoScreen({ onSelectCard, initialCardId }: CartaoScreenProps)
     const tYear = targetInvoice.viewYear;
     const tValue = targetInvoice.value;
 
-    const invTxs = transactions
+    const selectedCardTransactions: Transaction[] = transactionIndexes.creditByCard.get(selectedCard.id) ?? [];
+    const invTxs = selectedCardTransactions
       .filter((tx: Transaction) => {
-        if (tx.accountId !== selectedCard.id || tx.paymentMethod !== 'credito') return false;
         return getInvoiceForTx(tx.date, selectedCard).value === tValue;
       })
       .sort((a: Transaction, b: Transaction) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -270,9 +272,9 @@ export function CartaoScreen({ onSelectCard, initialCardId }: CartaoScreenProps)
     const pInvoice = invTxs.filter((t: Transaction) => !t.paid).reduce((sum: number, tx: Transaction) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount), 0);
     const openInvoiceValue = getInvoiceForTx(new Date().toISOString(), selectedCard).value;
 
-    const globalPendingDebtValue = transactions
+    const globalPendingDebtValue = selectedCardTransactions
       .filter((tx: Transaction) => {
-        if (tx.accountId !== selectedCard.id || tx.paymentMethod !== 'credito' || tx.paid) return false;
+        if (tx.paid) return false;
         return getInvoiceForTx(tx.date, selectedCard).value >= openInvoiceValue;
       })
       .reduce((sum: number, tx: Transaction) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount), 0);
@@ -295,13 +297,17 @@ export function CartaoScreen({ onSelectCard, initialCardId }: CartaoScreenProps)
       invoiceTransactions: invTxs, limit: cLimit, availableLimit: aLimit, limitUsagePercent: percent,
       invoiceStatus: status, globalPendingDebt: globalPendingDebtValue, isAll: false
     };
-  }, [selectedCard, transactions, monthOffset, colors, creditCards]);
+  }, [selectedCard, transactionIndexes, monthOffset, colors, creditCards]);
 
   // Invoice timeline for the selected single card
   const invoiceTimeline = useMemo<TimelineMonth[]>(() => {
     if (!selectedCard || selectedCard.id === 'all') return [];
-    return buildTimelineForCard(selectedCard, transactions, monthOffset);
-  }, [selectedCard, transactions, monthOffset]);
+    return buildTimelineForCard(
+      selectedCard,
+      transactionIndexes.creditByCard.get(selectedCard.id) ?? [],
+      monthOffset,
+    );
+  }, [selectedCard, transactionIndexes, monthOffset]);
 
   const debitAccounts = useMemo(() => accounts.filter((a: Account) => a.type !== 'cartao_credito'), [accounts]);
 
@@ -509,7 +515,7 @@ export function CartaoScreen({ onSelectCard, initialCardId }: CartaoScreenProps)
             {tx.paid && <Ionicons name='checkmark-circle' size={14} color={colors.success} />}
             {tx.totalInstallments && tx.totalInstallments > 1 && (
               <View style={[styles.installmentBadge, { backgroundColor: colors.primary + '20' }]}>
-                <Text style={[styles.installmentBadgeText, { color: colors.primary }]}>
+                <Text style={[styles.installmentBadgeText, { color: colors.primaryText }]}>
                   {tx.installmentNumber}/{tx.totalInstallments}x
                 </Text>
               </View>
@@ -524,7 +530,8 @@ export function CartaoScreen({ onSelectCard, initialCardId }: CartaoScreenProps)
     );
   }, [colors, isAll, accounts]);
 
-  const statusCfg = STATUS_CONFIG[invoiceStatus] || STATUS_CONFIG['ZERADA'];
+  const statusConfig = useMemo(() => getStatusConfig(colors), [colors]);
+  const statusCfg = statusConfig[invoiceStatus] || statusConfig['ZERADA'];
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
@@ -597,7 +604,7 @@ export function CartaoScreen({ onSelectCard, initialCardId }: CartaoScreenProps)
 
                   <View style={styles.limitContainer}>
                     <View style={styles.limitBarBackground}>
-                      <View style={[styles.limitBarFill, { width: `${limitUsagePercent}%` }]} />
+                      <View style={[styles.limitBarFill, { width: `${limitUsagePercent}%`, backgroundColor: colors.warning }]} />
                     </View>
                     <View style={styles.limitInfo}>
                       <View>
@@ -639,7 +646,7 @@ export function CartaoScreen({ onSelectCard, initialCardId }: CartaoScreenProps)
                   <Text style={[styles.sectionTitle, { color: colors.mutedForeground, marginBottom: 12 }]}>LINHA DO TEMPO</Text>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
                     {invoiceTimeline.map((item, idx) => {
-                      const cfg = STATUS_CONFIG[item.status] || STATUS_CONFIG['ZERADA'];
+                      const cfg = statusConfig[item.status] || statusConfig['ZERADA'];
                       const isCurrent = item.offset === monthOffset;
                       return (
                         <TouchableOpacity
@@ -662,7 +669,7 @@ export function CartaoScreen({ onSelectCard, initialCardId }: CartaoScreenProps)
                             {item.total > 0 ? formatCurrency(item.total) : 'Zerada'}
                           </Text>
                           {item.pending > 0 && (
-                            <View style={[styles.timelinePendingDot, { backgroundColor: '#f59e0b' }]} />
+                            <View style={[styles.timelinePendingDot, { backgroundColor: colors.warning }]} />
                           )}
                         </TouchableOpacity>
                       );
@@ -703,9 +710,9 @@ export function CartaoScreen({ onSelectCard, initialCardId }: CartaoScreenProps)
                 style={[styles.simButton, { backgroundColor: colors.primary + '15', borderColor: colors.primary + '40' }]}
                 onPress={openSimModal}
               >
-                <Ionicons name="calculator-outline" size={20} color={colors.primary} />
-                <Text style={[styles.simButtonText, { color: colors.primary }]}>Simular Compra</Text>
-                <Ionicons name="chevron-forward" size={16} color={colors.primary} style={{ marginLeft: 'auto' }} />
+                <Ionicons name="calculator-outline" size={20} color={colors.primaryText} />
+                <Text style={[styles.simButtonText, { color: colors.primaryText }]}>Simular Compra</Text>
+                <Ionicons name="chevron-forward" size={16} color={colors.primaryText} style={{ marginLeft: 'auto' }} />
               </TouchableOpacity>
 
               {/* ─── Invoice items ────────────────────────────────────── */}
@@ -721,8 +728,8 @@ export function CartaoScreen({ onSelectCard, initialCardId }: CartaoScreenProps)
                       style={[styles.exportBtn, { backgroundColor: colors.primary + '15' }]}
                       onPress={handleExportCSV}
                     >
-                      <Ionicons name="download-outline" size={16} color={colors.primary} />
-                      <Text style={[styles.exportText, { color: colors.primary }]}>Exportar</Text>
+                      <Ionicons name="download-outline" size={16} color={colors.primaryText} />
+                      <Text style={[styles.exportText, { color: colors.primaryText }]}>Exportar</Text>
                     </TouchableOpacity>
                   )}
 
@@ -766,7 +773,7 @@ export function CartaoScreen({ onSelectCard, initialCardId }: CartaoScreenProps)
                 >
                   <Ionicons name={acc.icon as any} size={20} color={acc.color} />
                   <Text style={[styles.accountOptionName, { color: colors.foreground }]}>{acc.name}</Text>
-                  {sourceAccountId === acc.id && <Ionicons name='checkmark' size={18} color={colors.primary} style={{ marginLeft: 'auto' }} />}
+                  {sourceAccountId === acc.id && <Ionicons name='checkmark' size={18} color={colors.primaryText} style={{ marginLeft: 'auto' }} />}
                 </TouchableOpacity>
               ))}
             </View>
@@ -815,7 +822,7 @@ export function CartaoScreen({ onSelectCard, initialCardId }: CartaoScreenProps)
                 >
                   <Ionicons name={acc.icon as any} size={20} color={acc.color} />
                   <Text style={[styles.accountOptionName, { color: colors.foreground }]}>{acc.name}</Text>
-                  {anticipateSourceAccountId === acc.id && <Ionicons name='checkmark' size={18} color={colors.primary} style={{ marginLeft: 'auto' }} />}
+                  {anticipateSourceAccountId === acc.id && <Ionicons name='checkmark' size={18} color={colors.primaryText} style={{ marginLeft: 'auto' }} />}
                 </TouchableOpacity>
               ))}
             </View>
@@ -849,7 +856,7 @@ export function CartaoScreen({ onSelectCard, initialCardId }: CartaoScreenProps)
             </TouchableOpacity>
             <View style={[styles.divider, { backgroundColor: colors.border }]} />
             <TouchableOpacity style={styles.optionBtn} onPress={handleEdit}>
-              <Ionicons name="pencil-outline" size={20} color={colors.primary} /><Text style={[styles.optionText, { color: colors.foreground }]}>Editar Lançamento</Text>
+              <Ionicons name="pencil-outline" size={20} color={colors.primaryText} /><Text style={[styles.optionText, { color: colors.foreground }]}>Editar Lançamento</Text>
             </TouchableOpacity>
             <View style={[styles.divider, { backgroundColor: colors.border }]} />
             <TouchableOpacity style={styles.optionBtn} onPress={() => { setOptionsModalVisible(false); setShowDeleteTransactionConfirm(true); }}>
@@ -870,7 +877,7 @@ export function CartaoScreen({ onSelectCard, initialCardId }: CartaoScreenProps)
               {/* Header */}
               <View style={styles.simHeader}>
                 <View style={[styles.simIconBg, { backgroundColor: colors.primary + '20' }]}>
-                  <Ionicons name="calculator" size={24} color={colors.primary} />
+                  <Ionicons name="calculator" size={24} color={colors.primaryText} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.modalTitle, { color: colors.foreground, marginBottom: 2 }]}>Simular Compra</Text>
@@ -894,10 +901,10 @@ export function CartaoScreen({ onSelectCard, initialCardId }: CartaoScreenProps)
                     <Ionicons
                       name={t === 'debito' ? 'card-outline' : 'layers-outline'}
                       size={16}
-                      color={simType === t ? colors.primary : colors.mutedForeground}
+                      color={simType === t ? colors.primaryText : colors.mutedForeground}
                       style={{ marginRight: 6 }}
                     />
-                    <Text style={[styles.simTypeBtnText, { color: simType === t ? colors.primary : colors.mutedForeground, fontWeight: simType === t ? '700' : '500' }]}>
+                    <Text style={[styles.simTypeBtnText, { color: simType === t ? colors.primaryText : colors.mutedForeground, fontWeight: simType === t ? '700' : '500' }]}>
                       {t === 'debito' ? 'Débito' : 'Crédito'}
                     </Text>
                   </TouchableOpacity>
@@ -1108,9 +1115,10 @@ export function CartaoScreen({ onSelectCard, initialCardId }: CartaoScreenProps)
 function InvoiceStatusCard({
   status, totalInvoice, pendingInvoice, colors, selectedCard,
 }: {
-  status: string; totalInvoice: number; pendingInvoice: number; colors: any; selectedCard: Account;
+  status: string; totalInvoice: number; pendingInvoice: number; colors: ThemeColors; selectedCard: Account;
 }) {
-  const cfg = STATUS_CONFIG[status] || STATUS_CONFIG['ZERADA'];
+  const statusConfig = getStatusConfig(colors);
+  const cfg = statusConfig[status] || statusConfig['ZERADA'];
   if (selectedCard.id === 'all') return null;
 
   const messages: Record<string, string> = {
@@ -1176,7 +1184,7 @@ const styles = StyleSheet.create({
   cardAmount: { color: '#FFF', fontSize: 36, fontWeight: '800', letterSpacing: -1 },
   limitContainer: { marginTop: 24, gap: 6 },
   limitBarBackground: { height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.3)', overflow: 'hidden' },
-  limitBarFill: { height: '100%', backgroundColor: '#FF8C00' },
+  limitBarFill: { height: '100%' },
   limitInfo: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 },
   limitValue: { color: '#FFF', fontSize: 12, fontWeight: '700' },
   limitLabel: { color: 'rgba(255,255,255,0.7)', fontSize: 10, fontWeight: '500', marginTop: 2 },

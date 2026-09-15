@@ -7,6 +7,8 @@ describe.each(['light', 'dark'] as const)('Theme %s', scheme => {
       ['foreground', 'background'], ['mutedForeground', 'card'], ['primaryText', 'card'],
       ['primaryText', 'primarySoft'], ['primaryForeground', 'primary'], ['heroMuted', 'hero'],
       ['heroForeground', 'hero'], ['destructiveForeground', 'destructive'],
+      ['info', 'infoLight'], ['categoryInvestment', 'card'], ['categoryFixed', 'card'],
+      ['categoryVariable', 'card'], ['categoryOther', 'card'], ['chartBalance', 'card'],
     ] as const) expect(contrastRatio(colors[foreground], colors[background])).toBeGreaterThanOrEqual(4.5)
   })
   test('invalid persisted colors have a safe fallback', () => {

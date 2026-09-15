@@ -125,11 +125,11 @@ export const BalanceChart = React.memo(({ transactions, period, refDate }: Balan
         backgroundGradientFrom: colors.card,
         backgroundGradientTo: colors.card,
         decimalPlaces: 0,
-        color: (opacity = 1) => `rgba(139, 92, 246, ${opacity})`,
+        color: () => colors.chartBalance,
         labelColor: () => colors.mutedForeground,
-        propsForDots: { r: '4', strokeWidth: '2', stroke: '#8B5CF6', fill: '#8B5CF6' },
+        propsForDots: { r: '4', strokeWidth: '2', stroke: colors.chartBalance, fill: colors.chartBalance },
         propsForBackgroundLines: { stroke: colors.border, strokeDasharray: '0' }
-    }), [colors.card, colors.mutedForeground, colors.border]);
+    }), [colors.card, colors.chartBalance, colors.mutedForeground, colors.border]);
 
     const hidePointsAtIndex = period === 'ano' ? HIDE_POINTS_ANO : HIDE_POINTS_EMPTY;
 

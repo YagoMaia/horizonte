@@ -37,7 +37,7 @@ export function convertTransactionsToCSV(transactions: Transaction[]): string {
  */
 export async function exportCSV(csvContent: string, fileName: string) {
   if (Platform.OS === 'web') {
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' } as any);
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;

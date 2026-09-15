@@ -43,7 +43,7 @@ function MenuItem({ icon, label, value, onPress, danger, colors }: MenuItemProps
         <Ionicons
           name={icon as any}
           size={18}
-          color={danger ? colors.destructive : colors.primary}
+          color={danger ? colors.destructive : colors.primaryText}
         />
       </View>
       <Text style={[styles.menuLabel, { color: danger ? colors.destructive : colors.foreground }]}>
@@ -118,7 +118,7 @@ export function MenuScreen({ onNavigate, trips = [], onCreateTrip, onAddTripExpe
       const fileName = `Horizonte_Relatorio_${new Date().getTime()}.csv`
 
       if (Platform.OS === 'web') {
-        const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' })
+        const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' } as any)
         const url = URL.createObjectURL(blob)
         const link = document.createElement('a')
         link.href = url
@@ -172,7 +172,7 @@ export function MenuScreen({ onNavigate, trips = [], onCreateTrip, onAddTripExpe
       const fileName = `Horizonte_Backup_${new Date().getTime()}.json`;
 
       if (Platform.OS === 'web') {
-        const blob = new Blob([jsonString], { type: 'application/json;charset=utf-8;' });
+        const blob = new Blob([jsonString], { type: 'application/json;charset=utf-8;' } as any);
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
@@ -378,10 +378,10 @@ export function MenuScreen({ onNavigate, trips = [], onCreateTrip, onAddTripExpe
         ))}
         <View style={[styles.menuItem, { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }]}>
           <View style={[styles.menuIcon, { backgroundColor: colors.primary + '20' }]}>
-            <Ionicons name="wallet" size={18} color={colors.primary} />
+            <Ionicons name="wallet" size={18} color={colors.primaryText} />
           </View>
           <Text style={[styles.menuLabel, { color: colors.foreground, fontWeight: '600' }]}>Total</Text>
-          <Text style={[styles.menuValue, { color: colors.primary, fontWeight: '700' }]}>
+          <Text style={[styles.menuValue, { color: colors.primaryText, fontWeight: '700' }]}>
             {formatCurrency(totalBalance)}
           </Text>
         </View>
@@ -535,14 +535,14 @@ export function MenuScreen({ onNavigate, trips = [], onCreateTrip, onAddTripExpe
                 style={[styles.modalOption, themeMode === option.id && { backgroundColor: colors.primary + '15' }]}
                 onPress={() => { setThemeMode(option.id as any); setThemeModalVisible(false) }}
               >
-                <Text style={{ color: themeMode === option.id ? colors.primary : colors.foreground, fontSize: 16, fontWeight: themeMode === option.id ? '600' : '400' }}>
+                <Text style={{ color: themeMode === option.id ? colors.primaryText : colors.foreground, fontSize: 16, fontWeight: themeMode === option.id ? '600' : '400' }}>
                   {option.label}
                 </Text>
-                {themeMode === option.id && <Ionicons name="checkmark" size={20} color={colors.primary} />}
+                {themeMode === option.id && <Ionicons name="checkmark" size={20} color={colors.primaryText} />}
               </TouchableOpacity>
             ))}
             <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setThemeModalVisible(false)}>
-              <Text style={{ color: colors.primary, fontWeight: '600', fontSize: 15 }}>Cancelar</Text>
+              <Text style={{ color: colors.primaryText, fontWeight: '600', fontSize: 15 }}>Cancelar</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -568,7 +568,7 @@ export function MenuScreen({ onNavigate, trips = [], onCreateTrip, onAddTripExpe
               ))}
             </View>
             <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setColorModalVisible(false)}>
-              <Text style={{ color: colors.primary, fontWeight: '600', fontSize: 15 }}>Cancelar</Text>
+              <Text style={{ color: colors.primaryText, fontWeight: '600', fontSize: 15 }}>Cancelar</Text>
             </TouchableOpacity>
           </View>
         </View>

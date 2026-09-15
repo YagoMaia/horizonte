@@ -19,7 +19,12 @@ export interface UseTransactionSearchResult {
 
 export function useTransactionSearch(
   transactions: Transaction[],
-  filters: { type: TransactionType | 'todas'; accountId: string | 'todas' }
+  filters: {
+    type: TransactionType | 'todas'
+    accountId: string | 'todas'
+    monthPrefix?: string
+    paymentMethod?: 'debito' | 'credito' | 'todas'
+  }
 ): UseTransactionSearchResult {
   const [searchTerm, setSearchTerm] = useState('')
   const [debouncedTerm, setDebouncedTerm] = useState('')
@@ -46,7 +51,7 @@ export function useTransactionSearch(
   // Reset pagination when debounced term or filters change
   useEffect(() => {
     setDisplayCount(PAGE_SIZE)
-  }, [debouncedTerm, filters.type, filters.accountId])
+  }, [debouncedTerm, filters.type, filters.accountId, filters.monthPrefix, filters.paymentMethod])
 
   // Compute search results using the pure filter function
   const searchResults = useMemo(() => {
@@ -57,9 +62,11 @@ export function useTransactionSearch(
     const searchFilters: SearchFilters = {
       type: filters.type,
       accountId: filters.accountId,
+      monthPrefix: filters.monthPrefix,
+      paymentMethod: filters.paymentMethod,
     }
     return filterTransactions(transactions, trimmed, searchFilters)
-  }, [transactions, debouncedTerm, filters.type, filters.accountId])
+  }, [transactions, debouncedTerm, filters.type, filters.accountId, filters.monthPrefix, filters.paymentMethod])
 
   // Paginated results
   const displayedResults = useMemo(() => {

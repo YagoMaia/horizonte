@@ -261,7 +261,7 @@ export const AddTransactionModal = React.memo(function AddTransactionModal({
                           setIsFastNavOpen(false);
                         }}
                       >
-                        <Text style={[styles.fastNavText, { color: month === i ? colors.primary : colors.foreground }]}>{m}</Text>
+                        <Text style={[styles.fastNavText, { color: month === i ? colors.primaryText : colors.foreground }]}>{m}</Text>
                       </TouchableOpacity>
                     ))}
                   </ScrollView>
@@ -275,13 +275,13 @@ export const AddTransactionModal = React.memo(function AddTransactionModal({
                           setIsFastNavOpen(false);
                         }}
                       >
-                        <Text style={[styles.fastNavText, { color: year === y ? colors.primary : colors.foreground }]}>{y}</Text>
+                        <Text style={[styles.fastNavText, { color: year === y ? colors.primaryText : colors.foreground }]}>{y}</Text>
                       </TouchableOpacity>
                     ))}
                   </ScrollView>
                 </View>
                 <TouchableOpacity style={[styles.calendarCloseBtn, { marginTop: 10 }]} onPress={() => setIsFastNavOpen(false)}>
-                  <Text style={{ color: colors.primary, fontWeight: '600' }}>Voltar</Text>
+                  <Text style={{ color: colors.primaryText, fontWeight: '600' }}>Voltar</Text>
                 </TouchableOpacity>
               </View>
             ) : (
@@ -377,8 +377,8 @@ export const AddTransactionModal = React.memo(function AddTransactionModal({
 
                 <View style={styles.calendarFooter}>
                   <TouchableOpacity style={styles.todayBtn} onPress={handleToday}>
-                    <Ionicons name="today-outline" size={16} color={colors.primary} />
-                    <Text style={{ color: colors.primary, fontWeight: '600', fontSize: 13 }}>Hoje</Text>
+                    <Ionicons name="today-outline" size={16} color={colors.primaryText} />
+                    <Text style={{ color: colors.primaryText, fontWeight: '600', fontSize: 13 }}>Hoje</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={styles.calendarCancelBtn}
@@ -957,7 +957,7 @@ export const AddTransactionModal = React.memo(function AddTransactionModal({
                   <Ionicons
                     name='calendar-outline'
                     size={20}
-                    color={colors.primary}
+                    color={colors.primaryText}
                   />
                 </TouchableOpacity>
               </View>
@@ -989,7 +989,7 @@ export const AddTransactionModal = React.memo(function AddTransactionModal({
                     <Ionicons
                       name='calendar-outline'
                       size={20}
-                      color={colors.primary}
+                      color={colors.primaryText}
                     />
                   </TouchableOpacity>
                 </View>
@@ -1017,7 +1017,7 @@ export const AddTransactionModal = React.memo(function AddTransactionModal({
                     <Ionicons
                       name='calendar-outline'
                       size={20}
-                      color={colors.primary}
+                      color={colors.primaryText}
                     />
                   </TouchableOpacity>
                 </View>

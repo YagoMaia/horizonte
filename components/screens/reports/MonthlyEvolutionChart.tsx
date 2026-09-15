@@ -117,7 +117,7 @@ export function MonthlyEvolutionChart({ monthlyData }: MonthlyEvolutionChartProp
             if (!tooltip.visible) return null
             const isIncome = tooltip.datasetIndex === 0
             const label = isIncome ? 'Receita' : 'Despesa'
-            const tooltipColor = isIncome ? '#388E3C' : '#D32F2F'
+            const tooltipColor = isIncome ? colors.success : colors.destructive
 
             return (
               <View

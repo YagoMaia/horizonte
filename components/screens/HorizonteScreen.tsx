@@ -79,7 +79,7 @@ function formatCompactK(value: number): string {
 
 export function HorizonteScreen() {
   const { colors } = useTheme();
-  const { transactions, accounts, getEffectiveBudget, saveMonthlyBudget } =
+  const { transactions, transactionIndexes, accounts, getEffectiveBudget, saveMonthlyBudget } =
     useStoreContext();
   const { goals } = useSavingsGoals();
 
@@ -267,29 +267,16 @@ export function HorizonteScreen() {
     const visualEndDate = new Date(visualEndYear, visualEndMonth, 31);
     const calculationEndDate = visualEndDate > horizonEnd ? visualEndDate : horizonEnd;
 
-    // 👉 PRÉ-CÁLCULO DE FATURAS DE CARTÃO DE CRÉDITO E MAPA DE TRANSAÇÕES (O(N) pass)
+    // Faturas virtuais usam o índice compartilhado; o agrupamento por dia já veio do store.
     const virtualInvoiceTxs: Record<string, any[]> = {};
-    const txsByMonthAndDay: Record<string, Record<number, any[]>> = {};
-
-    for (let i = 0; i < transactions.length; i++) {
-      const tx = transactions[i];
-      if (!tx.date || tx.date.length < 10) continue;
-      
-      const yyyyMm = tx.date.substring(0, 7);
-      const day = parseInt(tx.date.substring(8, 10), 10);
-      
-      if (!txsByMonthAndDay[yyyyMm]) txsByMonthAndDay[yyyyMm] = {};
-      if (!txsByMonthAndDay[yyyyMm][day]) txsByMonthAndDay[yyyyMm][day] = [];
-      txsByMonthAndDay[yyyyMm][day].push(tx);
-    }
+    const txsByMonthAndDay = transactionIndexes.byMonthAndDay;
 
     accounts.filter(a => a.type === 'cartao_credito').forEach(card => {
       const closingDay = card.closingDay || 25;
       const dueDay = card.dueDay || 5;
       
-      const cardUnpaidTxs = transactions.filter(tx => 
-        tx.accountId === card.id && tx.paymentMethod === 'credito' && !tx.paid
-      );
+      const cardUnpaidTxs = (transactionIndexes.creditByCard.get(card.id) ?? [])
+        .filter(tx => !tx.paid);
       
       const invoiceTotals: Record<string, number> = {};
       
@@ -338,13 +325,13 @@ export function HorizonteScreen() {
       const monthDays = [];
 
       const searchPrefix = `${simYear}-${String(simMonth + 1).padStart(2, '0')}`;
-      const txsByDay = txsByMonthAndDay[searchPrefix] || {};
+      const txsByDay = txsByMonthAndDay.get(searchPrefix);
 
       let accumulatedMonthlyExpense = 0;
       let frozenFutureDailyPlan = 0;
 
       for (let d = 1; d <= simDaysCount; d++) {
-        const dbTxs = txsByDay[d] || [];
+        const dbTxs = txsByDay?.get(d) || [];
         const vTxs = virtualInvoiceTxs[`${simYear}-${simMonth}-${d}`] || [];
         const dayTxs = [...dbTxs, ...vTxs];
         
@@ -462,7 +449,7 @@ export function HorizonteScreen() {
     }
 
     return { resultsMap, firstNegativeDate: firstNegDate };
-  }, [transactions, activeBalance, activeAccountIds, activeGoalIdSet, activeGoalIds, year, month, getEffectiveBudget, startOfToday]);
+  }, [transactions, transactionIndexes, activeBalance, activeAccountIds, activeGoalIdSet, activeGoalIds, year, month, getEffectiveBudget, startOfToday]);
 
   // Extrai o mês focado para o Modo Lista e Resumo
   const focusedMonthKey = `${year}-${month}`;
@@ -788,7 +775,7 @@ export function HorizonteScreen() {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       {/* BANNER DE ALERTA CRÍTICO */}
-      {firstNegativeDate && (() => {
+      {/* {firstNegativeDate && (() => {
         const negDate = new Date(firstNegativeDate);
         const negMonth = negDate.getMonth();
         const negYear = negDate.getFullYear();
@@ -804,7 +791,7 @@ export function HorizonteScreen() {
             </Text>
           </View>
         );
-      })()}
+      })()} */}
 
       {/* HEADER E NAVEGAÇÃO DE MESES */}
       <View

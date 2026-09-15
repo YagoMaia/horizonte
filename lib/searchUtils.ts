@@ -4,6 +4,8 @@ import { formatCurrency } from '@/lib/utils';
 export interface SearchFilters {
   type: TransactionType | 'todas';
   accountId: string | 'todas';
+  monthPrefix?: string;
+  paymentMethod?: 'debito' | 'credito' | 'todas';
 }
 
 /**
@@ -22,15 +24,26 @@ export function filterTransactions(
 
   // If search term is empty, no filtering by text — only apply filters
   const filtered = transactions.filter((tx) => {
+    if (filters.monthPrefix && (!tx.date || !tx.date.startsWith(filters.monthPrefix))) {
+      return false;
+    }
+
     // Apply type filter
     if (filters.type !== 'todas' && tx.type !== filters.type) {
       return false;
     }
 
     // Apply account filter
-    if (filters.accountId !== 'todas' && tx.accountId !== filters.accountId) {
+    if (
+      filters.accountId !== 'todas' &&
+      tx.accountId !== filters.accountId &&
+      tx.targetAccountId !== filters.accountId
+    ) {
       return false;
     }
+
+    if (filters.paymentMethod === 'debito' && tx.paymentMethod === 'credito') return false;
+    if (filters.paymentMethod === 'credito' && tx.paymentMethod !== 'credito') return false;
 
     // If no search term, include all transactions that pass filters
     if (normalizedTerm === '') {

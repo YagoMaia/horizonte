@@ -226,17 +226,9 @@ export function getTopTransactions(
  * Memoizes all computed values to prevent unnecessary recalculations.
  */
 export function useReportsData(periodMonths: PeriodMonths): ReportsData {
-  const { transactions, accounts, loading } = useStoreContext();
-
-  const filteredTransactions = useMemo(
-    () => filterTransactions(transactions),
-    [transactions]
-  );
-
-  const grouped = useMemo(
-    () => groupByMonth(filteredTransactions),
-    [filteredTransactions]
-  );
+  const { transactionIndexes, accounts, loading } = useStoreContext();
+  const filteredTransactions = transactionIndexes.reportingTransactions;
+  const grouped = transactionIndexes.reportingByMonth;
 
   const monthlyData = useMemo(
     () => computeMonthlyTotals(grouped, periodMonths),

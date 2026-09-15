@@ -98,7 +98,7 @@ export default function HomePage() {
   if (store.loading) {
     return (
       <View style={[styles.loading, { backgroundColor: colors.background }]}>
-        <ActivityIndicator color={colors.primary} size="large" />
+        <ActivityIndicator color={colors.primaryText} size="large" />
       </View>
     )
   }

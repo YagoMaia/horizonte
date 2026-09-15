@@ -184,7 +184,7 @@ function VisaoGeralTab() {
           <View>
             <Text style={[vStyles.statLabel, { color: colors.foreground }]}>Custo de vida</Text>
             <View style={vStyles.iconRow}>
-              <Ionicons name="cart-outline" size={14} color={colors.primary} />
+              <Ionicons name="cart-outline" size={14} color={colors.primaryText} />
             </View>
           </View>
           <View style={vStyles.statRight}>
@@ -229,7 +229,7 @@ function RelatoriosTab() {
   if (isLoading) {
     return (
       <View style={[rStyles.centered, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color={colors.primary} />
+        <ActivityIndicator size="large" color={colors.primaryText} />
         <Text style={[rStyles.loadingText, { color: colors.mutedForeground }]}>
           Carregando relatórios...
         </Text>
@@ -297,9 +297,9 @@ export function ReportsScreen() {
               <Ionicons
                 name={tab.icon as any}
                 size={16}
-                color={isActive ? colors.primary : colors.mutedForeground}
+                color={isActive ? colors.primaryText : colors.mutedForeground}
               />
-              <Text style={[styles.tabLabel, { color: isActive ? colors.primary : colors.mutedForeground }]}>
+              <Text style={[styles.tabLabel, { color: isActive ? colors.primaryText : colors.mutedForeground }]}>
                 {tab.label}
               </Text>
             </TouchableOpacity>

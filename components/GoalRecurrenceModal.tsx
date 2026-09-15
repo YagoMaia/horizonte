@@ -183,7 +183,7 @@ export function GoalRecurrenceModal({
           <View style={styles.header}>
             <View style={styles.headerLeft}>
               <View style={[styles.headerIcon, { backgroundColor: colors.primary + '20' }]}>
-                <Ionicons name="repeat" size={18} color={colors.primary} />
+                <Ionicons name="repeat" size={18} color={colors.primaryText} />
               </View>
               <View>
                 <Text style={[styles.title, { color: colors.foreground }]}>
@@ -203,9 +203,9 @@ export function GoalRecurrenceModal({
             {/* Active recurrence summary */}
             {isEditing && existingRecurrence && (
               <View style={[styles.activeBanner, { backgroundColor: colors.primary + '15', borderColor: colors.primary + '30' }]}>
-                <Ionicons name="checkmark-circle" size={18} color={colors.primary} />
+                <Ionicons name="checkmark-circle" size={18} color={colors.primaryText} />
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.activeBannerTitle, { color: colors.primary }]}>
+                  <Text style={[styles.activeBannerTitle, { color: colors.primaryText }]}>
                     Aporte ativo: {formatCurrency(existingRecurrence.amount)}/mês
                   </Text>
                   <Text style={[styles.activeBannerSub, { color: colors.mutedForeground }]}>

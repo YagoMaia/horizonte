@@ -137,4 +137,29 @@ describe('filterTransactions', () => {
     const result = filterTransactions(txs, 'aluguel', defaultFilters);
     expect(result).toHaveLength(3);
   });
+
+  it('limits results to the selected month when monthPrefix is provided', () => {
+    const txs = [
+      makeTransaction({ id: '1', date: '2024-01-15', description: 'Aluguel' }),
+      makeTransaction({ id: '2', date: '2024-02-15', description: 'Aluguel' }),
+    ];
+    const result = filterTransactions(txs, 'aluguel', { ...defaultFilters, monthPrefix: '2024-02' });
+    expect(result.map((tx) => tx.id)).toEqual(['2']);
+  });
+
+  it('applies debit and credit payment filters', () => {
+    const txs = [
+      makeTransaction({ id: '1', paymentMethod: 'debito' }),
+      makeTransaction({ id: '2', paymentMethod: 'credito' }),
+      makeTransaction({ id: '3', paymentMethod: undefined }),
+    ];
+    expect(filterTransactions(txs, '', { ...defaultFilters, paymentMethod: 'debito' }).map(tx => tx.id).sort()).toEqual(['1', '3']);
+    expect(filterTransactions(txs, '', { ...defaultFilters, paymentMethod: 'credito' }).map(tx => tx.id)).toEqual(['2']);
+  });
+
+  it('matches an account used as transfer destination', () => {
+    const txs = [makeTransaction({ id: '1', accountId: 'acc1', targetAccountId: 'acc2', type: 'transferencia' })];
+    const result = filterTransactions(txs, '', { type: 'todas', accountId: 'acc2' });
+    expect(result.map(tx => tx.id)).toEqual(['1']);
+  });
 });
