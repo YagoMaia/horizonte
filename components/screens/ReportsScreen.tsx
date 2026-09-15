@@ -23,7 +23,6 @@ import { useMemo } from 'react'
 import { formatCurrency } from '@/lib/utils'
 import { useStoreContext } from '@/context/StoreContext'
 import { BalanceChart } from '../BalanceChart'
-import { ScreenHeading } from '../ScreenHeading'
 
 // ────────────────────────────────────────────────────────────────────────────────
 // Sub-aba: Visão Geral (antigo TotaisScreen)
@@ -285,9 +284,6 @@ export function ReportsScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       {/* Tabs internas */}
-      <View style={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12 }}>
-        <ScreenHeading title="Olhe sua evolução." subtitle="Transforme seus números em boas escolhas." />
-      </View>
       <View style={[styles.tabBar, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
         {INTERNAL_TABS.map((tab) => {
           const isActive = activeTab === tab.id

@@ -57,8 +57,8 @@ export const getThemeColors = (scheme: ColorScheme, primaryColor: string) => {
   return {
     ...base, primary, primaryText,
     primarySoft: mix(base.card, primaryText, 0.10),
-    primaryForeground: contrastRatio(primary, '#FFFFFF') >= contrastRatio(primary, '#171513')
-      ? '#FFFFFF' : '#171513',
+    primaryForeground: contrastRatio(primary, '#FFFFFF') >= contrastRatio(primary, '#000000')
+      ? '#FFFFFF' : '#000000',
     ring: primaryText,
   }
 }

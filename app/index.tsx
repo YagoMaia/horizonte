@@ -39,6 +39,7 @@ export default function HomePage() {
   const tripsProps = useTrips()
   const { goals, deposits, processOverdueRecurrences, syncWithTransactions, addDeposit } = savingsGoalsProps
   const [activeTab, setActiveTab] = useState<TabType>('saldos')
+  const [initialCardId, setInitialCardId] = useState<string | undefined>()
   const [modalVisible, setModalVisible] = useState(false)
   const [tripFormVisible, setTripFormVisible] = useState(false)
   
@@ -55,6 +56,23 @@ export default function HomePage() {
     type?: 'despesa' | 'receita' | 'transferencia';
     tripId?: string;
   }>({});
+
+  const navigateTo = useCallback((tab: TabType) => {
+    if (tab !== 'cartao') {
+      setDefaultValues({});
+      setInitialCardId(undefined);
+    }
+    if (tab !== 'metas') setSelectedGoal(null);
+    if (tab !== 'viagens') setSelectedTrip(null);
+    setActiveTab(tab);
+  }, []);
+
+  const handleOpenCreditCard = useCallback((card: Account) => {
+    if (card.type !== 'cartao_credito') return;
+    setInitialCardId(card.id);
+    setDefaultValues({ accountId: card.id, type: 'despesa' });
+    setActiveTab('cartao');
+  }, []);
 
   const handleSelectCard = useCallback((card: Account | null) => {
     const newAccountId = card?.id;
@@ -87,12 +105,13 @@ export default function HomePage() {
 
   const renderScreen = () => {
     switch (activeTab) {
-      case 'saldos': return <SaldosScreen />
+      case 'saldos': return <SaldosScreen onOpenCreditCard={handleOpenCreditCard} />
       case 'horizonte': return <HorizonteScreen />
       case 'contas': return <ContasScreen />
       case 'cartao': 
         return (
           <CartaoScreen 
+            initialCardId={initialCardId}
             onSelectCard={handleSelectCard} 
           />
         )
@@ -130,7 +149,7 @@ export default function HomePage() {
       case 'orcamento': return <OrcamentoScreen />
       case 'menu': return (
         <MenuScreen
-          onNavigate={(tab) => setActiveTab(tab)}
+          onNavigate={navigateTo}
           trips={tripsProps.trips}
           onCreateTrip={() => {
             setTripToEdit(undefined);
@@ -181,7 +200,7 @@ export default function HomePage() {
             onTripPress={(trip) => setSelectedTrip(trip)}
           />
         );
-      default: return <SaldosScreen />
+      default: return <SaldosScreen onOpenCreditCard={handleOpenCreditCard} />
     }
   }
 
@@ -208,8 +227,7 @@ export default function HomePage() {
               { backgroundColor: activeTab === 'contas' ? colors.primarySoft : colors.card, borderColor: colors.border }
             ]}
             onPress={() => {
-              if (activeTab !== 'contas') setDefaultValues({});
-              setActiveTab(activeTab === 'contas' ? 'saldos' : 'contas');
+              navigateTo(activeTab === 'contas' ? 'saldos' : 'contas');
             }}
             activeOpacity={0.7}
           >
@@ -248,12 +266,7 @@ export default function HomePage() {
       {/* Bottom Nav */}
       <BottomNavigation
         activeTab={activeTab}
-        onTabChange={(tab) => {
-          if (tab !== 'cartao') setDefaultValues({});
-          if (tab !== 'metas') setSelectedGoal(null);
-          if (tab !== 'viagens') setSelectedTrip(null);
-          setActiveTab(tab);
-        }}
+        onTabChange={navigateTo}
         onAddClick={() => setModalVisible(true)}
       />
 

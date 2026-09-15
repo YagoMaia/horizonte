@@ -1,132 +1,56 @@
-import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Modal, Dimensions } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/hooks/useTheme';
+import { AppModal } from './ui/AppModal';
+import { AppButton } from './ui/AppButton';
+import { FeedbackBanner } from './ui/FeedbackBanner';
 
 interface ConfirmDeleteModalProps {
   visible: boolean;
   title: string;
   description: string;
   onClose: () => void;
-  onConfirm: () => void;
+  onConfirm: () => void | Promise<void>;
   confirmText?: string;
   cancelText?: string;
 }
-
 export const ConfirmDeleteModal = React.memo(function ConfirmDeleteModal({
-  visible,
-  title,
-  description,
-  onClose,
-  onConfirm,
-  confirmText = 'Excluir',
-  cancelText = 'Cancelar'
+  visible, title, description, onClose, onConfirm, confirmText = 'Excluir', cancelText = 'Cancelar'
 }: ConfirmDeleteModalProps) {
   const { colors } = useTheme();
-
-  if (!visible) return null;
-
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const pending = useRef(false);
+  useEffect(() => { if (visible) setError(null); }, [visible]);
+  const confirm = async () => {
+    if (pending.current) return;
+    pending.current = true;
+    setBusy(true);
+    setError(null);
+    try {
+      await onConfirm();
+      onClose();
+    } catch {
+      setError('Não foi possível concluir a exclusão. Tente novamente.');
+    } finally {
+      pending.current = false;
+      setBusy(false);
+    }
+  };
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <TouchableOpacity 
-        activeOpacity={1} 
-        style={styles.overlay} 
-        onPress={onClose}
-      >
-        <View 
-          style={[styles.content, { backgroundColor: colors.card, borderColor: colors.border }]}
-          onStartShouldSetResponder={() => true} // Evita fechar ao clicar no conteúdo
-          onTouchEnd={(e) => e.stopPropagation()}
-        >
-          <View style={[styles.iconContainer, { backgroundColor: colors.destructive + '15' }]}>
-            <Ionicons name="trash-outline" size={32} color={colors.destructive} />
-          </View>
-          
-          <Text style={[styles.title, { color: colors.foreground }]}>{title}</Text>
-          <Text style={[styles.description, { color: colors.mutedForeground }]}>{description}</Text>
-
-          <View style={styles.actions}>
-            <TouchableOpacity 
-              style={[styles.btn, styles.cancelBtn]} 
-              onPress={onClose}
-            >
-              <Text style={[styles.btnText, { color: colors.mutedForeground }]}>{cancelText}</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={[styles.btn, { backgroundColor: colors.destructive }]} 
-              onPress={() => {
-                onConfirm();
-                onClose();
-              }}
-            >
-              <Text style={[styles.btnText, { color: '#FFF', fontWeight: '700' }]}>{confirmText}</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </TouchableOpacity>
-    </Modal>
+    <AppModal visible={visible} title={title} onClose={onClose} busy={busy}>
+      <View style={[styles.icon, { backgroundColor: colors.dangerLight }]}>
+        <Ionicons name="trash-outline" size={30} color={colors.destructive} accessible={false} />
+      </View>
+      <Text style={[styles.description, { color: colors.mutedForeground }]}>{description}</Text>
+      {error && <FeedbackBanner tone="error" message={error} />}
+      <AppButton label={confirmText} onPress={confirm} variant="danger" loading={busy} />
+      <AppButton label={cancelText} onPress={onClose} variant="secondary" disabled={busy} />
+    </AppModal>
   );
 });
-
 const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
-  },
-  content: {
-    width: '100%',
-    maxWidth: 400,
-    borderRadius: 24,
-    padding: 24,
-    alignItems: 'center',
-    borderWidth: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.1,
-    shadowRadius: 20,
-    elevation: 10,
-  },
-  iconContainer: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 20,
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: '700',
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  description: {
-    fontSize: 14,
-    textAlign: 'center',
-    lineHeight: 20,
-    marginBottom: 32,
-  },
-  actions: {
-    flexDirection: 'row',
-    gap: 12,
-    width: '100%',
-  },
-  btn: {
-    flex: 1,
-    height: 52,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cancelBtn: {
-    backgroundColor: 'transparent',
-  },
-  btnText: {
-    fontSize: 15,
-    fontWeight: '600',
-  },
+  icon: { width: 64, height: 64, borderRadius: 24, alignSelf: 'center', alignItems: 'center', justifyContent: 'center' },
+  description: { fontSize: 14, lineHeight: 22, textAlign: 'center' },
 });

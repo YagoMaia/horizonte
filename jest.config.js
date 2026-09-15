@@ -5,7 +5,13 @@ module.exports = {
     '^.+\\.(ts|tsx)$': [
       'ts-jest',
       {
-        tsconfig: 'tsconfig.json',
+        tsconfig: {
+          ...require('./tsconfig.json').compilerOptions,
+          jsx: 'react-jsx',
+          target: 'ES2020',
+          module: 'commonjs',
+          esModuleInterop: true,
+        },
       },
     ],
   },
@@ -13,6 +19,7 @@ module.exports = {
     'node_modules/(?!(react-native|@react-native|expo|@expo|expo-.*|@expo/.*|react-native-reanimated|react-native-gesture-handler|react-native-screens|react-native-safe-area-context|@react-native-async-storage/async-storage|react-native-svg|react-native-chart-kit|date-fns)/)',
   ],
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
+  setupFilesAfterEnv: ['<rootDir>/test/setup-ui.ts'],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/$1',
   },

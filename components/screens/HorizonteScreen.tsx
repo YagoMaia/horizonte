@@ -18,7 +18,6 @@ import { useStoreContext } from "@/context/StoreContext";
 import { useSavingsGoals } from "@/hooks/useSavingsGoals";
 import { formatCurrency, formatDateShort, getTransactionVisuals } from "@/lib/utils";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { ScreenHeading } from '../ScreenHeading';
 
 const MONTH_NAMES = [
   "Janeiro",
@@ -789,9 +788,6 @@ export function HorizonteScreen() {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       {/* BANNER DE ALERTA CRÍTICO */}
-      <View style={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: 12 }}>
-        <ScreenHeading title="Um olhar para o futuro." subtitle="Veja como seu saldo pode evoluir dia a dia." />
-      </View>
       {firstNegativeDate && (() => {
         const negDate = new Date(firstNegativeDate);
         const negMonth = negDate.getMonth();

@@ -26,7 +26,6 @@ import { Account, Transaction } from '@/constants/types';
 
 import { AddTransactionModal } from '../AddTransactionModal';
 import { ConfirmDeleteModal } from '../ConfirmDeleteModal';
-import { ScreenHeading } from '../ScreenHeading';
 import { convertTransactionsToCSV, exportCSV } from '@/lib/exportUtils';
 
 const MONTH_NAMES = [
@@ -107,7 +106,12 @@ interface SimulationResult {
   balanceAfterDebit: number;
 }
 
-export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account | null) => void }) {
+interface CartaoScreenProps {
+  onSelectCard?: (card: Account | null) => void;
+  initialCardId?: string;
+}
+
+export function CartaoScreen({ onSelectCard, initialCardId }: CartaoScreenProps) {
   const { colors } = useTheme();
   const {
     accounts,
@@ -126,17 +130,18 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
   );
 
   const [selectedCardId, setSelectedCardId] = useState<string | null>(
-    creditCards.length > 1 ? 'all' : (creditCards.length === 1 ? creditCards[0].id : null),
+    () => initialCardId && creditCards.some((card: Account) => card.id === initialCardId)
+      ? initialCardId
+      : creditCards.length > 1 ? 'all' : (creditCards.length === 1 ? creditCards[0].id : null),
   );
 
   useEffect(() => {
-    if (creditCards.length === 1 && selectedCardId === 'all') {
-      setSelectedCardId(creditCards[0].id);
-    } else if (creditCards.length > 1 && selectedCardId === null) {
-      setSelectedCardId('all');
-    } else if (creditCards.length === 0 && selectedCardId !== null) {
-      setSelectedCardId(null);
-    }
+    const hasSelection = selectedCardId === 'all'
+      ? creditCards.length > 1
+      : creditCards.some((card: Account) => card.id === selectedCardId);
+    if (!hasSelection) setSelectedCardId(
+      creditCards.length > 1 ? 'all' : creditCards.length === 1 ? creditCards[0].id : null
+    );
   }, [creditCards, selectedCardId]);
 
   const selectedCard = useMemo(() => {
@@ -524,14 +529,14 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       {/* Card selector carousel */}
-      <View style={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12 }}>
-        <ScreenHeading title="Cartões sob controle." subtitle="Suas faturas e parcelas em um só lugar." />
-      </View>
       <View style={[styles.carouselContainer, { borderBottomColor: colors.border, backgroundColor: colors.card }]}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.carouselContent}>
           {creditCards.length > 1 && (
             <TouchableOpacity
               onPress={() => setSelectedCardId('all')}
+              accessibilityRole="tab"
+              accessibilityLabel="Todos os cartões"
+              accessibilityState={{ selected: selectedCardId === 'all' }}
               style={[styles.cardSelectorItem, { backgroundColor: selectedCardId === 'all' ? colors.primary : 'transparent', borderColor: selectedCardId === 'all' ? colors.primary : colors.border }]}
             >
               <Ionicons name="albums" size={16} color={selectedCardId === 'all' ? '#FFF' : colors.foreground} style={{ marginRight: 6 }} />
@@ -545,6 +550,9 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
               <TouchableOpacity
                 key={card.id}
                 onPress={() => setSelectedCardId(card.id)}
+                accessibilityRole="tab"
+                accessibilityLabel={card.name}
+                accessibilityState={{ selected: isSelected }}
                 style={[styles.cardSelectorItem, { backgroundColor: isSelected ? card.color : 'transparent', borderColor: isSelected ? card.color : colors.border }]}
               >
                 <Ionicons name={card.icon as any} size={16} color={isSelected ? '#FFF' : card.color} style={{ marginRight: 6 }} />

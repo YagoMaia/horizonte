@@ -5,19 +5,18 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  ActivityIndicator,
   ScrollView,
-  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '@/hooks/useTheme';
-import { useSavingsGoals } from '@/hooks/useSavingsGoals';
 import { calculateProgress } from '@/lib/goalUtils';
 import { formatCurrency } from '@/lib/utils';
-import { SavingsGoal, GoalDeposit, GoalRecurrence, CreateGoalInput } from '@/constants/types';
+import { SavingsGoal, CreateGoalInput } from '@/constants/types';
 import { GoalFormModal } from '../GoalFormModal';
-import { ScreenHeading } from '../ScreenHeading';
+import { ScreenState } from '../ui/ScreenState';
+import { AppButton } from '../ui/AppButton';
+import { FeedbackBanner } from '../ui/FeedbackBanner';
 
 interface GoalsScreenProps {
   onGoalPress: (goal: SavingsGoal) => void;
@@ -31,6 +30,9 @@ interface GoalsScreenProps {
 export function GoalsScreen({ onGoalPress, goals, loading, error, createGoal, retry }: GoalsScreenProps) {
   const { colors } = useTheme();
   const [formModalVisible, setFormModalVisible] = useState(false);
+  const [message, setMessage] = useState('');
+  const [retrying, setRetrying] = useState(false);
+  const [retryError, setRetryError] = useState('');
   const [activeGoalIds, setActiveGoalIds] = useState<string[]>([]);
 
   useEffect(() => {
@@ -41,69 +43,8 @@ export function GoalsScreen({ onGoalPress, goals, loading, error, createGoal, re
 
   const handleCreateGoal = async (input: CreateGoalInput) => {
     await createGoal(input);
+    setMessage('Meta criada. Seu próximo passo já tem um destino.');
   };
-
-  // Loading state
-  if (loading) {
-    return (
-      <View style={[styles.centerContainer, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
-    );
-  }
-
-  // Error state
-  if (error) {
-    return (
-      <View style={[styles.centerContainer, { backgroundColor: colors.background }]}>
-        <Ionicons name="alert-circle-outline" size={48} color={colors.destructive} />
-        <Text style={[styles.errorText, { color: colors.foreground }]}>{error}</Text>
-        <TouchableOpacity
-          style={[styles.retryBtn, { backgroundColor: colors.primary }]}
-          onPress={retry}
-        >
-          <Text style={styles.retryBtnText}>Tentar novamente</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
-  // Empty state
-  if (goals.length === 0) {
-    return (
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <ScrollView contentContainerStyle={styles.content}>
-          <ScreenHeading title="Planos que ganham vida." subtitle="Dê um destino ao dinheiro que você guarda." />
-          <View style={[styles.emptyState, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Image
-              source={require('../../assets/images/illustrations/goals-empty.png')}
-              style={styles.emptyIllustration}
-              resizeMode="contain"
-              accessible={false}
-              importantForAccessibility="no"
-            />
-            <Text style={[styles.emptyTitle, { color: colors.foreground }]}>Qual é o seu próximo sonho?</Text>
-            <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
-              Uma reserva, uma conquista, um novo começo. Crie uma meta e acompanhe cada passo.
-            </Text>
-            <TouchableOpacity
-              style={[styles.newGoalBtn, { backgroundColor: colors.primary }]}
-              onPress={() => setFormModalVisible(true)}
-            >
-              <Ionicons name="add" size={20} color={colors.primaryForeground} />
-              <Text style={[styles.newGoalBtnText, { color: colors.primaryForeground }]}>Criar minha primeira meta</Text>
-            </TouchableOpacity>
-          </View>
-        </ScrollView>
-
-        <GoalFormModal
-          visible={formModalVisible}
-          onClose={() => setFormModalVisible(false)}
-          onSubmit={handleCreateGoal}
-        />
-      </View>
-    );
-  }
 
   const sortedGoals = React.useMemo(() => {
     return [...goals].sort((a, b) => {
@@ -126,21 +67,47 @@ export function GoalsScreen({ onGoalPress, goals, loading, error, createGoal, re
     });
   }, [goals]);
 
+  const handleRetry = async () => {
+    setRetrying(true);
+    setRetryError('');
+    try { await retry(); } catch { setRetryError('Não foi possível carregar suas metas. Tente novamente.'); }
+    finally { setRetrying(false); }
+  };
+
+  if (loading || error) {
+    return (
+      <ScrollView style={{ backgroundColor: colors.background }} contentContainerStyle={styles.content}>
+        <ScreenState kind={loading ? 'loading' : 'error'} title={loading ? 'Carregando suas metas…' : 'Vamos tentar novamente?'}
+          description={loading ? 'Estamos organizando seus planos.' : retryError || error || undefined}
+          action={loading ? undefined : { label: 'Tentar novamente', onPress: handleRetry, loading: retrying }} />
+      </ScrollView>
+    );
+  }
+
+  // Empty state
+  if (goals.length === 0) {
+    return (
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <GoalFormModal
+          visible={formModalVisible}
+          onClose={() => setFormModalVisible(false)}
+          onSubmit={handleCreateGoal}
+        />
+      </View>
+    );
+  }
+
+
+
   // Goals list
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <ScrollView contentContainerStyle={styles.content}>
-        <ScreenHeading title="Planos que ganham vida." subtitle="Cada valor guardado aproxima você da conquista." />
+        {message ? <FeedbackBanner message={message} /> : null}
         {/* Section title + Nova Meta button */}
         <View style={styles.sectionHeader}>
           <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Minhas Metas</Text>
-          <TouchableOpacity
-            style={[styles.headerBtn, { backgroundColor: colors.primary }]}
-            onPress={() => setFormModalVisible(true)}
-          >
-            <Ionicons name="add" size={18} color={colors.primaryForeground} />
-            <Text style={[styles.headerBtnText, { color: colors.primaryForeground }]}>Nova Meta</Text>
-          </TouchableOpacity>
+          <AppButton label="Nova Meta" icon="add" onPress={() => setFormModalVisible(true)} />
         </View>
 
         {/* Goal cards */}

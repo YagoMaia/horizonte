@@ -1,21 +1,13 @@
-// components/GoalFormModal.tsx
 import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-  Modal,
-  ScrollView,
-  KeyboardAvoidingView,
-  Platform,
-  TextInput,
-  ActivityIndicator,
-} from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/hooks/useTheme';
 import { CreateGoalInput } from '@/constants/types';
 import { validateGoalForm } from '@/lib/goalValidation';
+import { AppModal } from './ui/AppModal';
+import { AppButton } from './ui/AppButton';
+import { FormField } from './ui/FormField';
+import { FeedbackBanner } from './ui/FeedbackBanner';
 
 const ICON_OPTIONS: string[] = [
   'flag-outline',
@@ -148,6 +140,7 @@ export function GoalFormModal({ visible, onClose, onSubmit, initialData }: GoalF
   };
 
   const handleSubmit = async () => {
+    if (saving) return;
     setSaveError(null);
 
     const parsedDeadline = parseDateInput(deadline);
@@ -186,257 +179,58 @@ export function GoalFormModal({ visible, onClose, onSubmit, initialData }: GoalF
     }
   };
 
+
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.overlay}>
-        <KeyboardAvoidingView
-          style={styles.keyboardView}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        >
-          <View style={[styles.content, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            {/* Header */}
-            <View style={styles.header}>
-              <Text style={[styles.title, { color: colors.foreground }]}>
-                {isEditing ? 'Editar Meta' : 'Nova Meta'}
-              </Text>
-              <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-                <Ionicons name="close" size={24} color={colors.foreground} />
-              </TouchableOpacity>
-            </View>
-
-            {saveError && (
-              <View style={[styles.saveErrorContainer, { backgroundColor: colors.destructive + '15' }]}>
-                <Ionicons name="alert-circle-outline" size={16} color={colors.destructive} />
-                <Text style={[styles.saveErrorText, { color: colors.destructive }]}>{saveError}</Text>
-              </View>
-            )}
-
-            <ScrollView showsVerticalScrollIndicator={false} style={styles.form}>
-              {/* Name field */}
-              <View style={styles.field}>
-                <Text style={[styles.label, { color: colors.mutedForeground }]}>Nome da meta</Text>
-                <TextInput
-                  style={[
-                    styles.input,
-                    { color: colors.foreground, borderColor: errors.name ? colors.destructive : colors.border, backgroundColor: colors.secondary },
-                  ]}
-                  value={name}
-                  onChangeText={setName}
-                  placeholder="Ex: Viagem, Carro novo..."
-                  placeholderTextColor={colors.mutedForeground}
-                  maxLength={50}
-                />
-                {errors.name && (
-                  <Text style={[styles.errorText, { color: colors.destructive }]}>{errors.name}</Text>
-                )}
-              </View>
-
-              {/* Target amount field */}
-              <View style={styles.field}>
-                <Text style={[styles.label, { color: colors.mutedForeground }]}>Valor da meta (R$)</Text>
-                <TextInput
-                  style={[
-                    styles.input,
-                    { color: colors.foreground, borderColor: errors.targetAmount ? colors.destructive : colors.border, backgroundColor: colors.secondary },
-                  ]}
-                  value={targetAmount}
-                  onChangeText={handleAmountChange}
-                  placeholder="0,00"
-                  keyboardType="numeric"
-                  placeholderTextColor={colors.mutedForeground}
-                />
-                {errors.targetAmount && (
-                  <Text style={[styles.errorText, { color: colors.destructive }]}>{errors.targetAmount}</Text>
-                )}
-              </View>
-
-              {/* Deadline field */}
-              <View style={styles.field}>
-                <Text style={[styles.label, { color: colors.mutedForeground }]}>Prazo (opcional)</Text>
-                <TextInput
-                  style={[
-                    styles.input,
-                    { color: colors.foreground, borderColor: errors.deadline ? colors.destructive : colors.border, backgroundColor: colors.secondary },
-                  ]}
-                  value={deadline}
-                  onChangeText={handleDateChange}
-                  placeholder="DD/MM/AAAA"
-                  keyboardType="numeric"
-                  placeholderTextColor={colors.mutedForeground}
-                  maxLength={10}
-                />
-                {errors.deadline && (
-                  <Text style={[styles.errorText, { color: colors.destructive }]}>{errors.deadline}</Text>
-                )}
-              </View>
-
-              {/* Icon selector */}
-              <View style={styles.field}>
-                <Text style={[styles.label, { color: colors.mutedForeground }]}>Ícone</Text>
-                <View style={styles.selectorGrid}>
-                  {ICON_OPTIONS.map((iconName) => (
-                    <TouchableOpacity
-                      key={iconName}
-                      style={[
-                        styles.iconOption,
-                        {
-                          borderColor: icon === iconName ? color : colors.border,
-                          backgroundColor: icon === iconName ? color + '20' : 'transparent',
-                        },
-                      ]}
-                      onPress={() => setIcon(iconName)}
-                    >
-                      <Ionicons
-                        name={iconName as any}
-                        size={22}
-                        color={icon === iconName ? color : colors.mutedForeground}
-                      />
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-
-              {/* Color selector */}
-              <View style={styles.field}>
-                <Text style={[styles.label, { color: colors.mutedForeground }]}>Cor</Text>
-                <View style={styles.selectorGrid}>
-                  {COLOR_OPTIONS.map((colorOption) => (
-                    <TouchableOpacity
-                      key={colorOption}
-                      style={[
-                        styles.colorOption,
-                        {
-                          backgroundColor: colorOption,
-                          borderColor: color === colorOption ? colors.foreground : 'transparent',
-                          borderWidth: color === colorOption ? 3 : 0,
-                        },
-                      ]}
-                      onPress={() => setColor(colorOption)}
-                    >
-                      {color === colorOption && (
-                        <Ionicons name="checkmark" size={16} color="#FFF" />
-                      )}
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-            </ScrollView>
-
-            {/* Submit button */}
-            <TouchableOpacity
-              style={[styles.submitBtn, { backgroundColor: colors.primary }]}
-              onPress={handleSubmit}
-              disabled={saving}
-            >
-              {saving ? (
-                <ActivityIndicator color="#FFF" size="small" />
-              ) : (
-                <Text style={styles.submitBtnText}>
-                  {isEditing ? 'Salvar Alterações' : 'Criar Meta'}
-                </Text>
-              )}
-            </TouchableOpacity>
-          </View>
-        </KeyboardAvoidingView>
+    <AppModal visible={visible} title={isEditing ? 'Editar Meta' : 'Nova Meta'} onClose={onClose} busy={saving}>
+      {saveError && <FeedbackBanner tone="error" message={saveError} />}
+      <View>
+        <FormField label="Nome da meta" value={name} onChangeText={setName}
+          placeholder="Ex: Viagem, Carro novo..." maxLength={50} error={errors.name} editable={!saving} />
+        <FormField label="Valor da meta (R$)" value={targetAmount} onChangeText={handleAmountChange}
+          placeholder="0,00" keyboardType="decimal-pad" error={errors.targetAmount} editable={!saving} />
+        <FormField label="Prazo (opcional)" value={deadline} onChangeText={handleDateChange}
+          placeholder="DD/MM/AAAA" keyboardType="numeric" maxLength={10} error={errors.deadline}
+          hint="Você também pode guardar dinheiro sem definir uma data." editable={!saving} />
       </View>
-    </Modal>
+      <View style={styles.field}>
+        <Text style={[styles.label, { color: colors.foreground }]}>Ícone</Text>
+        <View style={styles.selectorGrid}>
+          {ICON_OPTIONS.map((iconName, index) => (
+            <TouchableOpacity key={iconName} disabled={saving} accessibilityRole="radio"
+              accessibilityLabel={['Bandeira', 'Estrela', 'Coração', 'Viagem', 'Casa', 'Carro', 'Estudos', 'Presente', 'Dinheiro', 'Carteira', 'Troféu', 'Diamante'][index]}
+              accessibilityState={{ checked: icon === iconName, disabled: saving }}
+              style={[styles.option, { borderColor: icon === iconName ? colors.primaryText : colors.border,
+                backgroundColor: icon === iconName ? colors.primarySoft : colors.card }]}
+              onPress={() => setIcon(iconName)}>
+              <Ionicons name={iconName as any} size={22} color={icon === iconName ? colors.primaryText : colors.mutedForeground} />
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+      <View style={styles.field}>
+        <Text style={[styles.label, { color: colors.foreground }]}>Cor</Text>
+        <View style={styles.selectorGrid}>
+          {COLOR_OPTIONS.map((option, index) => (
+            <TouchableOpacity key={option} disabled={saving} accessibilityRole="radio"
+              accessibilityLabel={['Laranja', 'Azul', 'Verde', 'Roxo', 'Vermelho', 'Âmbar', 'Ciano', 'Rosa', 'Violeta', 'Verde-azulado', 'Lima', 'Marrom'][index]}
+              accessibilityState={{ checked: color === option, disabled: saving }}
+              style={[styles.option, { borderColor: color === option ? colors.foreground : colors.border }]}
+              onPress={() => setColor(option)}>
+              <View style={[styles.swatch, { backgroundColor: option }]} />
+              {color === option && <Ionicons name="checkmark-circle" size={18} color={colors.foreground} style={styles.check} />}
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+      <AppButton label={isEditing ? 'Salvar Alterações' : 'Criar Meta'} onPress={handleSubmit} loading={saving} />
+    </AppModal>
   );
 }
-
 const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'flex-end',
-  },
-  keyboardView: {
-    justifyContent: 'flex-end',
-  },
-  content: {
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    borderWidth: 1,
-    borderBottomWidth: 0,
-    padding: 24,
-    paddingBottom: 40,
-    maxHeight: '90%',
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: '700',
-  },
-  closeBtn: {
-    padding: 4,
-  },
-  saveErrorContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    padding: 12,
-    borderRadius: 12,
-    marginBottom: 12,
-  },
-  saveErrorText: {
-    fontSize: 13,
-    flex: 1,
-  },
-  form: {
-    marginBottom: 16,
-  },
-  field: {
-    marginBottom: 16,
-  },
-  label: {
-    fontSize: 13,
-    fontWeight: '600',
-    marginBottom: 6,
-  },
-  input: {
-    height: 48,
-    borderRadius: 12,
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    fontSize: 15,
-  },
-  errorText: {
-    fontSize: 12,
-    marginTop: 4,
-  },
-  selectorGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  iconOption: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  colorOption: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  submitBtn: {
-    height: 52,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  submitBtnText: {
-    color: '#FFF',
-    fontSize: 16,
-    fontWeight: '700',
-  },
+  field: { gap: 10 },
+  label: { fontSize: 13, fontWeight: '600' },
+  selectorGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  option: { width: 48, height: 48, borderRadius: 14, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
+  swatch: { width: 30, height: 30, borderRadius: 15 },
+  check: { position: 'absolute', right: -4, bottom: -4 },
 });

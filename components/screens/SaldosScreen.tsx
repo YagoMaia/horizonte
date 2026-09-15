@@ -37,14 +37,17 @@ import { ConfirmDeleteModal } from '../ConfirmDeleteModal';
 import { SearchBar } from '../SearchBar';
 import { useTransactionSearch } from '@/hooks/useTransactionSearch';
 import { useSavingsGoals } from '@/hooks/useSavingsGoals';
-import { ScreenHeading } from '../ScreenHeading';
 
 const MONTHS = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
   'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
 ];
 
-export function SaldosScreen() {
+interface SaldosScreenProps {
+  onOpenCreditCard?: (card: Account) => void;
+}
+
+export function SaldosScreen({ onOpenCreditCard }: SaldosScreenProps) {
   const { colors } = useTheme();
   const {
     accounts,
@@ -404,7 +407,6 @@ export function SaldosScreen() {
 
   const renderHeader = () => (
     <View style={{ gap: 16, paddingBottom: 8 }}>
-      <ScreenHeading title="Seu dinheiro, com clareza." subtitle="Acompanhe o presente. Planeje o próximo passo." />
       {/* 1. CARD DE SALDO TOTAL */}
       <View style={[styles.balanceCard, { backgroundColor: colors.hero }]}>
         <View pointerEvents="none" accessible={false} style={[styles.horizonDisc, { borderColor: colors.heroSurface }]} />
@@ -484,8 +486,14 @@ export function SaldosScreen() {
             const mainDisplayValue = isCreditCard ? currentInvoice : acc.balance;
 
             return (
-              <View
+              <TouchableOpacity
                 key={acc.id}
+                disabled={!isCreditCard || !onOpenCreditCard}
+                onPress={() => onOpenCreditCard?.(acc)}
+                accessibilityRole={isCreditCard && onOpenCreditCard ? 'button' : undefined}
+                accessibilityLabel={isCreditCard && onOpenCreditCard ? `Abrir cartão ${acc.name}` : undefined}
+                accessibilityHint={isCreditCard && onOpenCreditCard ? 'Abre a fatura e os lançamentos deste cartão' : undefined}
+                activeOpacity={0.75}
                 style={[
                   styles.accountCard,
                   { backgroundColor: colors.card, borderColor: colors.border },
@@ -534,7 +542,7 @@ export function SaldosScreen() {
                     </Text>
                   )}
                 </View>
-              </View>
+              </TouchableOpacity>
             );
           })}
         </View>

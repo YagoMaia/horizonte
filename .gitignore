@@ -43,3 +43,5 @@ app-example
 /android
 node_modules
 .aider*
+Horizonte*
+graphify-out

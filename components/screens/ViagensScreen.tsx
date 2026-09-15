@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/hooks/useTheme';
 import { Trip, CreateTripInput, UpdateTripInput } from '@/constants/types';
 import { TripFormModal } from '../TripFormModal';
 import { useStoreContext } from '@/context/StoreContext';
 import { formatCurrency, formatDateShort } from '@/lib/utils';
-import { ScreenHeading } from '../ScreenHeading';
+import { ScreenState } from '../ui/ScreenState';
+import { AppButton } from '../ui/AppButton';
 
 interface ViagensScreenProps {
   trips: Trip[];
@@ -117,36 +118,16 @@ export function ViagensScreen({ trips, createTrip, updateTrip, onTripPress, edit
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={styles.header}>
-        <View style={{ flex: 1 }}><ScreenHeading title="Novos destinos." subtitle="A viagem começa no planejamento." /></View>
-        <TouchableOpacity 
-          style={[styles.addButton, { backgroundColor: colors.primary }]}
-          onPress={() => { setTripToEdit(undefined); setIsFormVisible(true); }}
-        >
-          <Ionicons name="add" size={20} color={colors.primaryForeground} />
-          <Text style={[styles.addButtonText, { color: colors.primaryForeground }]}>Nova</Text>
-        </TouchableOpacity>
+        <AppButton label="Nova" accessibilityLabel="Nova viagem" icon="add"
+          onPress={() => { setTripToEdit(undefined); setIsFormVisible(true); }} />
       </View>
 
       {trips.length === 0 ? (
         <ScrollView contentContainerStyle={styles.emptyScroll}>
-        <View style={[styles.emptyState, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Image
-            source={require('../../assets/images/illustrations/trips-empty.png')}
-            style={styles.emptyIllustration}
-            resizeMode="contain"
-            accessible={false}
-            importantForAccessibility="no"
-          />
-          <Text style={[styles.emptyTitle, { color: colors.foreground }]}>Para onde vamos?</Text>
-          <Text style={[styles.emptySubtitle, { color: colors.mutedForeground }]}>
-            Planeje os gastos antes de fazer as malas. Sua próxima aventura começa aqui.
-          </Text>
-          <TouchableOpacity accessibilityRole="button" style={[styles.emptyAction, { backgroundColor: colors.primary }]}
-            onPress={() => { setTripToEdit(undefined); setIsFormVisible(true); }}>
-            <Ionicons name="add" size={20} color={colors.primaryForeground} />
-            <Text style={[styles.addButtonText, { color: colors.primaryForeground }]}>Planejar uma viagem</Text>
-          </TouchableOpacity>
-        </View>
+          <ScreenState title="Para onde vamos?"
+            description="Planeje os gastos antes de fazer as malas. Sua próxima aventura começa aqui."
+            image={require('../../assets/images/illustrations/trips-empty.png')}
+            action={{ label: 'Planejar uma viagem', icon: 'add', onPress: () => { setTripToEdit(undefined); setIsFormVisible(true); } }} />
         </ScrollView>
       ) : (
         <FlatList

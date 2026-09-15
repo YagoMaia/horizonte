@@ -14,7 +14,6 @@ import { useTheme } from '@/hooks/useTheme'
 import { useStoreContext } from '@/context/StoreContext'
 import { RecurringExpenseCategory, BudgetAllocation } from '@/constants/types'
 import { AllocationEditorModal } from './orcamento/AllocationEditorModal'
-import { ScreenHeading } from '../ScreenHeading'
 
 // ────────────────────────────────────────────────────────────────────────────────
 // Dados estáticos auxiliares
@@ -426,7 +425,6 @@ export function OrcamentoScreen() {
     >
       {/* ── Cabeçalho com seletor de mês ── */}
       <View style={styles.screenHeader}>
-        <View style={{ flex: 1 }}><ScreenHeading title="Cada real tem um plano." subtitle="Organize seu orçamento mensal." /></View>
         <TouchableOpacity
           style={[styles.configBtn, { backgroundColor: colors.secondary, borderColor: colors.border }]}
           onPress={() => setAllocVisible(true)}

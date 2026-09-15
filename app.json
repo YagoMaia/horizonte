@@ -2,7 +2,7 @@
   "expo": {
     "name": "Horizonte",
     "slug": "horizonte",
-    "version": "1.0.7",
+    "version": "1.0.9",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "splash": {
@@ -27,7 +27,7 @@
         "backgroundColor": "#FF7043"
       },
       "package": "com.horizonte.financas",
-      "versionCode": 7
+      "versionCode": 9
     },
     "plugins": [
       "expo-router"

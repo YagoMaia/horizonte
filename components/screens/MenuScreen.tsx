@@ -20,7 +20,6 @@ import * as DocumentPicker from 'expo-document-picker'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { PRIMARY_COLORS } from '@/constants/theme'
 import { TabType, Trip } from '@/constants/types'
-import { ScreenHeading } from '../ScreenHeading'
 
 interface MenuItemProps {
   icon: string
@@ -313,7 +312,6 @@ export function MenuScreen({ onNavigate, trips = [], onCreateTrip, onAddTripExpe
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
     >
-      <ScreenHeading title="Tudo no seu lugar." subtitle="Seus planos, suas contas e suas preferências." />
       {/* Profile */}
       <View style={[styles.profileCard, { backgroundColor: colors.hero, borderColor: colors.hero }]}>
         <View style={[styles.avatar, { backgroundColor: colors.primary }]}>

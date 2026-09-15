@@ -17,7 +17,6 @@ import { useStoreContext } from '@/context/StoreContext';
 import { formatCurrency } from '@/lib/utils';
 import { Account } from '@/constants/types';
 import { ConfirmDeleteModal } from '../ConfirmDeleteModal';
-import { ScreenHeading } from '../ScreenHeading';
 
 const ACCOUNT_COLORS = [
   '#42A5F5',
@@ -205,7 +204,6 @@ export function ContasScreen() {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        <ScreenHeading title="Suas contas." subtitle="Uma visão completa de onde seu dinheiro está." />
         <View style={[styles.totalCard, { backgroundColor: colors.hero }]}>
           <Text style={[styles.totalLabel, { color: colors.heroMuted }]}>Patrimônio Total</Text>
           <Text style={[styles.totalValue, { color: colors.heroForeground }]} numberOfLines={1} adjustsFontSizeToFit>{formatCurrency(totalBalance)}</Text>
