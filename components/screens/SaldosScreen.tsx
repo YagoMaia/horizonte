@@ -37,6 +37,7 @@ import { ConfirmDeleteModal } from '../ConfirmDeleteModal';
 import { SearchBar } from '../SearchBar';
 import { useTransactionSearch } from '@/hooks/useTransactionSearch';
 import { useSavingsGoals } from '@/hooks/useSavingsGoals';
+import { ScreenHeading } from '../ScreenHeading';
 
 const MONTHS = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -403,25 +404,36 @@ export function SaldosScreen() {
 
   const renderHeader = () => (
     <View style={{ gap: 16, paddingBottom: 8 }}>
+      <ScreenHeading title="Seu dinheiro, com clareza." subtitle="Acompanhe o presente. Planeje o próximo passo." />
       {/* 1. CARD DE SALDO TOTAL */}
-      <View style={[styles.balanceCard, { backgroundColor: colors.primary }]}>
-        <Text style={styles.balanceLabel}>
+      <View style={[styles.balanceCard, { backgroundColor: colors.hero }]}>
+        <View pointerEvents="none" accessible={false} style={[styles.horizonDisc, { borderColor: colors.heroSurface }]} />
+        <View style={styles.balanceTop}>
+        <Text style={[styles.balanceLabel, { color: colors.heroMuted }]}>
           Saldo Total {activeAccountIds.length > 0 ? '(Contas do Horizonte)' : ''}
         </Text>
-        <Text style={styles.balanceValue}>{formatCurrency(customTotalBalance)}</Text>
+        <Ionicons name="sunny-outline" size={22} color={colors.heroAccent} />
+        </View>
+        <Text style={[styles.balanceValue, { color: colors.heroForeground }]} numberOfLines={1} adjustsFontSizeToFit>{formatCurrency(customTotalBalance)}</Text>
         <View style={styles.balanceRow}>
           <View style={styles.balanceStat}>
-            <Ionicons name='arrow-up-circle' size={16} color='rgba(255,255,255,0.8)' />
-            <Text style={styles.balanceStatText}>{formatCurrency(currentMonthStats.income)}</Text>
+            <View style={styles.balanceStatLabel}>
+              <Ionicons name='arrow-down-outline' size={14} color={colors.heroAccent} />
+              <Text style={[styles.balanceLabel, { color: colors.heroMuted }]}>Entradas do mês</Text>
+            </View>
+            <Text style={[styles.balanceStatText, { color: colors.heroForeground }]}>{formatCurrency(currentMonthStats.income)}</Text>
           </View>
           <View style={styles.balanceDivider} />
           <View style={styles.balanceStat}>
-            <Ionicons name='arrow-down-circle' size={16} color='rgba(255,255,255,0.8)' />
-            <Text style={styles.balanceStatText}>{formatCurrency(currentMonthStats.expense)}</Text>
+            <View style={styles.balanceStatLabel}>
+              <Ionicons name='arrow-up-outline' size={14} color={colors.heroAccent} />
+              <Text style={[styles.balanceLabel, { color: colors.heroMuted }]}>Saídas do mês</Text>
+            </View>
+            <Text style={[styles.balanceStatText, { color: colors.heroForeground }]}>{formatCurrency(currentMonthStats.expense)}</Text>
           </View>
         </View>
         {(currentMonthStats.expenseCredit > 0 && currentMonthStats.expenseDebit > 0) && (
-          <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.65)', marginTop: 2 }}>
+          <Text style={{ fontSize: 11, color: colors.heroMuted, marginTop: 8 }}>
             Déb. {formatCurrency(currentMonthStats.expenseDebit)}
             {'  ·  '}
             Créd. {formatCurrency(currentMonthStats.expenseCredit)}
@@ -535,12 +547,16 @@ export function SaldosScreen() {
           <TouchableOpacity
             style={[styles.filterBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
             onPress={() => setExportModalVisible(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Exportar lançamentos"
           >
             <Ionicons name='download-outline' size={18} color={colors.foreground} />
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.filterBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
             onPress={() => setIsFilterModalOpen(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Filtrar lançamentos"
           >
             <Ionicons name='options-outline' size={18} color={colors.foreground} />
             {activeFiltersCount > 0 && (
@@ -957,14 +973,17 @@ export function SaldosScreen() {
 
 const styles = StyleSheet.create({
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  content: { padding: 16, paddingBottom: 32 },
-  balanceCard: { borderRadius: 20, padding: 24, gap: 4 },
+  content: { padding: 20, paddingBottom: 32 },
+  balanceCard: { borderRadius: 28, padding: 24, gap: 8, overflow: 'hidden' },
+  balanceTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  horizonDisc: { position: 'absolute', width: 210, height: 210, borderRadius: 105, borderWidth: 28, right: -70, top: -80 },
+  balanceStatLabel: { flexDirection: 'row', alignItems: 'center', gap: 4, flexWrap: 'wrap' },
   balanceLabel: { color: 'rgba(255,255,255,0.75)', fontSize: 13, fontWeight: '500' },
-  balanceValue: { color: '#FFF', fontSize: 36, fontWeight: '700', letterSpacing: -1 },
-  balanceRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 12 },
-  balanceStat: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  balanceStatText: { color: 'rgba(255,255,255,0.85)', fontSize: 13, fontWeight: '500' },
-  balanceDivider: { width: 1, height: 14, backgroundColor: 'rgba(255,255,255,0.3)' },
+  balanceValue: { fontSize: 40, fontWeight: '700', letterSpacing: -1.5, fontVariant: ['tabular-nums'] },
+  balanceRow: { flexDirection: 'row', alignItems: 'flex-start', marginTop: 16, gap: 16, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.16)', paddingTop: 18 },
+  balanceStat: { flex: 1, gap: 8 },
+  balanceStatText: { fontSize: 16, fontWeight: '600', fontVariant: ['tabular-nums'] },
+  balanceDivider: { width: 1, alignSelf: 'stretch', backgroundColor: 'rgba(255,255,255,0.16)' },
 
   // Estilo do Navegador de Data
   dateNavigator: {
@@ -981,12 +1000,12 @@ const styles = StyleSheet.create({
   yearLabel: { fontSize: 12, fontWeight: '500' },
 
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 8 },
-  filterBtn: { padding: 8, borderRadius: 12, borderWidth: 1, position: 'relative' },
+  filterBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 14, borderWidth: 1, position: 'relative' },
   filterBadge: { position: 'absolute', top: -6, right: -6, width: 18, height: 18, borderRadius: 9, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#FFF' },
   filterBadgeText: { color: '#FFF', fontSize: 10, fontWeight: 'bold' },
-  sectionTitle: { fontSize: 16, fontWeight: '600' },
+  sectionTitle: { fontSize: 18, fontWeight: '700', letterSpacing: -0.4 },
   accountsRow: { flexDirection: 'row', gap: 12 },
-  accountCard: { width: 140, borderRadius: 20, padding: 16, borderWidth: StyleSheet.hairlineWidth, minHeight: 110 },
+  accountCard: { width: 164, borderRadius: 22, padding: 18, borderWidth: 1, minHeight: 130 },
   accountIcon: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
   accountTextContainer: { gap: 2 },
   accountName: { fontSize: 12, fontWeight: '500' },

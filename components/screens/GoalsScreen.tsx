@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   ScrollView,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -16,6 +17,7 @@ import { calculateProgress } from '@/lib/goalUtils';
 import { formatCurrency } from '@/lib/utils';
 import { SavingsGoal, GoalDeposit, GoalRecurrence, CreateGoalInput } from '@/constants/types';
 import { GoalFormModal } from '../GoalFormModal';
+import { ScreenHeading } from '../ScreenHeading';
 
 interface GoalsScreenProps {
   onGoalPress: (goal: SavingsGoal) => void;
@@ -71,17 +73,25 @@ export function GoalsScreen({ onGoalPress, goals, loading, error, createGoal, re
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <ScrollView contentContainerStyle={styles.content}>
+          <ScreenHeading title="Planos que ganham vida." subtitle="Dê um destino ao dinheiro que você guarda." />
           <View style={[styles.emptyState, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Ionicons name="trophy-outline" size={48} color={colors.mutedForeground} />
+            <Image
+              source={require('../../assets/images/illustrations/goals-empty.png')}
+              style={styles.emptyIllustration}
+              resizeMode="contain"
+              accessible={false}
+              importantForAccessibility="no"
+            />
+            <Text style={[styles.emptyTitle, { color: colors.foreground }]}>Qual é o seu próximo sonho?</Text>
             <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
-              Nenhuma meta criada. Comece definindo seu primeiro objetivo!
+              Uma reserva, uma conquista, um novo começo. Crie uma meta e acompanhe cada passo.
             </Text>
             <TouchableOpacity
               style={[styles.newGoalBtn, { backgroundColor: colors.primary }]}
               onPress={() => setFormModalVisible(true)}
             >
-              <Ionicons name="add" size={20} color="#FFF" />
-              <Text style={styles.newGoalBtnText}>Nova Meta</Text>
+              <Ionicons name="add" size={20} color={colors.primaryForeground} />
+              <Text style={[styles.newGoalBtnText, { color: colors.primaryForeground }]}>Criar minha primeira meta</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -120,6 +130,7 @@ export function GoalsScreen({ onGoalPress, goals, loading, error, createGoal, re
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <ScrollView contentContainerStyle={styles.content}>
+        <ScreenHeading title="Planos que ganham vida." subtitle="Cada valor guardado aproxima você da conquista." />
         {/* Section title + Nova Meta button */}
         <View style={styles.sectionHeader}>
           <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Minhas Metas</Text>
@@ -127,8 +138,8 @@ export function GoalsScreen({ onGoalPress, goals, loading, error, createGoal, re
             style={[styles.headerBtn, { backgroundColor: colors.primary }]}
             onPress={() => setFormModalVisible(true)}
           >
-            <Ionicons name="add" size={18} color="#FFF" />
-            <Text style={styles.headerBtnText}>Nova Meta</Text>
+            <Ionicons name="add" size={18} color={colors.primaryForeground} />
+            <Text style={[styles.headerBtnText, { color: colors.primaryForeground }]}>Nova Meta</Text>
           </TouchableOpacity>
         </View>
 
@@ -248,7 +259,7 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   content: {
-    padding: 16,
+    padding: 20,
     paddingBottom: 32,
     gap: 16,
   },
@@ -279,7 +290,7 @@ const styles = StyleSheet.create({
   },
   goalCard: {
     borderRadius: 20,
-    padding: 16,
+    padding: 20,
     borderWidth: StyleSheet.hairlineWidth,
     gap: 12,
   },
@@ -361,10 +372,16 @@ const styles = StyleSheet.create({
   },
   emptyState: {
     alignItems: 'center',
-    padding: 40,
+    padding: 24,
     gap: 16,
-    borderRadius: 20,
+    borderRadius: 28,
     borderWidth: StyleSheet.hairlineWidth,
+  },
+  emptyTitle: { fontSize: 21, fontWeight: '700', textAlign: 'center', letterSpacing: -0.5 },
+  emptyIllustration: {
+    width: 216,
+    maxWidth: '100%',
+    height: 216,
   },
   emptyText: {
     fontSize: 14,

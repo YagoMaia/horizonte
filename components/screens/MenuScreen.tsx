@@ -20,6 +20,7 @@ import * as DocumentPicker from 'expo-document-picker'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { PRIMARY_COLORS } from '@/constants/theme'
 import { TabType, Trip } from '@/constants/types'
+import { ScreenHeading } from '../ScreenHeading'
 
 interface MenuItemProps {
   icon: string
@@ -37,6 +38,7 @@ function MenuItem({ icon, label, value, onPress, danger, colors }: MenuItemProps
       onPress={onPress}
       activeOpacity={0.7}
       disabled={!onPress}
+      accessibilityRole={onPress ? 'button' : undefined}
     >
       <View style={[styles.menuIcon, { backgroundColor: danger ? colors.dangerLight : colors.secondary }]}>
         <Ionicons
@@ -311,17 +313,37 @@ export function MenuScreen({ onNavigate, trips = [], onCreateTrip, onAddTripExpe
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
     >
+      <ScreenHeading title="Tudo no seu lugar." subtitle="Seus planos, suas contas e suas preferências." />
       {/* Profile */}
-      <View style={[styles.profileCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <View style={[styles.profileCard, { backgroundColor: colors.hero, borderColor: colors.hero }]}>
         <View style={[styles.avatar, { backgroundColor: colors.primary }]}>
-          <Text style={styles.avatarText}>H</Text>
+          <Ionicons name="sunny-outline" size={28} color={colors.primaryForeground} />
         </View>
         <View>
-          <Text style={[styles.profileName, { color: colors.foreground }]}>Horizonte</Text>
-          <Text style={[styles.profileSub, { color: colors.mutedForeground }]}>
-            Gestão Financeira Pessoal
+          <Text style={[styles.profileName, { color: colors.heroForeground }]}>Um passo de cada vez.</Text>
+          <Text style={[styles.profileSub, { color: colors.heroMuted }]}>
+            Mais clareza para suas escolhas.
           </Text>
         </View>
+      </View>
+
+      <View style={styles.shortcuts}>
+        {([
+          { tab: 'cartao', icon: 'card-outline', title: 'Cartões', subtitle: 'Faturas e parcelas' },
+          { tab: 'orcamento', icon: 'pie-chart-outline', title: 'Orçamento', subtitle: 'Planeje seus gastos' },
+          { tab: 'relatorios', icon: 'stats-chart-outline', title: 'Análises', subtitle: 'Entenda sua evolução' },
+          { tab: 'viagens', icon: 'airplane-outline', title: 'Viagens', subtitle: 'Planeje a próxima' },
+        ] as const).map(item => (
+          <TouchableOpacity key={item.tab} accessibilityRole="button" accessibilityLabel={item.title}
+            onPress={() => onNavigate?.(item.tab)} activeOpacity={0.75}
+            style={[styles.shortcut, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={[styles.menuIcon, { backgroundColor: colors.primarySoft }]}>
+              <Ionicons name={item.icon} size={21} color={colors.primaryText} />
+            </View>
+            <Text style={[styles.shortcutTitle, { color: colors.foreground }]}>{item.title}</Text>
+            <Text style={[styles.shortcutSubtitle, { color: colors.mutedForeground }]}>{item.subtitle}</Text>
+          </TouchableOpacity>
+        ))}
       </View>
 
       {/* Stats */}
@@ -558,22 +580,26 @@ export function MenuScreen({ onNavigate, trips = [], onCreateTrip, onAddTripExpe
 }
 
 const styles = StyleSheet.create({
-  content: { padding: 16, paddingBottom: 32, gap: 8 },
-  profileCard: { flexDirection: 'row', alignItems: 'center', gap: 14, borderRadius: 16, borderWidth: 1, padding: 16, marginBottom: 8 },
+  content: { padding: 20, paddingBottom: 32, gap: 12 },
+  shortcuts: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  shortcut: { flexGrow: 1, flexBasis: '45%', padding: 18, borderRadius: 22, borderWidth: 1, gap: 8 },
+  shortcutTitle: { fontSize: 16, fontWeight: '700', marginTop: 4 },
+  shortcutSubtitle: { fontSize: 12, lineHeight: 18 },
+  profileCard: { flexDirection: 'row', alignItems: 'center', gap: 14, borderRadius: 24, borderWidth: 1, padding: 20, marginVertical: 4 },
   avatar: { width: 52, height: 52, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: '#FFF', fontSize: 22, fontWeight: '700' },
-  profileName: { fontSize: 18, fontWeight: '700' },
+  profileName: { fontSize: 17, fontWeight: '700' },
   profileSub: { fontSize: 13, marginTop: 2 },
   statsRow: { flexDirection: 'row', gap: 10, marginBottom: 8 },
   statCard: { flex: 1, alignItems: 'center', borderRadius: 12, borderWidth: 1, paddingVertical: 14, gap: 2 },
   statValue: { fontSize: 22, fontWeight: '700' },
   statLabel: { fontSize: 11 },
   sectionTitle: { fontSize: 11, fontWeight: '600', letterSpacing: 0.8, marginTop: 8, marginLeft: 4 },
-  section: { borderRadius: 16, borderWidth: 1, overflow: 'hidden' },
-  menuItem: { flexDirection: 'row', alignItems: 'center', padding: 14, gap: 12 },
+  section: { borderRadius: 22, borderWidth: 1, overflow: 'hidden' },
+  menuItem: { flexDirection: 'row', alignItems: 'center', padding: 16, gap: 12, minHeight: 64 },
   menuIcon: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   menuLabel: { flex: 1, fontSize: 15, fontWeight: '400' },
-  menuValue: { fontSize: 14 },
+  menuValue: { fontSize: 13, flexShrink: 1, textAlign: 'right', maxWidth: '42%' },
   footer: { textAlign: 'center', fontSize: 12, marginTop: 8 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 24 },
   modalContent: { width: '100%', borderRadius: 20, borderWidth: 1, padding: 24 },

@@ -18,6 +18,7 @@ import { useStoreContext } from "@/context/StoreContext";
 import { useSavingsGoals } from "@/hooks/useSavingsGoals";
 import { formatCurrency, formatDateShort, getTransactionVisuals } from "@/lib/utils";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { ScreenHeading } from '../ScreenHeading';
 
 const MONTH_NAMES = [
   "Janeiro",
@@ -788,6 +789,9 @@ export function HorizonteScreen() {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       {/* BANNER DE ALERTA CRÍTICO */}
+      <View style={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: 12 }}>
+        <ScreenHeading title="Um olhar para o futuro." subtitle="Veja como seu saldo pode evoluir dia a dia." />
+      </View>
       {firstNegativeDate && (() => {
         const negDate = new Date(firstNegativeDate);
         const negMonth = negDate.getMonth();
@@ -824,6 +828,8 @@ export function HorizonteScreen() {
           <View style={styles.monthNavActions}>
             <TouchableOpacity
               onPress={toggleViewMode}
+              accessibilityRole="button"
+              accessibilityLabel={viewMode === "list" ? "Ver mapa de saldos" : "Ver lista de saldos"}
               style={[styles.configBtn, { backgroundColor: colors.secondary }]}
               hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
             >
@@ -835,6 +841,8 @@ export function HorizonteScreen() {
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => setConfigModalVisible(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Configurar projeção"
               style={[styles.configBtn, { backgroundColor: colors.secondary }]}
               hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
             >
@@ -1402,6 +1410,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
+    marginHorizontal: 20,
+    borderRadius: 18,
+    marginBottom: 10,
   },
   monthNavCenter: {
     flex: 1,
@@ -1437,8 +1448,10 @@ const styles = StyleSheet.create({
   },
 
   budgetCard: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    marginHorizontal: 20,
+    borderRadius: 20,
+    paddingHorizontal: 18,
+    paddingVertical: 16,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   budgetRow: {
@@ -1453,7 +1466,7 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 0.4,
   },
-  budgetValue: { fontSize: 19, fontWeight: "700" },
+  budgetValue: { fontSize: 24, fontWeight: "700", letterSpacing: -0.6 },
   budgetRight: { alignItems: "flex-end", justifyContent: "center", gap: 2 },
   dailyLabel: { fontSize: 10, fontWeight: "500", textTransform: "uppercase" },
   dailyValue: { fontSize: 15, fontWeight: "700" },
@@ -1471,13 +1484,16 @@ const styles = StyleSheet.create({
   summaryStrip: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 8,
+    paddingVertical: 14,
     paddingHorizontal: 8,
+    marginHorizontal: 20,
+    marginVertical: 10,
+    borderRadius: 16,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   summaryItem: { flex: 1, alignItems: "center", justifyContent: "center", gap: 1, paddingHorizontal: 2 },
   summaryLabel: { fontSize: 10, fontWeight: "500", textTransform: "uppercase" },
-  summaryValue: { fontSize: 12, fontWeight: "700" },
+  summaryValue: { fontSize: 14, fontWeight: "700" },
   summaryDivider: { width: 1, height: 20 },
 
   list: {

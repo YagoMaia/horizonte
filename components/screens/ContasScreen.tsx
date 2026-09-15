@@ -17,6 +17,7 @@ import { useStoreContext } from '@/context/StoreContext';
 import { formatCurrency } from '@/lib/utils';
 import { Account } from '@/constants/types';
 import { ConfirmDeleteModal } from '../ConfirmDeleteModal';
+import { ScreenHeading } from '../ScreenHeading';
 
 const ACCOUNT_COLORS = [
   '#42A5F5',
@@ -204,10 +205,11 @@ export function ContasScreen() {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        <View style={[styles.totalCard, { backgroundColor: colors.primary }]}>
-          <Text style={styles.totalLabel}>Patrimônio Total</Text>
-          <Text style={styles.totalValue}>{formatCurrency(totalBalance)}</Text>
-          <Text style={styles.totalSub}>
+        <ScreenHeading title="Suas contas." subtitle="Uma visão completa de onde seu dinheiro está." />
+        <View style={[styles.totalCard, { backgroundColor: colors.hero }]}>
+          <Text style={[styles.totalLabel, { color: colors.heroMuted }]}>Patrimônio Total</Text>
+          <Text style={[styles.totalValue, { color: colors.heroForeground }]} numberOfLines={1} adjustsFontSizeToFit>{formatCurrency(totalBalance)}</Text>
+          <Text style={[styles.totalSub, { color: colors.heroMuted }]}>
             {accounts.length} conta{accounts.length !== 1 ? 's' : ''}
           </Text>
         </View>
@@ -220,8 +222,8 @@ export function ContasScreen() {
             style={[styles.addBtn, { backgroundColor: colors.primary }]}
             onPress={openAdd}
           >
-            <Ionicons name='add' size={18} color='#FFF' />
-            <Text style={styles.addBtnText}>Nova conta</Text>
+            <Ionicons name='add' size={18} color={colors.primaryForeground} />
+            <Text style={[styles.addBtnText, { color: colors.primaryForeground }]}>Nova conta</Text>
           </TouchableOpacity>
         </View>
 
@@ -579,8 +581,8 @@ export function ContasScreen() {
 }
 
 const styles = StyleSheet.create({
-  content: { padding: 16, paddingBottom: 32, gap: 16 },
-  totalCard: { borderRadius: 20, padding: 24, gap: 4 },
+  content: { padding: 20, paddingBottom: 32, gap: 20 },
+  totalCard: { borderRadius: 28, padding: 24, gap: 8 },
   totalLabel: {
     color: 'rgba(255,255,255,0.75)',
     fontSize: 13,

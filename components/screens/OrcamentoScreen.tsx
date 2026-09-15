@@ -14,6 +14,7 @@ import { useTheme } from '@/hooks/useTheme'
 import { useStoreContext } from '@/context/StoreContext'
 import { RecurringExpenseCategory, BudgetAllocation } from '@/constants/types'
 import { AllocationEditorModal } from './orcamento/AllocationEditorModal'
+import { ScreenHeading } from '../ScreenHeading'
 
 // ────────────────────────────────────────────────────────────────────────────────
 // Dados estáticos auxiliares
@@ -425,10 +426,12 @@ export function OrcamentoScreen() {
     >
       {/* ── Cabeçalho com seletor de mês ── */}
       <View style={styles.screenHeader}>
-        <Text style={[styles.screenTitle, { color: colors.foreground }]}>Orçamento Mensal</Text>
+        <View style={{ flex: 1 }}><ScreenHeading title="Cada real tem um plano." subtitle="Organize seu orçamento mensal." /></View>
         <TouchableOpacity
           style={[styles.configBtn, { backgroundColor: colors.secondary, borderColor: colors.border }]}
           onPress={() => setAllocVisible(true)}
+          accessibilityRole="button"
+          accessibilityLabel="Configurar distribuição do orçamento"
           activeOpacity={0.7}
         >
           <Ionicons name="settings-outline" size={18} color={colors.mutedForeground} />
@@ -752,7 +755,7 @@ export function OrcamentoScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  content: { padding: 16, paddingBottom: 32 },
+  content: { padding: 20, paddingBottom: 32 },
 
   screenHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   screenTitle: { fontSize: 22, fontWeight: '700', letterSpacing: -0.3 },

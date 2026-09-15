@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons'
 import { useTheme } from '@/hooks/useTheme'
 import { useStoreContext } from '@/context/StoreContext'
 import { TabType, Account, SavingsGoal } from '@/constants/types'
+import { Layout } from '@/constants/theme'
 import { BottomNavigation } from '@/components/BottomNavigation'
 import { AddTransactionModal } from '@/components/AddTransactionModal'
 import { SaldosScreen } from '@/components/screens/SaldosScreen'
@@ -32,7 +33,7 @@ import { TripFormModal } from '@/components/TripFormModal'
 import { Trip } from '@/constants/types'
 
 export default function HomePage() {
-  const { colors } = useTheme()
+  const { colors, isDark, setThemeMode } = useTheme()
   const store = useStoreContext()
   const savingsGoalsProps = useSavingsGoals()
   const tripsProps = useTrips()
@@ -186,20 +187,25 @@ export default function HomePage() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
-      <View style={[styles.header, { borderBottomColor: colors.border, backgroundColor: colors.card }]}>
+      <View style={[styles.header, { backgroundColor: colors.background }]}>
         <View style={styles.headerLeft}>
           <View style={[styles.logo, { backgroundColor: colors.primary }]}>
-            <Text style={styles.logoText}>H</Text>
+            <Text style={[styles.logoText, { color: colors.primaryForeground }]}>H</Text>
           </View>
-          <Text style={[styles.logoName, { color: colors.foreground }]}>Horizonte</Text>
+          <View>
+            <Text style={[styles.logoName, { color: colors.foreground }]}>horizonte</Text>
+            <Text style={[styles.tagline, { color: colors.mutedForeground }]}>Seu amanhã começa aqui.</Text>
+          </View>
         </View>
 
         <View style={styles.headerRight}>
           {/* Contas shortcut */}
           <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Gerenciar contas"
             style={[
               styles.headerBtn,
-              { backgroundColor: activeTab === 'contas' ? colors.primary + '20' : 'transparent' }
+              { backgroundColor: activeTab === 'contas' ? colors.primarySoft : colors.card, borderColor: colors.border }
             ]}
             onPress={() => {
               if (activeTab !== 'contas') setDefaultValues({});
@@ -210,33 +216,26 @@ export default function HomePage() {
             <Ionicons
               name="wallet-outline"
               size={20}
-              color={activeTab === 'contas' ? colors.primary : colors.mutedForeground}
+              color={activeTab === 'contas' ? colors.primaryText : colors.mutedForeground}
             />
           </TouchableOpacity>
 
-          {/* Horizonte shortcut */}
+          {/* Theme shortcut */}
           <TouchableOpacity
             style={[
-              styles.horizonBtn,
-              { backgroundColor: activeTab === 'horizonte' ? colors.primary : colors.secondary }
+              styles.headerBtn,
+              { backgroundColor: colors.card, borderColor: colors.border }
             ]}
-            onPress={() => {
-              if (activeTab !== 'horizonte') setDefaultValues({});
-              setActiveTab(activeTab === 'horizonte' ? 'saldos' : 'horizonte');
-            }}
+            onPress={() => setThemeMode(isDark ? 'light' : 'dark')}
+            accessibilityRole="button"
+            accessibilityLabel={isDark ? 'Ativar tema claro' : 'Ativar tema escuro'}
             activeOpacity={0.8}
           >
             <Ionicons
-              name="calendar-outline"
-              size={16}
-              color={activeTab === 'horizonte' ? '#FFF' : colors.mutedForeground}
+              name={isDark ? 'sunny-outline' : 'moon-outline'}
+              size={20}
+              color={colors.mutedForeground}
             />
-            <Text style={[
-              styles.horizonBtnText,
-              { color: activeTab === 'horizonte' ? '#FFF' : colors.mutedForeground }
-            ]}>
-              Horizonte
-            </Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -306,14 +305,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: Layout.page,
+    paddingVertical: 14,
+    width: '100%',
+    maxWidth: Layout.maxWidth,
+    alignSelf: 'center',
   },
   headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 10,
   },
   headerRight: {
     flexDirection: 'row',
@@ -321,18 +322,20 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   logo: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
+    width: 42,
+    height: 42,
+    borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
   },
   logoText: { color: '#FFF', fontWeight: '700', fontSize: 16 },
-  logoName: { fontSize: 17, fontWeight: '600' },
+  logoName: { fontSize: 21, fontWeight: '800', letterSpacing: -0.8 },
+  tagline: { fontSize: 10, marginTop: 2 },
   headerBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
+    width: 44,
+    height: 44,
+    borderRadius: 15,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -345,5 +348,5 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
   horizonBtnText: { fontSize: 13, fontWeight: '500' },
-  content: { flex: 1 },
+  content: { flex: 1, width: '100%', maxWidth: Layout.maxWidth, alignSelf: 'center' },
 })

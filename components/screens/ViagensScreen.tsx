@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/hooks/useTheme';
 import { Trip, CreateTripInput, UpdateTripInput } from '@/constants/types';
 import { TripFormModal } from '../TripFormModal';
 import { useStoreContext } from '@/context/StoreContext';
 import { formatCurrency, formatDateShort } from '@/lib/utils';
+import { ScreenHeading } from '../ScreenHeading';
 
 interface ViagensScreenProps {
   trips: Trip[];
@@ -116,7 +117,7 @@ export function ViagensScreen({ trips, createTrip, updateTrip, onTripPress, edit
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={styles.header}>
-        <Text style={[styles.title, { color: colors.foreground }]}>Viagens</Text>
+        <View style={{ flex: 1 }}><ScreenHeading title="Novos destinos." subtitle="A viagem começa no planejamento." /></View>
         <TouchableOpacity 
           style={[styles.addButton, { backgroundColor: colors.primary }]}
           onPress={() => { setTripToEdit(undefined); setIsFormVisible(true); }}
@@ -127,13 +128,26 @@ export function ViagensScreen({ trips, createTrip, updateTrip, onTripPress, edit
       </View>
 
       {trips.length === 0 ? (
-        <View style={styles.emptyState}>
-          <Ionicons name="airplane-outline" size={64} color={colors.mutedForeground} />
-          <Text style={[styles.emptyTitle, { color: colors.foreground }]}>Nenhuma viagem</Text>
+        <ScrollView contentContainerStyle={styles.emptyScroll}>
+        <View style={[styles.emptyState, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Image
+            source={require('../../assets/images/illustrations/trips-empty.png')}
+            style={styles.emptyIllustration}
+            resizeMode="contain"
+            accessible={false}
+            importantForAccessibility="no"
+          />
+          <Text style={[styles.emptyTitle, { color: colors.foreground }]}>Para onde vamos?</Text>
           <Text style={[styles.emptySubtitle, { color: colors.mutedForeground }]}>
-            Crie sua primeira viagem para acompanhar os gastos de suas aventuras!
+            Planeje os gastos antes de fazer as malas. Sua próxima aventura começa aqui.
           </Text>
+          <TouchableOpacity accessibilityRole="button" style={[styles.emptyAction, { backgroundColor: colors.primary }]}
+            onPress={() => { setTripToEdit(undefined); setIsFormVisible(true); }}>
+            <Ionicons name="add" size={20} color={colors.primaryForeground} />
+            <Text style={[styles.addButtonText, { color: colors.primaryForeground }]}>Planejar uma viagem</Text>
+          </TouchableOpacity>
         </View>
+        </ScrollView>
       ) : (
         <FlatList
           data={trips}
@@ -167,6 +181,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: 20,
+    gap: 12,
   },
   title: {
     fontSize: 24,
@@ -190,7 +205,7 @@ const styles = StyleSheet.create({
   },
   tripCard: {
     padding: 16,
-    borderRadius: 16,
+    borderRadius: 24,
     borderWidth: 1,
   },
   cardHeader: {
@@ -263,16 +278,25 @@ const styles = StyleSheet.create({
     color: '#000', // could be better contrasted
     zIndex: 1,
   },
+  emptyScroll: { padding: 20, paddingTop: 0, paddingBottom: 32 },
+  emptyAction: { minHeight: 48, padding: 14, borderRadius: 16, flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 24 },
   emptyState: {
-    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 40,
+    padding: 24,
+    borderRadius: 28,
+    borderWidth: 1,
+  },
+  emptyIllustration: {
+    width: 216,
+    maxWidth: '100%',
+    height: 216,
   },
   emptyTitle: {
-    fontSize: 18,
+    fontSize: 22,
     fontWeight: '700',
     marginTop: 16,
+    textAlign: 'center',
     marginBottom: 8,
   },
   emptySubtitle: {

@@ -26,6 +26,7 @@ import { Account, Transaction } from '@/constants/types';
 
 import { AddTransactionModal } from '../AddTransactionModal';
 import { ConfirmDeleteModal } from '../ConfirmDeleteModal';
+import { ScreenHeading } from '../ScreenHeading';
 import { convertTransactionsToCSV, exportCSV } from '@/lib/exportUtils';
 
 const MONTH_NAMES = [
@@ -475,8 +476,11 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
   if (creditCards.length === 0) {
     return (
       <View style={[styles.emptyContainer, { backgroundColor: colors.background }]}>
-        <Ionicons name='card-outline' size={64} color={colors.border} />
-        <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>Nenhum cartão de crédito registado.</Text>
+        <View style={{ backgroundColor: colors.primarySoft, padding: 24, borderRadius: 28, marginBottom: 20 }}>
+          <Ionicons name='card-outline' size={56} color={colors.primaryText} />
+        </View>
+        <Text style={{ color: colors.foreground, fontSize: 24, fontWeight: '700', textAlign: 'center' }}>Seus cartões, sob controle.</Text>
+        <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>Cadastre um cartão em Contas para acompanhar suas faturas e parcelas.</Text>
       </View>
     );
   }
@@ -520,6 +524,9 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       {/* Card selector carousel */}
+      <View style={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12 }}>
+        <ScreenHeading title="Cartões sob controle." subtitle="Suas faturas e parcelas em um só lugar." />
+      </View>
       <View style={[styles.carouselContainer, { borderBottomColor: colors.border, backgroundColor: colors.card }]}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.carouselContent}>
           {creditCards.length > 1 && (
@@ -1149,7 +1156,7 @@ const styles = StyleSheet.create({
   carouselContainer: { borderBottomWidth: StyleSheet.hairlineWidth, paddingVertical: 12 },
   carouselContent: { paddingHorizontal: 16, gap: 12 },
   cardSelectorItem: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, borderWidth: 1 },
-  content: { padding: 16, paddingBottom: 40, gap: 16 },
+  content: { padding: 20, paddingBottom: 40, gap: 20 },
   monthNav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 8 },
   navBtn: { padding: 8 },
   monthTitle: { fontSize: 18, fontWeight: '700' },
