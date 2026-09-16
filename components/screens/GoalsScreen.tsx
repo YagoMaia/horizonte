@@ -39,7 +39,7 @@ export function GoalsScreen({ onGoalPress, goals, loading, error, createGoal, re
     AsyncStorage.getItem('@horizonte:active_goals').then((raw) => {
       if (raw) setActiveGoalIds(JSON.parse(raw));
     }).catch(() => {});
-  }, [goals]);
+  }, []);
 
   const handleCreateGoal = async (input: CreateGoalInput) => {
     await createGoal(input);

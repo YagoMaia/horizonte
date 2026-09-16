@@ -1,5 +1,5 @@
 // components/screens/HorizonteScreen.tsx
-import React, { useMemo, useState, useEffect, useCallback } from "react";
+import React, { useMemo, useState, useEffect, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -96,6 +96,7 @@ export function HorizonteScreen() {
   const [activeAccountIds, setActiveAccountIds] = useState<string[]>([]);
   const [activeGoalIds, setActiveGoalIds] = useState<string[]>([]);
   const [budgetInput, setBudgetInput] = useState<string>("");
+  const configLoadedRef = useRef(false);
 
   // 👉 NOVO ESTADO: Alternar entre Lista e Mapa de Calor
   const [viewMode, setViewMode] = useState<"list" | "grid">("list");
@@ -108,8 +109,13 @@ export function HorizonteScreen() {
         const savedAccounts = await AsyncStorage.getItem(
           "@horizonte:active_accounts",
         );
-        if (savedAccounts) setActiveAccountIds(JSON.parse(savedAccounts));
-        else setActiveAccountIds(accounts.map((a) => a.id));
+        const availableAccountIds = new Set(accounts.map((account) => account.id));
+        if (savedAccounts) {
+          const savedIds = JSON.parse(savedAccounts) as string[];
+          setActiveAccountIds(savedIds.filter((id) => availableAccountIds.has(id)));
+        } else {
+          setActiveAccountIds(accounts.map((a) => a.id));
+        }
 
         const savedGoals = await AsyncStorage.getItem("@horizonte:active_goals");
         if (savedGoals) setActiveGoalIds(JSON.parse(savedGoals));
@@ -118,9 +124,28 @@ export function HorizonteScreen() {
         if (savedView) setViewMode(savedView as "list" | "grid");
       } catch (e) {
         console.error(e);
+      } finally {
+        configLoadedRef.current = true;
       }
     };
     loadConfig();
+  }, []);
+
+  // Remove IDs de contas que foram excluídas sem reler todas as preferências.
+  useEffect(() => {
+    if (!configLoadedRef.current) return;
+
+    const validIds = new Set(accounts.map((account) => account.id));
+    setActiveAccountIds((currentIds) => {
+      const nextIds = currentIds.filter((id) => validIds.has(id));
+      if (nextIds.length === currentIds.length) return currentIds;
+
+      AsyncStorage.setItem(
+        "@horizonte:active_accounts",
+        JSON.stringify(nextIds),
+      ).catch((error) => console.error(error));
+      return nextIds;
+    });
   }, [accounts]);
 
   useEffect(() => {

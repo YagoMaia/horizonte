@@ -1,5 +1,5 @@
 // app/index.tsx
-import React, { useState, useCallback, useEffect } from 'react'
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import {
   View,
   Text,
@@ -87,13 +87,47 @@ export default function HomePage() {
     }
   }, [defaultValues.accountId, defaultValues.type]);
 
-  // Process recurring goal deposits & sync transactions on app startup and changes
+  const recurrencesProcessedRef = useRef(false)
+
+  // Recorrências vencidas são processadas somente uma vez por carregamento da
+  // store. Alterações comuns de transações não precisam repetir esse trabalho.
   useEffect(() => {
-    if (!store.loading) {
-      processOverdueRecurrences(store.addTransaction);
-      syncWithTransactions(store.transactions);
-    }
-  }, [store.loading, store.transactions, store.addTransaction, processOverdueRecurrences, syncWithTransactions]);
+    if (store.loading || recurrencesProcessedRef.current) return;
+
+    recurrencesProcessedRef.current = true;
+    Promise.resolve(processOverdueRecurrences(store.addTransaction)).catch((error) => {
+      recurrencesProcessedRef.current = false;
+      console.error('Erro ao processar recorrências de metas:', error);
+    });
+  }, [store.loading, store.addTransaction, processOverdueRecurrences]);
+
+  const goalTransactionSignature = useMemo(() => {
+    return store.transactions
+      .filter((transaction) =>
+        transaction.type === 'transferencia' &&
+        (transaction.targetAccountId?.startsWith('goal_') ||
+          transaction.accountId?.startsWith('goal_')),
+      )
+      .map((transaction) => [
+        transaction.id,
+        transaction.paid,
+        transaction.amount,
+        transaction.date,
+        transaction.accountId,
+        transaction.targetAccountId,
+      ].join(':'))
+      .sort()
+      .join('|');
+  }, [store.transactions]);
+
+  // A sincronização só roda quando um lançamento relacionado a uma meta muda.
+  useEffect(() => {
+    if (store.loading) return;
+
+    Promise.resolve(syncWithTransactions(store.transactions)).catch((error) => {
+      console.error('Erro ao sincronizar metas com transações:', error);
+    });
+  }, [store.loading, goalTransactionSignature, syncWithTransactions]);
 
   if (store.loading) {
     return (

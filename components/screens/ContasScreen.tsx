@@ -48,7 +48,7 @@ const ACCOUNT_TYPES: { value: Account['type']; label: string }[] = [
 
 export function ContasScreen() {
   const { colors } = useTheme();
-  const { accounts, totalBalance, saveAccounts, addTransaction } = useStoreContext();
+  const { accounts, totalBalance, saveAccounts, saveAccountChange } = useStoreContext();
   const insets = useSafeAreaInsets();
 
   const [modalVisible, setModalVisible] = useState(false);
@@ -142,7 +142,7 @@ export function ContasScreen() {
           ? {
               ...a,
               name: name.trim(),
-              balance: editAccount.balance, // Mantemos o original, o addTransaction atualizará
+              balance: editAccount.balance,
               type,
               color: selectedColor,
               icon: selectedIcon,
@@ -152,21 +152,16 @@ export function ContasScreen() {
             }
           : a,
       );
-      await saveAccounts(updated);
-
-      if (diff !== 0) {
-        await addTransaction({
-          description: 'Ajuste de Saldo',
-          amount: Math.abs(diff),
-          type: diff > 0 ? 'receita' : 'despesa',
-          date: new Date().toISOString(),
-          accountId: editAccount.id,
-          paid: true,
-          recurrence: 'unica',
-          paymentMethod: 'debito',
-          categoryId: 'outros', // Pode ser mapeado para uma categoria de ajuste
-        });
-      }
+      await saveAccountChange(
+        updated,
+        diff !== 0
+          ? {
+              accountId: editAccount.id,
+              amount: Math.abs(diff),
+              type: diff > 0 ? 'receita' : 'despesa',
+            }
+          : undefined,
+      );
     } else {
       const newAccount: Account = {
         id: Date.now().toString(),

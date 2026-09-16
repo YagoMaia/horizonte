@@ -559,7 +559,7 @@ export function useSavingsGoals(): UseSavingsGoalsReturn {
   const syncWithTransactions = useCallback(
     (transactions: any[]) =>
       withWriteLock(async () => {
-        if (!Array.isArray(transactions) || transactions.length === 0) return;
+        if (!Array.isArray(transactions)) return;
 
         const raw = await AsyncStorage.getItem(STORAGE_KEY);
         if (!raw) return;
@@ -576,16 +576,20 @@ export function useSavingsGoals(): UseSavingsGoalsReturn {
         const existingDeposits = [...data.deposits];
         const depositMap = new Map<string, GoalDeposit>();
         existingDeposits.forEach((d) => depositMap.set(d.id, d));
+        const goalsById = new Map(data.goals.map((goal) => [goal.id, goal]));
+        const goalTransactions = transactions.filter((tx) =>
+          tx.type === 'transferencia' &&
+          (tx.targetAccountId?.startsWith('goal_') || tx.accountId?.startsWith('goal_')),
+        );
 
         let changed = false;
 
         // Process all transactions
-        for (const tx of transactions) {
+        for (const tx of goalTransactions) {
           // 1. Aportes/Depósitos na meta
           if (tx.type === 'transferencia' && tx.targetAccountId?.startsWith('goal_')) {
             const goalId = tx.targetAccountId.replace('goal_', '');
-            const goalExists = data.goals.some((g) => g.id === goalId);
-            if (!goalExists) continue;
+            if (!goalsById.has(goalId)) continue;
 
             const depositId = `tx_${tx.id}`;
             const existing = depositMap.get(depositId) || depositMap.get(tx.id);
@@ -623,8 +627,7 @@ export function useSavingsGoals(): UseSavingsGoalsReturn {
           // 2. Resgates/Retiradas da meta
           if (tx.type === 'transferencia' && tx.accountId?.startsWith('goal_')) {
             const goalId = tx.accountId.replace('goal_', '');
-            const goalExists = data.goals.some((g) => g.id === goalId);
-            if (!goalExists) continue;
+            if (!goalsById.has(goalId)) continue;
 
             const depositId = `tx_withdraw_${tx.id}`;
             const existing = depositMap.get(depositId) || depositMap.get(tx.id);

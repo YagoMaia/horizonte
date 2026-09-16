@@ -65,7 +65,7 @@ interface TimelineMonth {
 
 function buildTimelineForCard(
   card: Account,
-  transactions: Transaction[],
+  invoiceGroups: Map<number, Transaction[]>,
   centeredOffset: number,
 ): TimelineMonth[] {
   const result: TimelineMonth[] = [];
@@ -78,10 +78,7 @@ function buildTimelineForCard(
     const inv = getInvoiceForTx(base.toISOString(), card);
     const tValue = inv.value;
 
-    const invTxs = transactions.filter((tx: Transaction) => {
-      if (tx.accountId !== card.id || tx.paymentMethod !== 'credito') return false;
-      return getInvoiceForTx(tx.date, card).value === tValue;
-    });
+    const invTxs = invoiceGroups.get(tValue) ?? [];
 
     const total = invTxs.reduce((s, tx) => s + (tx.type === 'receita' ? -tx.amount : tx.amount), 0);
     const pending = invTxs.filter(t => !t.paid).reduce((s, tx) => s + (tx.type === 'receita' ? -tx.amount : tx.amount), 0);
@@ -183,6 +180,28 @@ export function CartaoScreen({ onSelectCard, initialCardId }: CartaoScreenProps)
   const [simCardId, setSimCardId] = useState<string>('');
   const [simResult, setSimResult] = useState<SimulationResult | null>(null);
 
+  // Cada transação de cartão recebe sua fatura uma única vez por atualização
+  // da store. As telas deixam de recalcular a fatura em cada filtro mensal.
+  const invoiceGroupsByCard = useMemo(() => {
+    const grouped = new Map<string, Map<number, Transaction[]>>();
+
+    for (const card of creditCards) {
+      const groups = new Map<number, Transaction[]>();
+      const cardTransactions = transactionIndexes.creditByCard.get(card.id) ?? [];
+
+      for (const transaction of cardTransactions) {
+        const invoiceValue = getInvoiceForTx(transaction.date, card).value;
+        const current = groups.get(invoiceValue);
+        if (current) current.push(transaction);
+        else groups.set(invoiceValue, [transaction]);
+      }
+
+      grouped.set(card.id, groups);
+    }
+
+    return grouped;
+  }, [creditCards, transactionIndexes]);
+
   const {
     totalInvoice,
     pendingInvoice,
@@ -219,20 +238,21 @@ export function CartaoScreen({ onSelectCard, initialCardId }: CartaoScreenProps)
         const tValue = targetInvoice.value;
         const openInvoiceValue = getInvoiceForTx(new Date().toISOString(), card).value;
 
-        const cardTransactions = transactionIndexes.creditByCard.get(card.id) ?? [];
-        const cardInvTxs = cardTransactions.filter((tx: Transaction) => {
-          return getInvoiceForTx(tx.date, card).value === tValue;
-        });
+        const cardInvoiceGroups = invoiceGroupsByCard.get(card.id) ?? new Map<number, Transaction[]>();
+        const cardInvTxs = cardInvoiceGroups.get(tValue) ?? [];
 
         allTxs.push(...cardInvTxs);
 
         tInvoice += cardInvTxs.reduce((sum: number, tx: Transaction) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount), 0);
         pInvoice += cardInvTxs.filter((t: Transaction) => !t.paid).reduce((sum: number, tx: Transaction) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount), 0);
 
-        const cardDebt = cardTransactions.filter((tx: Transaction) => {
-          if (tx.paid) return false;
-          return getInvoiceForTx(tx.date, card).value >= openInvoiceValue;
-        }).reduce((sum: number, tx: Transaction) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount), 0);
+        let cardDebt = 0;
+        for (const [invoiceValue, groupedTransactions] of cardInvoiceGroups) {
+          if (invoiceValue < openInvoiceValue) continue;
+          cardDebt += groupedTransactions
+            .filter((transaction) => !transaction.paid)
+            .reduce((sum, transaction) => sum + (transaction.type === 'receita' ? -transaction.amount : transaction.amount), 0);
+        }
 
         globalDebt += cardDebt;
         const cLimit = card.creditLimit || 0;
@@ -261,23 +281,21 @@ export function CartaoScreen({ onSelectCard, initialCardId }: CartaoScreenProps)
     const tYear = targetInvoice.viewYear;
     const tValue = targetInvoice.value;
 
-    const selectedCardTransactions: Transaction[] = transactionIndexes.creditByCard.get(selectedCard.id) ?? [];
-    const invTxs = selectedCardTransactions
-      .filter((tx: Transaction) => {
-        return getInvoiceForTx(tx.date, selectedCard).value === tValue;
-      })
+    const selectedCardInvoiceGroups = invoiceGroupsByCard.get(selectedCard.id) ?? new Map<number, Transaction[]>();
+    const invTxs = [...(selectedCardInvoiceGroups.get(tValue) ?? [])]
       .sort((a: Transaction, b: Transaction) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
     const tInvoice = invTxs.reduce((sum: number, tx: Transaction) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount), 0);
     const pInvoice = invTxs.filter((t: Transaction) => !t.paid).reduce((sum: number, tx: Transaction) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount), 0);
     const openInvoiceValue = getInvoiceForTx(new Date().toISOString(), selectedCard).value;
 
-    const globalPendingDebtValue = selectedCardTransactions
-      .filter((tx: Transaction) => {
-        if (tx.paid) return false;
-        return getInvoiceForTx(tx.date, selectedCard).value >= openInvoiceValue;
-      })
-      .reduce((sum: number, tx: Transaction) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount), 0);
+    let globalPendingDebtValue = 0;
+    for (const [invoiceValue, groupedTransactions] of selectedCardInvoiceGroups) {
+      if (invoiceValue < openInvoiceValue) continue;
+      globalPendingDebtValue += groupedTransactions
+        .filter((transaction) => !transaction.paid)
+        .reduce((sum, transaction) => sum + (transaction.type === 'receita' ? -transaction.amount : transaction.amount), 0);
+    }
 
     const cLimit = selectedCard.creditLimit || 0;
     const aLimit = Math.max(0, cLimit - globalPendingDebtValue);
@@ -297,17 +315,17 @@ export function CartaoScreen({ onSelectCard, initialCardId }: CartaoScreenProps)
       invoiceTransactions: invTxs, limit: cLimit, availableLimit: aLimit, limitUsagePercent: percent,
       invoiceStatus: status, globalPendingDebt: globalPendingDebtValue, isAll: false
     };
-  }, [selectedCard, transactionIndexes, monthOffset, colors, creditCards]);
+  }, [selectedCard, transactionIndexes, monthOffset, colors, creditCards, invoiceGroupsByCard]);
 
   // Invoice timeline for the selected single card
   const invoiceTimeline = useMemo<TimelineMonth[]>(() => {
     if (!selectedCard || selectedCard.id === 'all') return [];
     return buildTimelineForCard(
       selectedCard,
-      transactionIndexes.creditByCard.get(selectedCard.id) ?? [],
+      invoiceGroupsByCard.get(selectedCard.id) ?? new Map<number, Transaction[]>(),
       monthOffset,
     );
-  }, [selectedCard, transactionIndexes, monthOffset]);
+  }, [selectedCard, invoiceGroupsByCard, monthOffset]);
 
   const debitAccounts = useMemo(() => accounts.filter((a: Account) => a.type !== 'cartao_credito'), [accounts]);
 

@@ -4,11 +4,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Transaction, Account, RecurringExpense, BudgetAllocation, RecurringExpenseCategory } from '@/constants/types';
 import { buildTransactionIndexes } from '@/lib/transactionIndexes';
 import { 
-  scheduleTransactionNotification, 
-  scheduleCardClosingNotification, 
-  scheduleCardDueNotification,
   cancelAllNotifications,
-  registerForPushNotificationsAsync
+  clearNotificationRegistry,
+  reconcileNotifications,
+  registerForPushNotificationsAsync,
 } from '@/lib/notifications';
 
 const STORAGE_KEYS = {
@@ -61,7 +60,7 @@ export function useStore() {
     }
   }, []);
 
-  const saveAccounts = useCallback(async (data: Account[]) => {
+  const persistAccounts = useCallback(async (data: Account[]) => {
     try {
       await AsyncStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(data));
       setAccounts(data);
@@ -71,7 +70,14 @@ export function useStore() {
     }
   }, []);
 
-  // Escrita atômica: salva transações e contas juntas para evitar inconsistência
+  // Operações de conta também entram na fila de escrita para não concorrerem
+  // com lançamentos que atualizam saldo e transações ao mesmo tempo.
+  const saveAccounts = useCallback(
+    (data: Account[]) => withWriteLock(() => persistAccounts(data)),
+    [persistAccounts, withWriteLock],
+  );
+
+  // Grava transações e contas em uma única operação de armazenamento.
   const saveTransactionsAndAccounts = useCallback(async (txData: Transaction[], accData: Account[]) => {
     try {
       await AsyncStorage.multiSet([
@@ -172,34 +178,57 @@ export function useStore() {
     loadData();
   }, [loadData]);
 
-  useEffect(() => {
-    const initNotifications = async () => {
-      await registerForPushNotificationsAsync();
-      
-      // Cancela todas as notificações existentes antes de reagendar
-      // para evitar duplicatas após mudanças de estado
-      await cancelAllNotifications();
-      
-      // Schedule card reminders
-      accounts.forEach(acc => {
-        if (acc.type === 'cartao_credito') {
-          scheduleCardClosingNotification(acc);
-          scheduleCardDueNotification(acc);
-        }
-      });
+  const notificationSignature = useMemo(() => {
+    const cards = accounts
+      .filter((account) => account.type === 'cartao_credito')
+      .map((account) => ({
+        id: account.id,
+        name: account.name,
+        closingDay: account.closingDay,
+        dueDay: account.dueDay,
+      }))
+      .sort((a, b) => a.id.localeCompare(b.id));
 
-      // Also ensure existing transactions with reminders are scheduled
-      transactions.forEach(tx => {
-        if (tx.reminderEnabled && !tx.paid) {
-          scheduleTransactionNotification(tx);
-        }
-      });
+    const reminders = transactions
+      .filter((transaction) => transaction.reminderEnabled && !transaction.paid)
+      .map((transaction) => ({
+        id: transaction.id,
+        date: transaction.date,
+        description: transaction.description,
+        amount: transaction.amount,
+        reminderEnabled: transaction.reminderEnabled,
+        paid: transaction.paid,
+      }))
+      .sort((a, b) => a.id.localeCompare(b.id));
+
+    return JSON.stringify({ cards, reminders });
+  }, [accounts, transactions]);
+
+  const notificationsInitialized = useRef(false);
+
+  useEffect(() => {
+    if (loading) return;
+
+    let cancelled = false;
+    const syncNotifications = async () => {
+      if (!notificationsInitialized.current) {
+        await registerForPushNotificationsAsync();
+        notificationsInitialized.current = true;
+      }
+
+      if (!cancelled) {
+        await reconcileNotifications(accounts, transactions);
+      }
     };
 
-    if (!loading) {
-      initNotifications();
-    }
-  }, [loading, accounts.length, transactions.length]);
+    syncNotifications().catch((error) => {
+      console.error('Erro ao sincronizar notificações:', error);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loading, notificationSignature]);
 
   // --- DEMAIS MÉTODOS ---
 
@@ -213,6 +242,7 @@ export function useStore() {
 
   const clearAllData = useCallback(async () => {
     await cancelAllNotifications();
+    await clearNotificationRegistry();
     await AsyncStorage.multiRemove([
       STORAGE_KEYS.TRANSACTIONS,
       STORAGE_KEYS.ACCOUNTS,
@@ -281,7 +311,7 @@ export function useStore() {
   const addTransaction = useCallback(
     (tx: any) => withWriteLock(async () => {
       const newTransactions: Transaction[] = [];
-      let updatedAccounts = [...accounts];
+      let updatedAccounts = accounts;
 
       const targetAccount = updatedAccounts.find((a) => a.id === tx.accountId);
       const isCreditCard = targetAccount?.type === 'cartao_credito';
@@ -440,18 +470,15 @@ export function useStore() {
       }
 
       const updated = [...newTransactions, ...transactions];
-      await saveTransactionsAndAccounts(updated, updatedAccounts);
-
-      // Schedule notifications for new transactions
-      newTransactions.forEach(nt => {
-        if (nt.reminderEnabled && !nt.paid) {
-          scheduleTransactionNotification(nt);
-        }
-      });
+      if (updatedAccounts === accounts) {
+        await saveTransactions(updated);
+      } else {
+        await saveTransactionsAndAccounts(updated, updatedAccounts);
+      }
 
       return newTransactions[0];
     }),
-    [transactions, accounts, saveTransactionsAndAccounts, withWriteLock],
+    [transactions, accounts, saveTransactions, saveTransactionsAndAccounts, withWriteLock],
   );
 
   const deleteTransaction = useCallback(
@@ -632,10 +659,6 @@ export function useStore() {
 
       await saveTransactionsAndAccounts(finalTransactions, updatedAccounts);
 
-      // Re-schedule notification
-      if (updatedTx.reminderEnabled && !updatedTx.paid) {
-        scheduleTransactionNotification(updatedTx);
-      }
     }),
     [transactions, accounts, saveTransactionsAndAccounts, withWriteLock],
   );
@@ -883,35 +906,116 @@ export function useStore() {
     [transactions, accounts, saveTransactionsAndAccounts, withWriteLock],
   );
 
-  return {
-    transactions,
-    transactionIndexes,
-    accounts,
-    monthlyBudgets,
-    getEffectiveBudget,
-    saveMonthlyBudget,
-    showPending,
-    setShowPending,
-    loading,
-    totalBalance,
-    monthlyIncome,
-    monthlyExpense,
-    addTransaction,
-    deleteTransaction,
-    updateTransaction,
-    saveAccounts,
-    clearAllData,
-    payCreditCardInvoice,
-    anticipateCreditCardPayment,
-    deleteMultipleTransactions,
-    // Orçamento
-    recurringExpenses,
-    addRecurringExpense,
-    updateRecurringExpense,
-    deleteRecurringExpense,
-    budgetAllocation,
-    saveBudgetAllocation,
-    recurringOverrides,
-    saveRecurringOverride,
-  };
+  // Atualiza os metadados de uma conta e, opcionalmente, registra o ajuste de
+  // saldo na mesma gravação. Isso evita duas gravações e não perde as mudanças
+  // de nome, tipo, cor ou limite durante o ajuste.
+  const saveAccountChange = useCallback(
+    (
+      data: Account[],
+      adjustment?: {
+        accountId: string;
+        amount: number;
+        type: 'receita' | 'despesa';
+        description?: string;
+      },
+    ) => withWriteLock(async () => {
+      if (!adjustment || adjustment.amount <= 0) {
+        await persistAccounts(data);
+        return;
+      }
+
+      const adjustmentTransaction: Transaction = {
+        id: Date.now().toString(),
+        description: adjustment.description || 'Ajuste de Saldo',
+        amount: adjustment.amount,
+        type: adjustment.type,
+        date: new Date().toISOString(),
+        accountId: adjustment.accountId,
+        paid: true,
+        recurrence: 'unica',
+        paymentMethod: 'debito',
+      };
+
+      const delta = adjustment.type === 'receita'
+        ? adjustment.amount
+        : -adjustment.amount;
+      const finalAccounts = data.map((account) =>
+        account.id === adjustment.accountId
+          ? { ...account, balance: account.balance + delta }
+          : account,
+      );
+
+      await saveTransactionsAndAccounts(
+        [adjustmentTransaction, ...transactions],
+        finalAccounts,
+      );
+    }),
+    [persistAccounts, saveTransactionsAndAccounts, transactions, withWriteLock],
+  );
+
+  return useMemo(
+    () => ({
+      transactions,
+      transactionIndexes,
+      accounts,
+      monthlyBudgets,
+      getEffectiveBudget,
+      saveMonthlyBudget,
+      showPending,
+      setShowPending,
+      loading,
+      totalBalance,
+      monthlyIncome,
+      monthlyExpense,
+      addTransaction,
+      deleteTransaction,
+      updateTransaction,
+      saveAccounts,
+      saveAccountChange,
+      clearAllData,
+      payCreditCardInvoice,
+      anticipateCreditCardPayment,
+      deleteMultipleTransactions,
+      // Orçamento
+      recurringExpenses,
+      addRecurringExpense,
+      updateRecurringExpense,
+      deleteRecurringExpense,
+      budgetAllocation,
+      saveBudgetAllocation,
+      recurringOverrides,
+      saveRecurringOverride,
+    }),
+    [
+      transactions,
+      transactionIndexes,
+      accounts,
+      monthlyBudgets,
+      getEffectiveBudget,
+      saveMonthlyBudget,
+      showPending,
+      setShowPending,
+      loading,
+      totalBalance,
+      monthlyIncome,
+      monthlyExpense,
+      addTransaction,
+      deleteTransaction,
+      updateTransaction,
+      saveAccounts,
+      saveAccountChange,
+      clearAllData,
+      payCreditCardInvoice,
+      anticipateCreditCardPayment,
+      deleteMultipleTransactions,
+      recurringExpenses,
+      addRecurringExpense,
+      updateRecurringExpense,
+      deleteRecurringExpense,
+      budgetAllocation,
+      saveBudgetAllocation,
+      recurringOverrides,
+      saveRecurringOverride,
+    ],
+  );
 }
