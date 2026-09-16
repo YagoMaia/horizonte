@@ -454,6 +454,7 @@ export function HorizonteScreen() {
   // Extrai o mês focado para o Modo Lista e Resumo
   const focusedMonthKey = `${year}-${month}`;
   const days = resultsMap[focusedMonthKey] || [];
+  const todayInView = days.find((day) => day.isToday);
 
   const totalIncome = days.reduce((s, d) => s + d.income, 0);
   const totalExpense = days.reduce((s, d) => s + d.expense, 0);
@@ -541,10 +542,20 @@ export function HorizonteScreen() {
                 return (
                   <TouchableOpacity
                     key={`${col.key}-${dayNum}`}
-                    style={[styles.gridCell, { backgroundColor: bgColor }]}
+                    style={[
+                      styles.gridCell,
+                      { backgroundColor: bgColor },
+                      dayData.isToday && {
+                        borderWidth: 2,
+                        borderColor: colors.primary,
+                        backgroundColor: colors.primarySoft,
+                      },
+                    ]}
                     onPress={() => setSelectedDay(dayData)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${dayData.isToday ? "Hoje, " : ""}${dayNum} de ${MONTH_NAMES[col.month]}`}
                   >
-                    <Text style={[styles.gridCellText, { color: textColor }]}>
+                    <Text style={[styles.gridCellText, { color: dayData.isToday ? colors.primaryText : textColor, fontWeight: dayData.isToday ? "800" : "700" }]}>
                       {formatCompactK(dayData.balance)}
                     </Text>
                   </TouchableOpacity>
@@ -583,30 +594,42 @@ export function HorizonteScreen() {
         key={d.day}
         activeOpacity={0.7}
         onPress={() => setSelectedDay(d)}
+        accessibilityRole="button"
+        accessibilityLabel={`${d.isToday ? "Hoje, " : ""}dia ${d.day}, ${d.weekDay}`}
+        accessibilityHint="Toque para ver os lançamentos do dia"
         style={[
           styles.row,
-          { backgroundColor: rowBg, borderBottomColor: colors.border },
+          {
+            backgroundColor: d.isToday ? colors.primarySoft : rowBg,
+            borderBottomColor: colors.border,
+            borderLeftColor: colors.primary,
+          },
+          d.isToday && styles.todayRow,
         ]}
       >
         <View
           style={[
             styles.colDia,
             {
-              backgroundColor: d.isToday
-                ? colors.primary + "15"
-                : "rgba(0,0,0,0.02)",
+              backgroundColor: d.isToday ? colors.primarySoft : colors.secondary,
+              borderRightColor: d.isToday ? colors.primary + "55" : colors.border,
             },
           ]}
         >
+          {d.isToday && (
+            <View style={[styles.todayBadge, { backgroundColor: colors.primary }]}>
+              <Text style={[styles.todayBadgeText, { color: colors.primaryForeground }]}>HOJE</Text>
+            </View>
+          )}
           <Text
-            style={[styles.dayNumber, { color: colors.foreground }]}
+            style={[styles.dayNumber, { color: d.isToday ? colors.primaryText : colors.foreground }]}
           >
             {d.day}
           </Text>
           <Text
-            style={[styles.weekDay, { color: colors.mutedForeground }]}
+            style={[styles.weekDay, { color: d.isToday ? colors.primaryText : colors.mutedForeground }, d.isToday && styles.todayWeekDay]}
           >
-            {d.weekDay}
+            {d.isToday ? "Hoje" : d.weekDay}
           </Text>
         </View>
 
@@ -702,7 +725,7 @@ export function HorizonteScreen() {
                   { backgroundColor: colors.primary },
                 ]}
               >
-                <Text style={styles.miniBadgeText}>M</Text>
+                <Text style={[styles.miniBadgeText, { color: colors.primaryForeground }]}>M</Text>
               </View>
               <Text
                 style={[
@@ -889,7 +912,7 @@ export function HorizonteScreen() {
             </Text>
             {currentBudget > 0 ? (
               <Text
-                style={[styles.dailyValue, { color: colors.primary }]}
+                style={[styles.dailyValue, { color: colors.primaryText }]}
                 numberOfLines={1}
                 adjustsFontSizeToFit
               >
@@ -980,6 +1003,7 @@ export function HorizonteScreen() {
           </Text>
         </View>
       </View>
+
 
       {/* ÁREA DE RENDERIZAÇÃO (GRID OU LISTA) */}
       {viewMode === "grid" ? (
@@ -1478,6 +1502,26 @@ const styles = StyleSheet.create({
   summaryLabel: { fontSize: 10, fontWeight: "500", textTransform: "uppercase" },
   summaryValue: { fontSize: 14, fontWeight: "700" },
   summaryDivider: { width: 1, height: 20 },
+  todayCallout: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginHorizontal: 20,
+    marginBottom: 10,
+    padding: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    gap: 10,
+  },
+  todayCalloutIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  todayCalloutCopy: { flex: 1, gap: 2 },
+  todayCalloutTitle: { fontSize: 12, fontWeight: "800" },
+  todayCalloutText: { fontSize: 11, lineHeight: 15 },
 
   list: {
     flex: 1,
@@ -1493,6 +1537,9 @@ const styles = StyleSheet.create({
     minHeight: 76,
     alignItems: "stretch",
   },
+  todayRow: {
+    borderLeftWidth: 4,
+  },
   colDia: {
     width: 52,
     justifyContent: "center",
@@ -1503,6 +1550,14 @@ const styles = StyleSheet.create({
   },
   dayNumber: { fontSize: 17, fontWeight: "700" },
   weekDay: { fontSize: 11, textTransform: "capitalize", marginTop: 2 },
+  todayBadge: {
+    borderRadius: 5,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    marginBottom: 1,
+  },
+  todayBadgeText: { fontSize: 8, fontWeight: "800", letterSpacing: 0.4 },
+  todayWeekDay: { fontWeight: "700" },
   colIndicators: {
     flex: 1,
     paddingHorizontal: 10,
