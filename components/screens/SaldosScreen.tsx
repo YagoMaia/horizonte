@@ -16,7 +16,6 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '@/hooks/useTheme';
 import {
   calculateCreditCardInvoice,
@@ -55,6 +54,8 @@ export function SaldosScreen({ onOpenCreditCard }: SaldosScreenProps) {
     transactions,
     transactionIndexes,
     totalBalance,
+    activeAccountIds = [],
+    activeAccountsConfigured = false,
     addTransaction,
     updateTransaction,
     deleteTransaction,
@@ -68,20 +69,6 @@ export function SaldosScreen({ onOpenCreditCard }: SaldosScreenProps) {
   const [displayLimit, setDisplayLimit] = useState(20);
   const [recurrenceDeleteData, setRecurrenceDeleteData] = useState<string | null>(null);
   const [simpleDeleteData, setSimpleDeleteData] = useState<Transaction | null>(null);
-  const [activeAccountIds, setActiveAccountIds] = useState<string[]>([]);
-
-  React.useEffect(() => {
-    const loadActiveAccounts = async () => {
-      try {
-        const saved = await AsyncStorage.getItem('@horizonte:active_accounts');
-        if (saved) setActiveAccountIds(JSON.parse(saved));
-      } catch (e) {
-        console.error(e);
-      }
-    };
-    loadActiveAccounts();
-  }, []);
-
   const accountsMap = useMemo(() => {
     const map = new Map<string, Account>();
     accounts.forEach((a) => map.set(a.id, a));
@@ -108,13 +95,13 @@ export function SaldosScreen({ onOpenCreditCard }: SaldosScreenProps) {
   }, [accounts, transactionIndexes]);
 
   const customTotalBalance = useMemo(() => {
-    if (activeAccountIds.length === 0) return totalBalance;
+    if (!activeAccountsConfigured) return totalBalance;
     return accounts.reduce((acc, account) => {
       if (account.type === 'cartao_credito') return acc;
       if (!activeAccountIds.includes(account.id)) return acc;
       return acc + account.balance;
     }, 0);
-  }, [accounts, activeAccountIds, totalBalance]);
+  }, [accounts, activeAccountIds, activeAccountsConfigured, totalBalance]);
   
   const overduePendingTransactions = useMemo(() => {
     const todayStr = new Date().toISOString().substring(0, 10); // YYYY-MM-DD
@@ -419,7 +406,7 @@ export function SaldosScreen({ onOpenCreditCard }: SaldosScreenProps) {
         <View pointerEvents="none" accessible={false} style={[styles.horizonDisc, { borderColor: colors.heroSurface }]} />
         <View style={styles.balanceTop}>
         <Text style={[styles.balanceLabel, { color: colors.heroMuted }]}>
-          Saldo Total {activeAccountIds.length > 0 ? '(Contas do Horizonte)' : ''}
+          Saldo Total {activeAccountsConfigured ? '(Contas do Horizonte)' : ''}
         </Text>
         <Ionicons name="sunny-outline" size={22} color={colors.heroAccent} />
         </View>

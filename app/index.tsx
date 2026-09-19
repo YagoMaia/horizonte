@@ -33,7 +33,7 @@ import { TripFormModal } from '@/components/TripFormModal'
 import { Trip } from '@/constants/types'
 
 export default function HomePage() {
-  const { colors, isDark, setThemeMode } = useTheme()
+  const { colors, isDark, setThemeMode, isHydrated = true } = useTheme()
   const store = useStoreContext()
   const savingsGoalsProps = useSavingsGoals()
   const tripsProps = useTrips()
@@ -129,7 +129,7 @@ export default function HomePage() {
     });
   }, [store.loading, goalTransactionSignature, syncWithTransactions]);
 
-  if (store.loading) {
+  if (store.loading || !isHydrated) {
     return (
       <View style={[styles.loading, { backgroundColor: colors.background }]}>
         <ActivityIndicator color={colors.primaryText} size="large" />

@@ -10,6 +10,7 @@ interface ThemeContextType {
   colors: ThemeColors
   isDark: boolean
   scheme: 'light' | 'dark'
+  isHydrated: boolean
   themeMode: ThemeMode
   setThemeMode: (mode: ThemeMode) => void
   primaryColor: string
@@ -26,18 +27,29 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   
   const [themeMode, setThemeModeState] = useState<ThemeMode>('system')
   const [primaryColor, setPrimaryColorState] = useState<string>(PRIMARY_COLORS[0].value)
+  const [isHydrated, setIsHydrated] = useState(false)
 
   useEffect(() => {
     let isMounted = true
     const loadThemeSettings = async () => {
       try {
-        const savedMode = await AsyncStorage.getItem(THEME_MODE_KEY)
-        if (savedMode && isMounted) setThemeModeState(savedMode as ThemeMode)
-        
-        const savedColor = await AsyncStorage.getItem(PRIMARY_COLOR_KEY)
-        if (savedColor && isMounted) setPrimaryColorState(savedColor)
+        const [[, savedMode], [, savedColor]] = await AsyncStorage.multiGet([
+          THEME_MODE_KEY,
+          PRIMARY_COLOR_KEY,
+        ])
+
+        if (isMounted) {
+          if (savedMode === 'light' || savedMode === 'dark' || savedMode === 'system') {
+            setThemeModeState(savedMode)
+          }
+          if (savedColor && PRIMARY_COLORS.some((color) => color.value === savedColor)) {
+            setPrimaryColorState(savedColor)
+          }
+        }
       } catch (e) {
         console.error('Failed to load theme settings', e)
+      } finally {
+        if (isMounted) setIsHydrated(true)
       }
     }
     loadThemeSettings()
@@ -62,11 +74,12 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     colors,
     isDark,
     scheme: activeScheme,
+    isHydrated,
     themeMode,
     setThemeMode,
     primaryColor,
     setPrimaryColor,
-  }), [colors, isDark, activeScheme, themeMode, setThemeMode, primaryColor, setPrimaryColor])
+  }), [colors, isDark, activeScheme, isHydrated, themeMode, setThemeMode, primaryColor, setPrimaryColor])
 
   return (
     <ThemeContext.Provider value={contextValue}>

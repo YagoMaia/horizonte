@@ -13,6 +13,7 @@ import {
 const STORAGE_KEYS = {
   TRANSACTIONS: '@horizonte:transactions',
   ACCOUNTS: '@horizonte:accounts',
+  ACTIVE_ACCOUNTS: '@horizonte:active_accounts',
   MONTHLY_BUDGETS: '@horizonte:monthly_budgets',
   SHOW_PENDING: '@horizonte:show_pending',
   RECURRING_EXPENSES: '@horizonte:recurring_expenses',
@@ -30,6 +31,8 @@ const DEFAULT_BUDGET_ALLOCATION: BudgetAllocation = {
 export function useStore() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [activeAccountIds, setActiveAccountIdsState] = useState<string[]>([]);
+  const [activeAccountsConfigured, setActiveAccountsConfigured] = useState(false);
   const [monthlyBudgets, setMonthlyBudgets] = useState<Record<string, number>>({});
   const [showPending, setShowPendingState] = useState<boolean>(true);
   const [loading, setLoading] = useState(true);
@@ -141,10 +144,11 @@ export function useStore() {
 
   const loadData = useCallback(async () => {
     try {
-      const [txRaw, accRaw, budgetsRaw, showPendingRaw, recurringExpensesRaw, budgetAllocationRaw, overridesRaw] =
+      const [txRaw, accRaw, activeAccountsRaw, budgetsRaw, showPendingRaw, recurringExpensesRaw, budgetAllocationRaw, overridesRaw] =
         await Promise.all([
           AsyncStorage.getItem(STORAGE_KEYS.TRANSACTIONS),
           AsyncStorage.getItem(STORAGE_KEYS.ACCOUNTS),
+          AsyncStorage.getItem(STORAGE_KEYS.ACTIVE_ACCOUNTS),
           AsyncStorage.getItem(STORAGE_KEYS.MONTHLY_BUDGETS),
           AsyncStorage.getItem(STORAGE_KEYS.SHOW_PENDING),
           AsyncStorage.getItem(STORAGE_KEYS.RECURRING_EXPENSES),
@@ -157,6 +161,31 @@ export function useStore() {
 
       setTransactions(loadedTransactions);
       setAccounts(loadedAccounts);
+      if (activeAccountsRaw !== null) {
+        try {
+          const parsedActiveIds = JSON.parse(activeAccountsRaw);
+          const availableAccountIds = new Set(loadedAccounts.map((account: Account) => account.id));
+          const validActiveIds = Array.isArray(parsedActiveIds)
+            ? parsedActiveIds.filter((id): id is string => typeof id === 'string' && availableAccountIds.has(id))
+            : null;
+
+          if (validActiveIds) {
+            setActiveAccountIdsState(validActiveIds);
+            setActiveAccountsConfigured(true);
+          } else {
+            setActiveAccountIdsState(loadedAccounts.map((account: Account) => account.id));
+            setActiveAccountsConfigured(false);
+          }
+        } catch {
+          setActiveAccountIdsState(loadedAccounts.map((account: Account) => account.id));
+          setActiveAccountsConfigured(false);
+        }
+      } else {
+        // Instalações antigas ainda não têm essa preferência. Mantemos o
+        // comportamento anterior: todas as contas começam selecionadas.
+        setActiveAccountIdsState(loadedAccounts.map((account: Account) => account.id));
+        setActiveAccountsConfigured(false);
+      }
       setMonthlyBudgets(budgetsRaw ? JSON.parse(budgetsRaw) : {});
       setRecurringExpenses(recurringExpensesRaw ? JSON.parse(recurringExpensesRaw) : []);
       setBudgetAllocationState(budgetAllocationRaw ? JSON.parse(budgetAllocationRaw) : DEFAULT_BUDGET_ALLOCATION);
@@ -240,12 +269,25 @@ export function useStore() {
     setShowPendingState(value);
   }, []);
 
+  const saveActiveAccountIds = useCallback(
+    (ids: string[]) => withWriteLock(async () => {
+      await AsyncStorage.setItem(
+        STORAGE_KEYS.ACTIVE_ACCOUNTS,
+        JSON.stringify(ids),
+      );
+      setActiveAccountIdsState(ids);
+      setActiveAccountsConfigured(true);
+    }),
+    [withWriteLock],
+  );
+
   const clearAllData = useCallback(async () => {
     await cancelAllNotifications();
     await clearNotificationRegistry();
     await AsyncStorage.multiRemove([
       STORAGE_KEYS.TRANSACTIONS,
       STORAGE_KEYS.ACCOUNTS,
+      STORAGE_KEYS.ACTIVE_ACCOUNTS,
       STORAGE_KEYS.MONTHLY_BUDGETS,
       STORAGE_KEYS.SHOW_PENDING,
       STORAGE_KEYS.RECURRING_EXPENSES,
@@ -254,6 +296,8 @@ export function useStore() {
     ]);
     setTransactions([]);
     setAccounts([]);
+    setActiveAccountIdsState([]);
+    setActiveAccountsConfigured(false);
     setMonthlyBudgets({});
     setShowPendingState(true);
     setRecurringExpenses([]);
@@ -958,6 +1002,9 @@ export function useStore() {
       transactions,
       transactionIndexes,
       accounts,
+      activeAccountIds,
+      activeAccountsConfigured,
+      saveActiveAccountIds,
       monthlyBudgets,
       getEffectiveBudget,
       saveMonthlyBudget,
@@ -990,6 +1037,9 @@ export function useStore() {
       transactions,
       transactionIndexes,
       accounts,
+      activeAccountIds,
+      activeAccountsConfigured,
+      saveActiveAccountIds,
       monthlyBudgets,
       getEffectiveBudget,
       saveMonthlyBudget,

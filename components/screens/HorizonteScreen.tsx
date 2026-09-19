@@ -1,8 +1,9 @@
 // components/screens/HorizonteScreen.tsx
-import React, { useMemo, useState, useEffect, useCallback, useRef } from "react";
+import React, { useMemo, useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
+  ActivityIndicator,
   ScrollView,
   FlatList,
   StyleSheet,
@@ -79,8 +80,16 @@ function formatCompactK(value: number): string {
 
 export function HorizonteScreen() {
   const { colors } = useTheme();
-  const { transactions, transactionIndexes, accounts, getEffectiveBudget, saveMonthlyBudget } =
-    useStoreContext();
+  const {
+    transactions,
+    transactionIndexes,
+    accounts,
+    activeAccountIds,
+    activeAccountsConfigured,
+    saveActiveAccountIds,
+    getEffectiveBudget,
+    saveMonthlyBudget,
+  } = useStoreContext();
   const { goals } = useSavingsGoals();
 
   const startOfToday = useMemo(() => {
@@ -93,60 +102,50 @@ export function HorizonteScreen() {
   const [month, setMonth] = useState(startOfToday.getMonth());
   const [selectedDay, setSelectedDay] = useState<any | null>(null);
   const [configModalVisible, setConfigModalVisible] = useState(false);
-  const [activeAccountIds, setActiveAccountIds] = useState<string[]>([]);
   const [activeGoalIds, setActiveGoalIds] = useState<string[]>([]);
   const [budgetInput, setBudgetInput] = useState<string>("");
-  const configLoadedRef = useRef(false);
+  const [configReady, setConfigReady] = useState(false);
 
   // 👉 NOVO ESTADO: Alternar entre Lista e Mapa de Calor
   const [viewMode, setViewMode] = useState<"list" | "grid">("list");
 
+  // Sem preferência salva, todas as contas participam do Horizonte. Depois
+  // que o usuário ajusta a seleção, usamos somente os IDs persistidos.
+  const selectedAccountIds = useMemo(
+    () => activeAccountsConfigured
+      ? activeAccountIds
+      : accounts.map((account) => account.id),
+    [activeAccountsConfigured, activeAccountIds, accounts],
+  );
+
   const currentBudget = getEffectiveBudget(year, month);
 
   useEffect(() => {
+    let isMounted = true;
     const loadConfig = async () => {
       try {
-        const savedAccounts = await AsyncStorage.getItem(
-          "@horizonte:active_accounts",
-        );
-        const availableAccountIds = new Set(accounts.map((account) => account.id));
-        if (savedAccounts) {
-          const savedIds = JSON.parse(savedAccounts) as string[];
-          setActiveAccountIds(savedIds.filter((id) => availableAccountIds.has(id)));
-        } else {
-          setActiveAccountIds(accounts.map((a) => a.id));
+        const [[, savedGoals], [, savedView]] = await AsyncStorage.multiGet([
+          "@horizonte:active_goals",
+          "@horizonte:view_mode",
+        ]);
+
+        if (!isMounted) return;
+        if (savedGoals) {
+          const parsedGoals = JSON.parse(savedGoals);
+          if (Array.isArray(parsedGoals)) {
+            setActiveGoalIds(parsedGoals.filter((id): id is string => typeof id === "string"));
+          }
         }
-
-        const savedGoals = await AsyncStorage.getItem("@horizonte:active_goals");
-        if (savedGoals) setActiveGoalIds(JSON.parse(savedGoals));
-
-        const savedView = await AsyncStorage.getItem("@horizonte:view_mode");
-        if (savedView) setViewMode(savedView as "list" | "grid");
+        if (savedView === "list" || savedView === "grid") setViewMode(savedView);
       } catch (e) {
         console.error(e);
       } finally {
-        configLoadedRef.current = true;
+        if (isMounted) setConfigReady(true);
       }
     };
     loadConfig();
+    return () => { isMounted = false; };
   }, []);
-
-  // Remove IDs de contas que foram excluídas sem reler todas as preferências.
-  useEffect(() => {
-    if (!configLoadedRef.current) return;
-
-    const validIds = new Set(accounts.map((account) => account.id));
-    setActiveAccountIds((currentIds) => {
-      const nextIds = currentIds.filter((id) => validIds.has(id));
-      if (nextIds.length === currentIds.length) return currentIds;
-
-      AsyncStorage.setItem(
-        "@horizonte:active_accounts",
-        JSON.stringify(nextIds),
-      ).catch((error) => console.error(error));
-      return nextIds;
-    });
-  }, [accounts]);
 
   useEffect(() => {
     if (configModalVisible) {
@@ -157,14 +156,10 @@ export function HorizonteScreen() {
   }, [configModalVisible, currentBudget]);
 
   const toggleAccount = async (id: string) => {
-    const newIds = activeAccountIds.includes(id)
-      ? activeAccountIds.filter((aId) => aId !== id)
-      : [...activeAccountIds, id];
-    setActiveAccountIds(newIds);
-    await AsyncStorage.setItem(
-      "@horizonte:active_accounts",
-      JSON.stringify(newIds),
-    );
+    const newIds = selectedAccountIds.includes(id)
+      ? selectedAccountIds.filter((aId) => aId !== id)
+      : [...selectedAccountIds, id];
+    await saveActiveAccountIds(newIds);
   };
 
   const toggleGoal = async (id: string) => {
@@ -213,10 +208,10 @@ export function HorizonteScreen() {
   const activeBalance = useMemo(() => 
     accounts
       .filter(
-        (a) => activeAccountIds.includes(a.id) && a.type !== "cartao_credito",
+        (a) => selectedAccountIds.includes(a.id) && a.type !== "cartao_credito",
       )
       .reduce((s, a) => s + a.balance, 0) + activeGoalsBalance,
-  [accounts, activeAccountIds, activeGoalsBalance]);
+  [accounts, selectedAccountIds, activeGoalsBalance]);
 
   // 👉 O MOTOR CONTÍNUO MULTI-MÊS
   const { resultsMap, firstNegativeDate } = useMemo(() => {
@@ -235,7 +230,7 @@ export function HorizonteScreen() {
     // IDs de contas ativas que NÃO são cartão de crédito (afetam o saldo real)
     const activeCashAccountIds = new Set(
       accounts
-        .filter(a => activeAccountIds.includes(a.id) && a.type !== 'cartao_credito')
+        .filter(a => selectedAccountIds.includes(a.id) && a.type !== 'cartao_credito')
         .map(a => a.id)
     );
 
@@ -474,7 +469,7 @@ export function HorizonteScreen() {
     }
 
     return { resultsMap, firstNegativeDate: firstNegDate };
-  }, [transactions, transactionIndexes, activeBalance, activeAccountIds, activeGoalIdSet, activeGoalIds, year, month, getEffectiveBudget, startOfToday]);
+  }, [transactions, transactionIndexes, activeBalance, selectedAccountIds, activeGoalIdSet, activeGoalIds, year, month, getEffectiveBudget, startOfToday]);
 
   // Extrai o mês focado para o Modo Lista e Resumo
   const focusedMonthKey = `${year}-${month}`;
@@ -817,6 +812,14 @@ export function HorizonteScreen() {
     );
   }, [colors, currentBudget, setSelectedDay]);
 
+  if (!configReady) {
+    return (
+      <View style={{ flex: 1, backgroundColor: colors.background, justifyContent: "center", alignItems: "center" }}>
+        <ActivityIndicator color={colors.primaryText} size="large" />
+      </View>
+    );
+  }
+
   return (
     <KeyboardAvoidingView
       style={{ flex: 1, backgroundColor: colors.background }}
@@ -911,8 +914,8 @@ export function HorizonteScreen() {
               numberOfLines={1}
             >
               Saldo Disponível (Hoje){" "}
-              {activeAccountIds.length > 0 &&
-                `(${activeAccountIds.length})`}
+              {selectedAccountIds.length > 0 &&
+                `(${selectedAccountIds.length})`}
             </Text>
             <Text
               style={[styles.budgetValue, { color: colors.foreground }]}
@@ -1148,7 +1151,7 @@ export function HorizonteScreen() {
                   Contas no Planejamento
                 </Text>
                 {accounts.map((acc) => {
-                  const isActive = activeAccountIds.includes(acc.id);
+                  const isActive = selectedAccountIds.includes(acc.id);
                   return (
                     <TouchableOpacity
                       key={acc.id}
