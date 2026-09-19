@@ -1,5 +1,10 @@
 # 🌅 Horizonte — Gestão Financeira e Projeção de Fluxo de Caixa
 
+![Version](https://img.shields.io/badge/version-1.0.10-blue.svg)
+![React Native](https://img.shields.io/badge/React_Native-0.76-61DAFB?logo=react&logoColor=black)
+![Expo](https://img.shields.io/badge/Expo-SDK_52-black?logo=expo&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-Strict-3178C6?logo=typescript&logoColor=white)
+
 Aplicativo mobile de gestão financeira pessoal e projeção de fluxo de caixa diário, construído com **React Native**, **Expo SDK 52**, **TypeScript** e arquitetura **Offline-First**.
 
 ---
@@ -11,6 +16,8 @@ Ao contrário de gerenciadores financeiros convencionais que apenas mostram o pa
 - **Integração de Metas & Reserva**: Permite incluir metas de alta liquidez (como Reserva de Emergência) diretamente no saldo disponível do Horizonte sem distorcer o fluxo de caixa.
 - **Ciclo Completo de Cartões**: Faturas calculadas dinamicamente com base em data de fechamento e vencimento, suporte a compras parceladas, antecipação e pagamento auditável.
 - **Orçamento por Envelopes**: Acompanhamento de teto orçamentário por categorias de despesa.
+- **Planejamento de Viagens**: Defina orçamentos específicos para viagens, monitore os gastos em tempo real e saiba se está dentro do limite programado.
+- **Alta Performance e Acessibilidade**: Interface fluida baseada em indexação de transações, suporte a alto contraste, e navegação intuitiva otimizada para leitores de tela.
 - **Totalmente Offline e Privado**: Seus dados financeiros pertencem apenas a você e nunca saem do seu dispositivo (`AsyncStorage`).
 
 ---
@@ -24,6 +31,7 @@ Ao contrário de gerenciadores financeiros convencionais que apenas mostram o pa
 | 💳 **Cartões de Crédito** | Gestão de múltiplos cartões, cálculo automático de faturas atuais e futuras, parcelamentos, antecipações e conciliação de faturas. |
 | 🎯 **Metas (Cofrinho)** | Criação de objetivos financeiros, prazos, acompanhamento visual de progresso, ordenação por urgência, histórico com busca em tempo real e aportes automáticos mensais. |
 | 📊 **Orçamento** | Definição de limites mensais por categoria de gasto com barras visuais de consumo e indicador de sobregasto. |
+| ✈️ **Viagens** | Planejador de viagens com definição de orçamento, rastreamento de gastos locais, acompanhamento de progresso e datas. |
 | 📑 **Relatórios** | Visão analítica histórica com gráficos de evolução patrimonial, saldo líquido, médias de gastos por categoria e ranking das maiores transações. |
 | 🏦 **Contas** | Cadastro e edição de contas bancárias, cartões e carteiras, com geração automática de transação de ajuste ao alterar saldos manualmente. |
 | ⚙️ **Menu** | Resumo de patrimônio líquido consolidado, exportação completa de dados e alternância de temas (Claro / Escuro / Sistema). |
@@ -60,6 +68,7 @@ horizonte-rn/
 │   ├── GoalDepositModal.tsx    # Depósito manual em metas
 │   ├── GoalWithdrawModal.tsx   # Resgate de metas
 │   ├── GoalRecurrenceModal.tsx # Agendamento de aportes recorrentes
+│   ├── TripFormModal.tsx       # Criação e edição de viagens e orçamentos
 │   └── screens/                # Telas completas da aplicação
 ├── context/                    # Contextos React (StoreContext, ThemeContext)
 ├── constants/                  # Definições TypeScript (types.ts) e temas (theme.ts)
