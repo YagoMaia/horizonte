@@ -19,12 +19,12 @@ import { useStoreContext } from '@/context/StoreContext'
 import * as FileSystem from 'expo-file-system'
 import * as Sharing from 'expo-sharing'
 import * as DocumentPicker from 'expo-document-picker'
-import AsyncStorage from '@react-native-async-storage/async-storage'
 import * as Notifications from 'expo-notifications'
 import { requestPermissions } from '@/services/notificationService'
 import { PRIMARY_COLORS } from '@/constants/theme'
 import { TagManagementModal } from '../TagManagementModal'
 import { AdjustmentManagementModal } from '../AdjustmentManagementModal'
+import { createBackup, parseBackup } from '@/lib/backup'
 
 interface MenuItemProps {
   icon: string
@@ -72,13 +72,11 @@ interface MenuScreenProps {
 }
 
 export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavigateToMetas, onNavigateToHomeLayout, onNavigateToTotaisLayout }: MenuScreenProps) {
-  const { colors, themeMode, setThemeMode, primaryColor, setPrimaryColor } = useTheme()
-  // Puxamos a função 'monthlyBudgets' caso você a tenha exportado no StoreContext
+  const { colors, themeMode, setThemeMode, primaryColor, setPrimaryColor, reloadTheme } = useTheme()
   const { 
     accounts, 
     transactions, 
-    tags, // 👉 Puxando tags para o backup
-    monthlyBudgets, 
+    restoreBackup,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     totalBalance, 
     clearAllData,
@@ -154,14 +152,14 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavig
 
   const handlePurgeAdjustments = async () => {
     if (Platform.OS === 'web') {
-      if (window.confirm('Isso irá EXCLUIR TODOS os lançamentos de Ajuste de Saldo do seu histórico. Use com cuidado. Deseja continuar?')) {
+      if (window.confirm('Isso irá excluir todos os ajustes, inclusive os saldos iniciais. Os saldos das contas serão recalculados imediatamente sem esses valores. Deseja continuar?')) {
         await purgeAdjustments();
         alert('Ajustes removidos com sucesso!');
       }
     } else {
       Alert.alert(
         'Limpar Ajustes de Saldo',
-        'Isso irá EXCLUIR TODOS os lançamentos de Ajuste de Saldo do seu histórico. Use com cuidado. Deseja continuar?',
+        'Isso irá excluir todos os ajustes, inclusive os saldos iniciais. Os saldos das contas serão recalculados imediatamente sem esses valores. Deseja continuar?',
         [
           { text: 'Cancelar', style: 'cancel' },
           { 
@@ -264,16 +262,7 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavig
   const handleCreateBackup = async () => {
     try {
       // Reúne todos os dados estruturais do aplicativo
-      const backupData = {
-        version: "1.0",
-        timestamp: new Date().toISOString(),
-        data: {
-          accounts,
-          transactions,
-          tags, // 👉 Incluindo tags no backup
-          monthlyBudgets: monthlyBudgets || {}
-        }
-      };
+      const backupData = await createBackup();
 
       const jsonString = JSON.stringify(backupData);
       const fileName = `Horizonte_Backup_${new Date().getTime()}.json`;
@@ -352,50 +341,36 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavig
         return;
       }
 
-      // 3. Valida a estrutura básica do arquivo
-      const extractedData = parsedData.data ? parsedData.data : parsedData; // Compatibilidade legada
-      if (!extractedData.accounts || !extractedData.transactions) {
-        Alert.alert('Erro', 'O arquivo de backup está corrompido ou incompleto.');
+      let parsedBackup;
+      try {
+        parsedBackup = parseBackup(parsedData);
+      } catch (error) {
+        Alert.alert('Erro', error instanceof Error ? error.message : 'Backup inválido.');
         return;
       }
+      const extractedData = parsedBackup.data;
+      const legacyWarning = parsedBackup.legacy
+        ? '\nEste backup antigo não contém todos os cadastros e configurações. Campos ausentes serão redefinidos e vínculos sem cadastro serão removidos.'
+        : '';
 
       const performRestore = async () => {
         try {
-          // Gravamos diretamente no AsyncStorage para garantir integridade estrutural
-          await AsyncStorage.setItem('@horizonte:accounts', JSON.stringify(extractedData.accounts));
-          await AsyncStorage.setItem('@horizonte:transactions', JSON.stringify(extractedData.transactions));
-          if (extractedData.tags) {
-            await AsyncStorage.setItem('@horizonte:tags', JSON.stringify(extractedData.tags));
-          }
-          if (extractedData.monthlyBudgets) {
-            await AsyncStorage.setItem('@horizonte:monthly_budgets', JSON.stringify(extractedData.monthlyBudgets));
-          }
-
-          // Exige recarregamento para que os React Hooks puxem a nova base limpa
-          const successMessage = Platform.OS === 'web' 
-            ? 'Backup restaurado com sucesso! A página será recarregada.' 
-            : 'Backup restaurado. Por favor, feche e abra o aplicativo novamente para carregar os novos dados.';
-          
-          Alert.alert('Sucesso!', successMessage);
-          
-          if (Platform.OS === 'web') {
-            setTimeout(() => window.location.reload(), 1500);
-          }
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        } catch (err) {
-          Alert.alert('Erro', 'Falha ao gravar os dados restaurados no dispositivo.');
+          await restoreBackup(parsedData);
+          await reloadTheme();
+          Alert.alert('Sucesso', 'Backup restaurado. Seus dados já estão disponíveis.');
+        } catch {
+          Alert.alert('Erro', 'Não foi possível concluir a restauração. Os dados anteriores serão preservados ou recuperados na próxima abertura.');
         }
       };
-
       // 4. Confirmação crítica de substituição
       if (Platform.OS === 'web') {
-        if (window.confirm(`Isso irá apagar todos os dados atuais e restaurar o backup com ${extractedData.transactions.length} lançamentos. Tem certeza?`)) {
+        if (window.confirm(`Isso irá apagar todos os dados atuais e restaurar o backup com ${extractedData.transactions.length} lançamentos. Tem certeza?${legacyWarning}`)) {
           await performRestore();
         }
       } else {
         Alert.alert(
           'Restaurar Dados',
-          `Isso irá apagar todos os dados atuais e restaurar o backup com ${extractedData.transactions.length} lançamentos. Tem certeza?`,
+          `Isso irá apagar todos os dados atuais e restaurar o backup com ${extractedData.transactions.length} lançamentos. Tem certeza?${legacyWarning}`,
           [
             { text: 'Cancelar', style: 'cancel' },
             {

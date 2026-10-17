@@ -1,26 +1,26 @@
-import { renderHook, act } from '@testing-library/react-native';
+import { renderHook, act, waitFor } from '@testing-library/react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useStore } from '../hooks/useStore';
 import { Account } from '../constants/types';
 
 // Mock do AsyncStorage
-jest.mock('@react-native-async-storage/async-storage', () => ({
-  setItem: jest.fn(() => Promise.resolve()),
-  getItem: jest.fn(() => Promise.resolve(null)),
-  removeItem: jest.fn(() => Promise.resolve()),
-  multiRemove: jest.fn(() => Promise.resolve()),
-}));
+jest.mock('@react-native-async-storage/async-storage', () =>
+  require('@react-native-async-storage/async-storage/jest/async-storage-mock')
+);
 
 // Mock do NotificationService (já que é usado no useStore)
 jest.mock('../services/notificationService', () => ({
-  scheduleCreditCardReminder: jest.fn(),
-  scheduleMonthlyPaymentReminder: jest.fn(),
-  scheduleTransactionReminder: jest.fn(),
-  cancelReminder: jest.fn(),
+  scheduleDailyReminder: jest.fn(), scheduleExpenseReminder: jest.fn(),
+  scheduleCreditCardAlert: jest.fn(), cancelDailyReminder: jest.fn(),
+  cancelExpenseReminder: jest.fn(), cancelCreditCardAlert: jest.fn(),
 }));
+
+beforeEach(async () => { jest.clearAllMocks(); await AsyncStorage.clear(); });
 
 describe('useStore hook', () => {
   it('Cenário 1: Calculates total balance correctly after adding income and expense', async () => {
     const { result } = renderHook(() => useStore());
+    await waitFor(() => expect(result.current.loading).toBe(false));
 
     const account: Account = {
       id: 'acc1',
@@ -70,6 +70,7 @@ describe('useStore hook', () => {
 
   it('Cenário 2: Updates project spent amount correctly', async () => {
     const { result } = renderHook(() => useStore());
+    await waitFor(() => expect(result.current.loading).toBe(false));
 
     const project = {
       name: 'Viagem',
@@ -113,6 +114,7 @@ describe('useStore hook', () => {
 
   it('Cenário 3: getProjectSpent should include both "despesa" and "transferencia"', async () => {
     const { result } = renderHook(() => useStore());
+    await waitFor(() => expect(result.current.loading).toBe(false));
 
     await act(async () => {
       await result.current.clearAllData();
@@ -156,7 +158,7 @@ describe('useStore hook', () => {
     });
 
     await act(async () => {
-      // Adiciona Receita (deve subtrair)
+      // Receitas são exibidas separadamente e entram no saldo disponível do projeto.
       await result.current.addTransaction({
         description: 'Reembolso',
         amount: 50,
@@ -169,8 +171,9 @@ describe('useStore hook', () => {
       });
     });
 
-    // 200 (despesa) + 300 (transferencia) - 50 (receita) = 450
+    // Gasto bruto: 200 + 300. Disponível: 50 - 500.
     const totalSpent = result.current.getProjectSpent(project.id);
-    expect(totalSpent).toBe(450);
+    expect(totalSpent).toBe(500);
+    expect(result.current.getProjectStats(project.id)).toEqual({ income: 50, spent: 500, available: -450 });
   });
 });

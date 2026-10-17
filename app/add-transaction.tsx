@@ -305,7 +305,7 @@ export default function AddTransactionScreen() {
       accountId,
       tag,
       projectId: projectId || undefined,
-      goalIds: goalIds.length > 0 ? goalIds : undefined,
+      goalIds,
       recurrence: finalRecurrence,
       paid,
       recurrenceStartDate: (!isInstallment && finalRecurrence !== 'unica') ? parseToISO(recurrenceStart) : undefined,
@@ -487,6 +487,9 @@ export default function AddTransactionScreen() {
           {goals && goals.length > 0 && (
             <View style={styles.field}>
               <Text style={[styles.label, { color: colors.mutedForeground }]}>Metas Relacionadas</Text>
+              <Text style={{ color: colors.mutedForeground, fontSize: 12, marginBottom: 8 }}>
+                O valor será contado como aporte após a confirmação e na data do lançamento. Ao selecionar várias metas, ele será dividido igualmente entre elas.
+              </Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexDirection: 'row' }}>
                 <TouchableOpacity
                   style={[styles.tagChip, { borderColor: colors.border, backgroundColor: goalIds.length === 0 ? colors.border + '50' : 'transparent', marginRight: 8 }, goalIds.length === 0 && { borderColor: colors.mutedForeground }]}

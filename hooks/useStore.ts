@@ -6,6 +6,7 @@ import * as NotificationService from '../services/notificationService';
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { addMonths, addYears, addWeeks, addDays, setDate } from 'date-fns';
 import { getInvoiceForTx } from '@/lib/utils';
+import { recoverPendingRestore, restoreBackup as restoreBackupStorage } from '@/lib/backup';
 
 const STORAGE_KEYS = {
   TRANSACTIONS: '@horizonte:transactions',
@@ -112,36 +113,6 @@ export function useStore() {
     setAccounts(updatedAccounts);
     return updatedAccounts;
   }, []);
-
-  const autoProcessOverdueTransactions = useCallback(async (currentTransactions: Transaction[], currentAccounts: Account[]) => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    let hasChanges = false;
-    const updatedTransactions = currentTransactions.map(tx => {
-      const txDateParts = tx.date.split('T')[0].split('-').map(Number);
-      const txDate = new Date(txDateParts[0], txDateParts[1] - 1, txDateParts[2]);
-      txDate.setHours(0, 0, 0, 0);
-
-      const isOverdue = txDate <= today;
-
-      const targetAccount = currentAccounts.find(a => a.id === tx.accountId);
-      const isCreditCard = targetAccount?.type === 'cartao_credito';
-
-      // Marcar como pago automaticamente se estiver vencido e não for cartão
-      if (!tx.paid && !isCreditCard && isOverdue) {
-        hasChanges = true;
-        return { ...tx, paid: true };
-      }
-      return tx;
-    });
-
-    if (hasChanges) {
-      await AsyncStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(updatedTransactions));
-      setTransactions(updatedTransactions);
-      await syncBalances(updatedTransactions, currentAccounts);
-    }
-  }, [syncBalances]);
 
   // --- MÉTODOS DE SALVAMENTO ---
 
@@ -504,6 +475,7 @@ export function useStore() {
 
   const loadData = useCallback(async () => {
     try {
+      await recoverPendingRestore();
       const [
         txRaw,
         accRaw,
@@ -582,17 +554,46 @@ export function useStore() {
       // Notificações agora são apenas agendadas quando a preferência é alterada pelo usuário.
       // Removido o reagendamento forçado na inicialização para evitar notificações indesejadas no boot.
 
-      await autoProcessOverdueTransactions(loadedTransactions, loadedAccounts);
+      // Vencimento não confirma pagamento. Reconstrói somente o saldo realizado.
+      await syncBalances(loadedTransactions, loadedAccounts);
     } catch (e) {
       console.error("Erro ao carregar dados:", e);
     } finally {
       setLoading(false);
     }
-  }, [autoProcessOverdueTransactions]);
+  }, [syncBalances]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  const restoreBackup = useCallback(async (input: unknown) => {
+    const data = await restoreBackupStorage(input);
+    setTransactions(data.transactions);
+    setAccounts(data.accounts);
+    setTags(data.tags);
+    setProjects(data.projects);
+    setGoals(data.goals);
+    setMonthlyBudgets(data.monthlyBudgets);
+    setShowPendingState(data.showPending);
+    setHasSeenOnboarding(data.hasSeenOnboarding);
+    setNotificationPreferences(data.notificationPreferences);
+    setHomeLayout(data.homeLayout);
+    setTotaisLayout(data.totaisLayout);
+    setUserSettings(data.userSettings);
+    const prefs = data.notificationPreferences;
+    // Identificadores de notificações pertencem ao dispositivo, não ao backup.
+    try {
+      await Promise.all([
+        prefs.dailyReminders ? NotificationService.scheduleDailyReminder(prefs.dailyReminderTime.hour, prefs.dailyReminderTime.minute) : NotificationService.cancelDailyReminder(),
+        prefs.expenseReminders ? NotificationService.scheduleExpenseReminder(prefs.expenseReminderTime.hour, prefs.expenseReminderTime.minute) : NotificationService.cancelExpenseReminder(),
+        prefs.creditCardAlerts ? NotificationService.scheduleCreditCardAlert(prefs.creditCardAlertTime.hour, prefs.creditCardAlertTime.minute) : NotificationService.cancelCreditCardAlert(),
+      ]);
+    } catch (error) {
+      console.warn('Dados restaurados, mas não foi possível atualizar os lembretes.', error);
+    }
+    return data;
+  }, []);
 
   const clearAllData = useCallback(async () => {
     await AsyncStorage.multiRemove([
@@ -930,9 +931,11 @@ export function useStore() {
         // Merge: preservar campos de família e metadados do oldTx que não vêm do formulário
         const targetAccount = accounts.find(a => a.id === (updatedTx.accountId || oldTx.accountId));
         const isCreditCard = targetAccount?.type === 'cartao_credito';
-        // Filtrar propriedades undefined do updatedTx para não sobrescrever valores existentes do oldTx
+        // Vínculos enviados como undefined são remoções explícitas; campos ausentes são preservados.
         const cleanedUpdatedTx = Object.fromEntries(
-          Object.entries(updatedTx).filter(([_, v]) => v !== undefined)
+          Object.entries(updatedTx).filter(([key, value]) =>
+            value !== undefined || ['projectId', 'goalIds', 'targetAccountId'].includes(key)
+          )
         );
         const mergedTx = {
           ...oldTx,
@@ -944,8 +947,6 @@ export function useStore() {
           notifyRecurrence: oldTx.notifyRecurrence,
           // Para cartão de crédito, preservar o status paid original
           paid: isCreditCard ? oldTx.paid : updatedTx.paid,
-          // Preservar a data original para evitar shifts de timezone na reconstrução
-          date: oldTx.date,
         };
         finalTransactions = finalTransactions.map(t => t.id === mergedTx.id ? mergedTx : t);
       }
@@ -1142,7 +1143,8 @@ export function useStore() {
   const purgeAdjustments = useCallback(async () => {
     const updatedTxs = transactions.filter((tx) => !tx.isAdjustment);
     await saveTransactions(updatedTxs);
-  }, [transactions, saveTransactions]);
+    await syncBalances(updatedTxs, accounts);
+  }, [transactions, accounts, saveTransactions, syncBalances]);
 
   const getProjectStats = useCallback((projectId: string) => {
     if (!projectId) return { income: 0, spent: 0, available: 0 };
@@ -1169,17 +1171,25 @@ export function useStore() {
   }, [getProjectStats]);
 
   const getGoalSavedAmount = useCallback((goalId: string) => {
-    if (!goalId) return 0;
     const goal = goals.find(g => g.id === goalId);
-    const baseAmount = goal ? (goal.savedAmount || 0) : 0;
-
-    const goalTxs = transactions.filter(tx => tx.goalIds && tx.goalIds.includes(goalId));
-    const txsAmount = goalTxs.reduce((sum, tx) => {
-      // Considera todas as transações atreladas à meta como aporte (geralmente transferências ou despesas voltadas pra meta)
-      return sum + (Number(tx.amount) || 0);
-    }, 0);
-
-    return baseAmount + txsAmount;
+    if (!goal) return 0;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const validGoalIds = new Set(goals.map(g => g.id));
+    const cents = transactions.reduce((sum, tx) => {
+      if (!tx.paid || !tx.goalIds?.includes(goalId)) return sum;
+      const [year, month, day] = tx.date.split('T')[0].split('-').map(Number);
+      const date = new Date(year, month - 1, day);
+      if (!Number.isFinite(date.getTime()) || date > today) return sum;
+      // Vincular um lançamento significa destiná-lo como aporte; repartir evita dupla contagem.
+      const ids = [...new Set(tx.goalIds)].filter(id => validGoalIds.has(id)).sort();
+      const amount = Math.round(tx.amount * 100);
+      if (!Number.isFinite(amount) || amount <= 0) return sum;
+      const share = Math.floor(amount / ids.length);
+      const remainder = amount % ids.length;
+      return sum + share + (ids.indexOf(goalId) < remainder ? 1 : 0);
+    }, Math.round((goal.savedAmount || 0) * 100));
+    return cents / 100;
   }, [transactions, goals]);
 
   const getInvoiceTotalForMonth = useCallback((creditCardId: string, targetMonth: number, targetYear: number) => {
@@ -1214,6 +1224,7 @@ export function useStore() {
   }, [transactions, accounts]);
 
   return {
+    restoreBackup,
     notificationPreferences,
     toggleNotificationPreference,
     updateNotificationTime,

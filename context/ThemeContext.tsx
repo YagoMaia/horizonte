@@ -1,8 +1,9 @@
 // context/ThemeContext.tsx
-import React, { createContext, useContext, useEffect, useState } from 'react'
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react'
 import { useColorScheme } from 'react-native'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { getThemeColors, ThemeColors, PRIMARY_COLORS } from '@/constants/theme'
+import { recoverPendingRestore } from '@/lib/backup'
 
 type ThemeMode = 'light' | 'dark' | 'system'
 
@@ -14,6 +15,7 @@ interface ThemeContextType {
   setThemeMode: (mode: ThemeMode) => void
   primaryColor: string
   setPrimaryColor: (color: string) => void
+  reloadTheme: () => Promise<void>
 }
 
 const ThemeContext = createContext<ThemeContextType | null>(null)
@@ -28,9 +30,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [primaryColor, setPrimaryColorState] = useState<string>(PRIMARY_COLORS[0].value)
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    const loadThemeSettings = async () => {
+  const reloadTheme = useCallback(async () => {
       try {
+        await recoverPendingRestore()
         const savedMode = await AsyncStorage.getItem(THEME_MODE_KEY)
         if (savedMode) setThemeModeState(savedMode as ThemeMode)
         
@@ -41,9 +43,11 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       } finally {
         setLoading(false)
       }
-    }
-    loadThemeSettings()
   }, [])
+
+  useEffect(() => {
+    reloadTheme()
+  }, [reloadTheme])
 
   const setThemeMode = async (mode: ThemeMode) => {
     setThemeModeState(mode)
@@ -73,6 +77,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         setThemeMode,
         primaryColor,
         setPrimaryColor,
+        reloadTheme,
       }}
     >
       {children}
