@@ -1,662 +1,248 @@
-// components/screens/SaldosScreen.tsx
-import React, { useMemo, useState, useCallback } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  Pressable,
-  ActivityIndicator,
-  FlatList,
-  ScrollView,
-  Alert,
-  Modal,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  Dimensions,
-  useWindowDimensions,
-} from 'react-native';
+import React, { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Pressable, FlatList, ScrollView, Alert, Modal, TextInput, Switch, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/hooks/useTheme';
-import {
-  formatCurrency,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  formatDateShort,
-  getCurrentOpenInvoiceTotal,
-} from '@/lib/utils';
 import { useStoreContext } from '@/context/StoreContext';
-import { Transaction, Account, TransactionType, Project } from '@/constants/types';
+import { formatCurrency, formatDate } from '@/lib/utils';
+import { financialDate, goalForecast } from '@/lib/financialDate';
+import { DEFAULT_SALDOS_FILTERS, EMPTY_PROJECT, filterMonth, FinancialIndex, SaldosFilters } from '@/lib/financialIndex';
+import { Account, Goal, HomeSection, Project, TabType, Transaction } from '@/constants/types';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ThemeColors } from '@/constants/theme';
 import { ProjectTransactionsModal } from '../ProjectTransactionsModal';
 import { RecurrenceActionModal } from '../RecurrenceActionModal';
 import { TransactionItem } from '../TransactionItem';
 
-const MONTHS = [
-  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
-  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
-];
+export interface SaldosViewState { month: string; filters: SaldosFilters; limit: number; hideValues: boolean; scrollOffset: number }
+interface Props { viewStateRef?: React.MutableRefObject<SaldosViewState | null>; onNavigate?: (tab: TabType, accountId?: string) => void }
+const EMPTY_TRANSACTIONS: Transaction[] = [];
+const monthLabel = (month: string) => financialDate(`${month}-01`).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+const filterCount = (f: SaldosFilters) => Number(f.type !== 'todas') + Number(f.accountId !== 'todas') + Number(f.status !== 'todos') + Number(!!f.query.trim()) + Number(f.includeAdjustments);
 
-export function SaldosScreen() {
+// Blocos independentes da busca e paginação: digitar não reconstrói todos os cards.
+const OverviewSections = React.memo(function OverviewSections({ sections, index, month, today, accounts, projects, goals, colors, hidden, width, fontScale, onNavigate, onProject, onAccount }: {
+  sections: HomeSection[]; index: FinancialIndex; month: string; today: string; accounts: Account[]; projects: Project[]; goals: Goal[];
+  colors: ThemeColors; hidden: boolean; width: number; fontScale: number; onNavigate?: Props['onNavigate']; onProject: (project: Project) => void; onAccount: (account: Account) => void;
+}) {
+  const money = (value: number) => hidden ? '••••' : formatCurrency(value);
+  const text = { color: colors.foreground };
+  const muted = { color: colors.mutedForeground };
+  const surface = { backgroundColor: colors.card, borderColor: colors.border };
+  const activeProjects = useMemo(() => projects.filter(p => p.active !== false), [projects]);
+  const summary = index.summary(month);
+  const currentMonth = today.slice(0, 7);
+  const title = month < currentMonth ? 'Saldo realizado ao fim do mês' : month > currentMonth ? 'Saldo projetado ao fim do mês' : 'Saldo realizado hoje';
+  const value = month < currentMonth ? index.closingBalance(month) : month > currentMonth ? index.projectedBalance(month) : index.totalBalance;
+  return <>
+    {sections.filter(s => s.visible).map(section => {
+      if (section.id === 'balance') return <View key={section.id} style={[styles.card, surface, { borderTopWidth: 4, borderTopColor: colors.primary }]}>
+        <Text style={[styles.label, muted]}>{title}</Text>
+        <Text style={[styles.balance, { color: value < 0 ? colors.destructive : colors.foreground }]}>{money(value)}</Text>
+        <Text style={[styles.caption, muted]}>Todas as contas • {monthLabel(month)}</Text>
+        <View style={styles.stats}>
+          <View style={[styles.stat, width / fontScale < 340 && { flexBasis: '100%' }]}><Text style={[styles.caption, muted]}>Receitas realizadas</Text><Text style={[styles.value, text]}>{money(summary.income)}</Text></View>
+          <View style={[styles.stat, width / fontScale < 340 && { flexBasis: '100%' }]}><Text style={[styles.caption, muted]}>Despesas realizadas</Text><Text style={[styles.value, text]}>{money(summary.expense)}</Text></View>
+          <View style={[styles.stat, width / fontScale < 340 && { flexBasis: '100%' }]}><Text style={[styles.caption, muted]}>Receitas previstas</Text><Text style={[styles.value, text]}>{money(summary.pendingIncome)}</Text></View>
+          <View style={[styles.stat, width / fontScale < 340 && { flexBasis: '100%' }]}><Text style={[styles.caption, muted]}>Saídas previstas, com faturas</Text><Text style={[styles.value, text]}>{money(summary.pendingExpense)}</Text></View>
+        </View>
+        <Text style={[styles.caption, muted]}>Ajustes realizados no mês: {money(summary.adjustments)}. Transferências entre suas contas não alteram o total.</Text>
+        {month >= currentMonth && <Text style={[styles.caption, muted]}>Projeção até o fim deste mês: {money(index.projectedBalance(month))}. Inclui pendências anteriores e faturas ainda não pagas.</Text>}
+      </View>;
+      if (section.id === 'accounts') return <View key={section.id} style={styles.section}>
+        <Text style={[styles.title, text]}>Contas e cartões — hoje</Text>
+        {accounts.length === 0 ? <TouchableOpacity accessibilityRole="button" onPress={() => onNavigate?.('contas')}><Text style={text}>Cadastre sua primeira conta</Text></TouchableOpacity> :
+          <FlatList horizontal data={accounts} keyExtractor={a => a.id} showsHorizontalScrollIndicator={false} initialNumToRender={3} windowSize={3} renderItem={({ item: account }) => {
+            const card = account.type === 'cartao_credito';
+            return <TouchableOpacity accessibilityRole="button" accessibilityLabel={card ? `Abrir cartão ${account.name}` : `Ver lançamentos de ${account.name}`} onPress={() => onAccount(account)} style={[styles.smallCard, surface, { width: Math.min(width - 32, 220) }]}>
+              <Ionicons name={account.icon as any} size={22} color={account.color} />
+              <Text style={[styles.label, text]}>{account.name}</Text>
+              <Text style={[styles.value, text]}>{money(card ? index.openInvoiceTotals.get(account.id) || 0 : index.balances.get(account.id) || 0)}</Text>
+              <Text style={[styles.caption, muted]}>{card ? 'Fatura aberta registrada' : 'Saldo realizado hoje'}</Text>
+              {card && <Text style={[styles.caption, muted]}>Total a pagar, com parcelas: {money(index.cardDebt.get(account.id) || 0)}</Text>}
+            </TouchableOpacity>;
+          }} />}
+      </View>;
+      if (section.id === 'projects' && activeProjects.length) return <View key={section.id} style={styles.section}>
+        <Text style={[styles.title, text]}>Projetos — acumulado</Text>
+        <FlatList horizontal data={activeProjects} keyExtractor={p => p.id} initialNumToRender={2} windowSize={3} showsHorizontalScrollIndicator={false} renderItem={({ item: project }) => {
+          const stats = index.projects.get(project.id) || EMPTY_PROJECT;
+          const progress = project.targetBudget > 0 ? Math.min(stats.spent / project.targetBudget, 1) : 0;
+          return <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Abrir projeto ${project.name}`} onPress={() => onProject(project)} style={[styles.wideCard, surface, { width: Math.min(width - 48, 420) }]}>
+            <Text style={[styles.title, text]}>{project.name}</Text>
+            <Text style={[styles.caption, muted]}>Orçamento comprometido (realizado + previsto)</Text>
+            <View style={[styles.track, { backgroundColor: colors.border }]}><View style={[styles.fill, { width: `${progress * 100}%`, backgroundColor: stats.spent > project.targetBudget ? colors.destructive : project.color }]} /></View>
+            <Text style={[styles.label, text]}>Saldo realizado: {money(stats.realisedIncome - stats.realisedSpent)}</Text>
+            <Text style={[styles.caption, muted]}>Recebido: {money(stats.realisedIncome)} • Gasto realizado: {money(stats.realisedSpent)}</Text>
+            <Text style={[styles.caption, muted]}>Receitas previstas: {money(stats.income - stats.realisedIncome)} • Gastos previstos: {money(stats.spent - stats.realisedSpent)}</Text>
+            <Text style={[styles.caption, text]}>Orçamento restante: {money(project.targetBudget - stats.spent)}</Text>
+          </TouchableOpacity>;
+        }} />
+      </View>;
+      if (section.id === 'goals' && goals.length) return <View key={section.id} style={styles.section}>
+        <Text style={[styles.title, text]}>Metas — realizado até hoje</Text>
+        <FlatList horizontal data={goals} keyExtractor={g => g.id} initialNumToRender={2} windowSize={3} showsHorizontalScrollIndicator={false} renderItem={({ item: goal }) => {
+          const saved = index.goalAmounts.get(goal.id) || 0;
+          const progress = goal.targetAmount > 0 ? Math.min(saved / goal.targetAmount, 1) : 0;
+          return <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Gerenciar meta ${goal.name}`} onPress={() => onNavigate?.('metas', goal.id)} style={[styles.wideCard, surface, { width: Math.min(width - 48, 420) }]}>
+            <Text style={[styles.title, text]}>{goal.name}</Text>
+            <View style={[styles.track, { backgroundColor: colors.border }]}><View style={[styles.fill, { width: `${progress * 100}%`, backgroundColor: goal.color }]} /></View>
+            <Text style={[styles.label, text]}>Guardado: {money(saved)}</Text>
+            <Text style={[styles.caption, muted]}>Alvo: {money(goal.targetAmount)}</Text>
+            <Text style={[styles.caption, muted]}>Previsão: {goalForecast(goal.targetAmount - saved, goal.monthlyContribution, financialDate(today))}</Text>
+          </TouchableOpacity>;
+        }} />
+      </View>;
+      return null;
+    })}
+  </>;
+});
+
+export function SaldosScreen({ viewStateRef, onNavigate }: Props) {
   const { colors } = useTheme();
-  const { width: windowWidth } = useWindowDimensions();
-  const {
-    accounts,
-    transactions,
-    tags,
-    projects,
-    goals,
-    getProjectStats,
-    getGoalSavedAmount,
-    totalBalance,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    addTransaction,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    updateTransaction,
-    deleteTransaction,
-    loading,
-    homeLayout,
-  } = useStoreContext();
-
-  // --- ESTADOS ---
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
-  const [selectedProjectForDetails, setSelectedProjectForDetails] = useState<Project | null>(null);
-  const [displayLimit, setDisplayLimit] = useState(20);
-  const [recurrenceDeleteData, setRecurrenceDeleteData] = useState<string | null>(null);
-  const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
-  const [filterType, setFilterType] = useState<TransactionType | 'todas'>('todas');
-  const [filterAccountId, setFilterAccountId] = useState<string | 'todas'>('todas');
-  const [currentDate, setCurrentDate] = useState(new Date());
-
-  // --- REFS ---
-  const rowRefs = React.useRef(new Map()).current;
-  const currentlyOpenRowId = React.useRef<string | null>(null);
-
-  // --- AUXILIARES ---
-
-  const closeCurrentlyOpenRow = useCallback(() => {
-    if (currentlyOpenRowId.current && rowRefs.get(currentlyOpenRowId.current)) {
-      rowRefs.get(currentlyOpenRowId.current).close();
-    }
-  }, [rowRefs]);
-
-  // --- CALCULOS PROJETADOS E REATIVOS (CABEÇALHO) ---
-
-  // 1. FILTRO DE TRANSAÇÕES DO MÊS SELECIONADO NA UI
-  const transacoesDoMesSelecionado = useMemo(() => {
-    const selectedMonth = currentDate.getMonth();
-    const selectedYear = currentDate.getFullYear();
-
-    return transactions.filter(tx => {
-      if (tx.isAdjustment) return false;
-      const txDate = new Date(tx.date);
-      return txDate.getMonth() === selectedMonth && txDate.getFullYear() === selectedYear;
-    });
-  }, [transactions, currentDate]);
-
-  // 2. CÁLCULO DE RECEITAS E DESPESAS DO MÊS
-  const monthlyStats = useMemo(() => {
-    const income = transacoesDoMesSelecionado
-      .filter(tx => tx.type === 'receita' && tx.paymentMethod !== 'credito')
-      .reduce((acc, tx) => acc + tx.amount, 0);
-
-    const expense = transacoesDoMesSelecionado
-      .filter(tx => tx.type === 'despesa' && tx.paymentMethod !== 'credito')
-      .reduce((acc, tx) => acc + tx.amount, 0);
-
-    return { income, expense };
-  }, [transacoesDoMesSelecionado]);
-
-  // 3. LÓGICA DE NAVEGAÇÃO TEMPORAL (TIME TRAVEL)
-  const temporalState = useMemo(() => {
-    const hoje = new Date();
-    const anoAtual = hoje.getFullYear();
-    const mesAtual = hoje.getMonth();
-    const selectedYear = currentDate.getFullYear();
-    const selectedMonth = currentDate.getMonth();
-
-    const isPassado = selectedYear < anoAtual || (selectedYear === anoAtual && selectedMonth < mesAtual);
-    const isPresente = selectedYear === anoAtual && selectedMonth === mesAtual;
-    const isFuturo = selectedYear > anoAtual || (selectedYear === anoAtual && selectedMonth > mesAtual);
-
-    let titulo = '';
-    let valor = 0;
-
-    if (isPassado) {
-      titulo = 'Balanço do Mês';
-      valor = monthlyStats.income - monthlyStats.expense;
-    } else if (isPresente) {
-      titulo = 'Saldo Atual';
-      valor = totalBalance;
-    } else {
-      titulo = 'Saldo Projetado';
-      valor = totalBalance + monthlyStats.income - monthlyStats.expense;
-    }
-
-    return { titulo, valor, isPassado, isPresente, isFuturo };
-  }, [currentDate, totalBalance, monthlyStats]);
-
-  // 4. FILTRO LOCAL PARA CARDS DE CONTA (ATÉ HOJE)
-  const transacoesAteHoje = useMemo(() => {
-    const hojeFinalDoDia = new Date();
-    hojeFinalDoDia.setHours(23, 59, 59, 999);
-    const timestampHoje = hojeFinalDoDia.getTime();
-
-    return transactions.filter(tx => {
-      const txTime = new Date(tx.date).getTime();
-      return txTime <= timestampHoje;
-    });
-  }, [transactions]);
-
-  // 5. MOTOR DE BUSCA (LISTA PRINCIPAL)
-  const displayedTransactions = useMemo(() => {
-    return transactions
-      .filter((tx) => {
-        if (tx.isAdjustment) return false;
-        const txDate = new Date(tx.date);
-        if (txDate.getMonth() !== currentDate.getMonth() || txDate.getFullYear() !== currentDate.getFullYear()) {
-          return false;
-        }
-        if (filterType !== 'todas' && tx.type !== filterType) return false;
-        if (filterAccountId !== 'todas') {
-          if (tx.accountId !== filterAccountId && tx.targetAccountId !== filterAccountId) return false;
-        }
-        return true;
-      })
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [transactions, currentDate, filterType, filterAccountId]);
-
-  // 6. PAGINAÇÃO
-  const paginatedTransactions = useMemo(() => {
-    return displayedTransactions.slice(0, displayLimit);
-  }, [displayedTransactions, displayLimit]);
-
-  const activeFiltersCount = (filterType !== 'todas' ? 1 : 0) + (filterAccountId !== 'todas' ? 1 : 0);
-
-  const changeMonth = useCallback((offset: number) => {
-    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + offset, 1));
-  }, [currentDate]);
-
-  const handleLoadMore = useCallback(() => {
-    if (displayLimit < displayedTransactions.length) {
-      setDisplayLimit((prev) => prev + 20);
-    }
-  }, [displayLimit, displayedTransactions.length]);
-
-  const clearFilters = useCallback(() => {
-    setFilterType('todas');
-    setFilterAccountId('todas');
+  const dimensions = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const width = dimensions.width - insets.left - insets.right;
+  const fontScale = dimensions.fontScale;
+  const { accounts, transactions, tags, projects, goals, homeLayout, financialIndex: index, today, deleteTransaction, updateTransaction } = useStoreContext();
+  const initial = useRef(viewStateRef?.current);
+  const [month, setMonth] = useState(initial.current?.month || today.slice(0, 7));
+  const [filters, setFilters] = useState<SaldosFilters>(initial.current?.filters || DEFAULT_SALDOS_FILTERS);
+  const [limit, setLimit] = useState(initial.current?.limit || 20);
+  const [hidden, setHidden] = useState(initial.current?.hideValues || false);
+  const [draft, setDraft] = useState(filters);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  const [deleteFamilyId, setDeleteFamilyId] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const rowRefs = useRef(new Map<string, { close: () => void }>()).current;
+  const openedRow = useRef<string | null>(null);
+  const previousToday = useRef(today);
+  const scrollOffset = useRef(initial.current?.scrollOffset || 0);
+  const deferredQuery = useDeferredValue(filters.query);
+  const effectiveFilters = useMemo(() => ({ ...filters, query: deferredQuery }), [filters, deferredQuery]);
+  const filtered = useMemo(() => filterMonth(index, month, effectiveFilters), [index, month, effectiveFilters]);
+  const visibleTransactions = useMemo(() => filtered.slice(0, limit), [filtered, limit]);
+  const tagByLabel = useMemo(() => new Map(tags.map(tag => [tag.label, tag])), [tags]);
+  const activeCount = filterCount(filters);
+  const layout = useMemo(() => {
+    const position = homeLayout.findIndex(s => s.id === 'transactions');
+    return { before: homeLayout.slice(0, position < 0 ? homeLayout.length : position), after: position < 0 ? [] : homeLayout.slice(position + 1), transactions: homeLayout.find(s => s.id === 'transactions')?.visible ?? true };
+  }, [homeLayout]);
+  const closeRow = useCallback(() => { if (openedRow.current) rowRefs.get(openedRow.current)?.close(); openedRow.current = null; }, [rowRefs]);
+  useEffect(() => {
+    if (month === previousToday.current.slice(0, 7) && previousToday.current !== today) setMonth(today.slice(0, 7));
+    previousToday.current = today;
+  }, [today, month]);
+  useEffect(() => {
+    if (viewStateRef) viewStateRef.current = { month, filters, limit, hideValues: hidden, scrollOffset: scrollOffset.current };
+  }, [month, filters, limit, hidden, viewStateRef]);
+  useEffect(() => { closeRow(); }, [month, filters, closeRow]);
+  useEffect(() => {
+    if (filters.accountId !== 'todas' && !index.accountById.has(filters.accountId)) setFilters(previous => ({ ...previous, accountId: 'todas' }));
+  }, [index, filters.accountId]);
+  const navigateMonth = useCallback((offset: number) => {
+    setMonth(previous => { const date = financialDate(`${previous}-01`); date.setMonth(date.getMonth() + offset); return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`; });
+    setLimit(20);
   }, []);
-
-  // CÁLCULO PROJETOS ATIVOS
-  const activeProjectStats = useMemo(() => {
-    const activeProjects = projects.filter(p => p.active !== false);
-    return activeProjects.map((project) => {
-      const stats = getProjectStats(project.id);
-      const progress = project.targetBudget > 0 ? Math.min(stats.spent / project.targetBudget, 1) : 0;
-      const isOverBudget = stats.spent > project.targetBudget;
-      return { 
-        ...project, 
-        totalIncome: stats.income,
-        totalSpent: stats.spent, 
-        available: stats.available,
-        progress, 
-        isOverBudget 
-      };
-    });
-  }, [projects, getProjectStats]);
-
-  // CÁLCULO METAS ATIVAS
-  const activeGoalStats = useMemo(() => {
-    return (goals || []).map((goal: any) => {
-      const savedAmount = getGoalSavedAmount(goal.id);
-      const remainingAmount = Math.max(0, goal.targetAmount - savedAmount);
-      const progress = goal.targetAmount > 0 ? Math.min(savedAmount / goal.targetAmount, 1) : 0;
-      
-      const monthsEstimated = Math.ceil(remainingAmount / goal.monthlyContribution);
-      let timeString = '';
-      if (remainingAmount <= 0) {
-        timeString = 'Concluída! 🎉';
-      } else {
-        const expectedDate = new Date();
-        expectedDate.setMonth(expectedDate.getMonth() + monthsEstimated);
-        const monthName = expectedDate.toLocaleString('pt-BR', { month: 'short' });
-        timeString = `${monthName}/${expectedDate.getFullYear()}`;
-      }
-
-      return { ...goal, savedAmount, progress, timeString };
-    });
-  }, [goals, getGoalSavedAmount]);
-
-  const layoutBeforeTransactions = useMemo(() => {
-    const txIndex = homeLayout.findIndex(h => h.id === 'transactions');
-    return homeLayout.slice(0, txIndex === -1 ? homeLayout.length : txIndex);
-  }, [homeLayout]);
-
-  const layoutAfterTransactions = useMemo(() => {
-    const txIndex = homeLayout.findIndex(h => h.id === 'transactions');
-    return txIndex === -1 ? [] : homeLayout.slice(txIndex + 1);
-  }, [homeLayout]);
-
-  const isTransactionsVisible = useMemo(() => {
-    return homeLayout.find(h => h.id === 'transactions')?.visible ?? true;
-  }, [homeLayout]);
-
-  React.useEffect(() => {
-    setDisplayLimit(20);
-    closeCurrentlyOpenRow();
-  }, [currentDate, filterType, filterAccountId, closeCurrentlyOpenRow]);
-
-  // --- HANDLERS ---
-
-  const handleDeletePrompt = useCallback((txId: string) => {
-    const tx = transactions.find((t) => t.id === txId);
+  const clearFilters = useCallback(() => { setFilters(DEFAULT_SALDOS_FILTERS); setDraft(DEFAULT_SALDOS_FILTERS); setLimit(20); }, []);
+  const openAccount = useCallback((account: Account) => {
+    if (account.type === 'cartao_credito') onNavigate?.('cartao', account.id);
+    else { setFilters({ ...DEFAULT_SALDOS_FILTERS, accountId: account.id }); setMonth(today.slice(0, 7)); setLimit(20); }
+  }, [onNavigate, today]);
+  const remove = useCallback(async (id: string, mode: 'single' | 'future' | 'all') => {
+    try { await deleteTransaction(id, mode); }
+    catch { Alert.alert('Erro', 'Não foi possível excluir o lançamento. Tente novamente.'); }
+  }, [deleteTransaction]);
+  const promptDelete = useCallback((id: string) => {
+    closeRow();
+    const tx = transactions.find(t => t.id === id);
     if (!tx) return;
-    const isFamily = tx.groupId || tx.id.includes('-');
-    if (isFamily) {
-      closeCurrentlyOpenRow();
-      setRecurrenceDeleteData(txId);
-    } else {
-      Alert.alert('Apagar Lançamento', 'Tem certeza que deseja excluir esta transação?', [
-        { text: 'Cancelar', style: 'cancel', onPress: closeCurrentlyOpenRow },
-        { text: 'Apagar', style: 'destructive', onPress: () => { closeCurrentlyOpenRow(); deleteTransaction(txId, 'single'); } },
-      ]);
-    }
-  }, [transactions, closeCurrentlyOpenRow, deleteTransaction]);
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const handleSelectTx = useCallback((tx: Transaction) => {
-    setSelectedTx(tx);
-  }, []);
-
-  const handleSwipeOpen = useCallback((txId: string) => {
-    if (currentlyOpenRowId.current && currentlyOpenRowId.current !== txId) closeCurrentlyOpenRow();
-    currentlyOpenRowId.current = txId;
-  }, [closeCurrentlyOpenRow]);
-
-  // --- RENDERIZAÇÃO ---
-
-  const renderRightActions = useCallback((txId: string) => (
-    <TouchableOpacity
-      style={[styles.hiddenAction, styles.hiddenActionRight, { backgroundColor: colors.destructive }]}
-      onPress={() => handleDeletePrompt(txId)}
-    >
-      <Ionicons name='trash-outline' size={24} color='#FFF' />
-      <Text style={styles.hiddenActionText}>Apagar</Text>
-    </TouchableOpacity>
-  ), [colors.destructive, handleDeletePrompt]);
-
-  const renderSection = useCallback((section: any) => {
-    if (!section.visible) return null;
-    
-    switch (section.id) {
-      case 'balance':
-        return (
-          <View style={[styles.balanceCard, { backgroundColor: colors.primary }]}>
-            <Text style={styles.balanceLabel}>{temporalState.titulo}</Text>
-            <Text 
-              style={[
-                styles.balanceValue, 
-                temporalState.isPassado && temporalState.valor < 0 && { color: '#FFD7D7' }
-              ]}
-            >
-              {formatCurrency(temporalState.valor)}
-            </Text>
-            <View style={styles.balanceRow}>
-              <View style={styles.balanceStat}>
-                <Ionicons name='arrow-up-circle' size={16} color='rgba(255,255,255,0.8)' />
-                <Text style={styles.balanceStatText}>{formatCurrency(monthlyStats.income)}</Text>
-              </View>
-              <View style={styles.balanceDivider} />
-              <View style={styles.balanceStat}>
-                <Ionicons name='arrow-down-circle' size={16} color='rgba(255,255,255,0.8)' />
-                <Text style={styles.balanceStatText}>{formatCurrency(monthlyStats.expense)}</Text>
-              </View>
-            </View>
-          </View>
-        );
-
-      case 'accounts':
-        return (
-          <>
-            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Contas e Cartões</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <View style={styles.accountsRow}>
-                {accounts.map((acc: Account) => {
-                  const isCreditCard = acc.type === 'cartao_credito';
-                  const currentInvoice = isCreditCard ? getCurrentOpenInvoiceTotal(acc, transacoesAteHoje) : 0;
-                  let localAccBalance = 0;
-                  if (!isCreditCard) {
-                    transacoesAteHoje.forEach(tx => {
-                      if (!tx.paid) return;
-                      if (tx.accountId === acc.id) {
-                        if (tx.type === 'receita') localAccBalance += tx.amount;
-                        else if (tx.type === 'despesa') localAccBalance -= tx.amount;
-                        else if (tx.type === 'transferencia') localAccBalance -= tx.amount;
-                      }
-                      if (tx.type === 'transferencia' && tx.targetAccountId === acc.id) localAccBalance += tx.amount;
-                    });
-                  }
-                  const mainDisplayValue = isCreditCard ? currentInvoice : localAccBalance;
-
-                  return (
-                    <View key={acc.id} style={[styles.accountCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                      <View style={[styles.accountIcon, { backgroundColor: acc.color + '15' }]}>
-                        <Ionicons name={acc.icon as any} size={18} color={acc.color} />
-                      </View>
-                      <View style={styles.accountTextContainer}>
-                        <Text style={[styles.accountName, { color: colors.mutedForeground }]} numberOfLines={1}>{acc.name}</Text>
-                        <Text style={[styles.accountBalance, { color: colors.foreground }]}>{formatCurrency(mainDisplayValue)}</Text>
-                        {isCreditCard && <Text style={[styles.secondaryText, { color: colors.mutedForeground, fontSize: 10 }]}>Fatura atual</Text>}
-                      </View>
-                    </View>
-                  );
-                })}
-              </View>
-            </ScrollView>
-          </>
-        );
-
-      case 'projects':
-        return activeProjectStats.length > 0 ? (
-          <>
-            <Text style={[styles.sectionTitle, { color: colors.foreground, marginTop: 8 }]}>Projetos Ativos</Text>
-            <ScrollView 
-              horizontal 
-              showsHorizontalScrollIndicator={false}
-              snapToInterval={windowWidth * 0.85 + 12}
-              decelerationRate="fast"
-              contentContainerStyle={{ paddingRight: 16 }}
-            >
-              <View style={styles.accountsRow}>
-                {activeProjectStats.map((project) => (
-                  <TouchableOpacity
-                    key={project.id}
-                    activeOpacity={0.8}
-                    onPress={() => setSelectedProjectForDetails(project)}
-                    style={[styles.projectCard, { backgroundColor: colors.card, borderColor: colors.border, width: windowWidth * 0.85 }]}
-                  >
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-                      <View style={[styles.accountIcon, { backgroundColor: project.color + '15', width: 40, height: 40, borderRadius: 12, marginBottom: 0 }]}>
-                        <Ionicons name="briefcase-outline" size={20} color={project.color} />
-                      </View>
-                      <Text style={[styles.accountName, { color: colors.foreground, flex: 1, fontSize: 16, fontWeight: '700' }]} numberOfLines={1}>{project.name}</Text>
-                    </View>
-                    <View>
-                      <View style={[styles.progressBarBg, { backgroundColor: colors.border, marginVertical: 16 }]}>
-                        <View style={[styles.progressBarFill, { backgroundColor: project.isOverBudget ? colors.destructive : project.color, width: `${project.progress * 100}%` }]} />
-                      </View>
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <Text style={[styles.secondaryText, { color: project.available < 0 ? colors.destructive : colors.primary, fontWeight: '800', fontSize: 14 }]}>
-                          Disponível: {formatCurrency(project.available)}
-                        </Text>
-                      </View>
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
-                        <Text style={[styles.secondaryText, { color: colors.mutedForeground, fontSize: 12 }]}>
-                          Juntei: {formatCurrency(project.totalIncome)}
-                        </Text>
-                        <Text style={[styles.secondaryText, { color: colors.mutedForeground, fontSize: 12 }]}>
-                          Gasto: {formatCurrency(project.totalSpent)} / {formatCurrency(project.targetBudget)}
-                        </Text>
-                      </View>
-                    </View>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </ScrollView>
-          </>
-        ) : null;
-
-      case 'goals':
-        return activeGoalStats.length > 0 ? (
-          <>
-            <Text style={[styles.sectionTitle, { color: colors.foreground, marginTop: 8 }]}>Metas</Text>
-            <ScrollView 
-              horizontal 
-              showsHorizontalScrollIndicator={false}
-              snapToInterval={windowWidth * 0.85 + 12}
-              decelerationRate="fast"
-              contentContainerStyle={{ paddingRight: 16 }}
-            >
-              <View style={styles.accountsRow}>
-                {activeGoalStats.map((goal: any) => (
-                  <View
-                    key={goal.id}
-                    style={[styles.projectCard, { backgroundColor: colors.card, borderColor: colors.border, width: windowWidth * 0.85 }]}
-                  >
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-                      <View style={[styles.accountIcon, { backgroundColor: goal.color + '15', width: 40, height: 40, borderRadius: 12, marginBottom: 0 }]}>
-                        <Ionicons name="flag-outline" size={20} color={goal.color} />
-                      </View>
-                      <Text style={[styles.accountName, { color: colors.foreground, flex: 1, fontSize: 16, fontWeight: '700' }]} numberOfLines={1}>{goal.name}</Text>
-                    </View>
-                    <View>
-                      <View style={[styles.progressBarBg, { backgroundColor: colors.border, marginVertical: 12 }]}>
-                        <View style={[styles.progressBarFill, { backgroundColor: goal.color, width: `${goal.progress * 100}%` }]} />
-                      </View>
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                        <Text style={[styles.secondaryText, { color: colors.success, fontWeight: '800', fontSize: 14 }]}>{formatCurrency(goal.savedAmount)}</Text>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                          <Text style={[styles.secondaryText, { color: colors.mutedForeground, fontSize: 12 }]}>Alvo:</Text>
-                          <Text style={[styles.secondaryText, { color: colors.foreground, fontSize: 12, fontWeight: '600' }]}>{formatCurrency(goal.targetAmount)}</Text>
-                        </View>
-                      </View>
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <Text style={[styles.secondaryText, { color: colors.mutedForeground, fontSize: 12 }]}>
-                          Previsão: <Text style={{ color: colors.foreground, fontWeight: '600' }}>{goal.timeString}</Text>
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
-                ))}
-              </View>
-            </ScrollView>
-          </>
-        ) : null;
-
-      default:
-        return null;
-    }
-  }, [colors, temporalState, monthlyStats, accounts, transacoesAteHoje, activeProjectStats, activeGoalStats, windowWidth]);
-
-  const renderTransactionsHeader = useCallback(() => (
-    <>
-      <View style={[styles.sectionHeader, { marginTop: 8 }]}>
-        <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Lançamentos</Text>
-        <TouchableOpacity
-          style={[styles.filterBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
-          onPress={() => setIsFilterModalOpen(true)}
-        >
-          <Ionicons name='options-outline' size={18} color={colors.foreground} />
-          {activeFiltersCount > 0 && (
-            <View style={[styles.filterBadge, { backgroundColor: colors.primary }]}>
-              <Text style={styles.filterBadgeText}>{activeFiltersCount}</Text>
-            </View>
-          )}
-        </TouchableOpacity>
+    if (tx.groupId) setDeleteFamilyId(id);
+    else Alert.alert('Excluir lançamento', 'Deseja excluir este lançamento?', [{ text: 'Cancelar', style: 'cancel' }, { text: 'Excluir', style: 'destructive', onPress: () => { void remove(id, 'single'); } }]);
+  }, [transactions, closeRow, remove]);
+  const confirmPayment = useCallback((tx: Transaction) => {
+    if (busyId) return;
+    Alert.alert('Confirmar realização', 'O pagamento ou recebimento já aconteceu? A data será atualizada para hoje.', [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Confirmar', onPress: async () => {
+        setBusyId(tx.id);
+        try { await updateTransaction({ ...tx, paid: true, date: today }, 'single'); }
+        catch { Alert.alert('Erro', 'Não foi possível confirmar o lançamento. Tente novamente.'); }
+        finally { setBusyId(null); }
+      } },
+    ]);
+  }, [busyId, today, updateTransaction]);
+  const onSwipeOpen = useCallback((id: string) => { if (openedRow.current !== id) closeRow(); openedRow.current = id; }, [closeRow]);
+  const renderActions = useCallback((id: string) => <TouchableOpacity accessibilityRole="button" accessibilityLabel="Excluir lançamento" onPress={() => promptDelete(id)} style={[styles.deleteAction, { backgroundColor: colors.destructive }]}><Text style={{ color: '#FFF' }}>Excluir</Text></TouchableOpacity>, [promptDelete, colors.destructive]);
+  const renderItem = useCallback(({ item: tx, index: position }: { item: Transaction; index: number }) => {
+    const meta = index.metadata.get(tx.id)!;
+    const previous = visibleTransactions[position - 1];
+    return <View>
+      {(!previous || index.metadata.get(previous.id)?.day !== meta.day) && <Text style={[styles.dayHeading, { color: colors.mutedForeground }]}>{formatDate(meta.day)}</Text>}
+      <TransactionItem transaction={tx} account={index.accountById.get(tx.accountId)} targetAccount={index.accountById.get(tx.targetAccountId || '')} selectedAccountId={filters.accountId} status={meta.status} tag={tagByLabel.get(tx.tag || '')} colors={colors} hideIcon hideValues={hidden} swipeable rowRefs={rowRefs} onSwipeableWillOpen={onSwipeOpen} renderRightActions={renderActions} onConfirm={busyId ? undefined : confirmPayment} />
+    </View>;
+  }, [index, visibleTransactions, filters.accountId, tagByLabel, colors, hidden, rowRefs, onSwipeOpen, renderActions, busyId, confirmPayment]);
+  const blocks = { index, month, today, accounts, projects, goals, colors, hidden, width, fontScale, onNavigate, onProject: setSelectedProject, onAccount: openAccount };
+  const header = <View style={styles.section}>
+    <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <View style={styles.toolbar}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Mês anterior" onPress={() => navigateMonth(-1)} style={styles.iconButton}><Ionicons name="chevron-back" size={24} color={colors.foreground} /></TouchableOpacity>
+        <Text accessibilityRole="header" style={[styles.title, { color: colors.foreground, flex: 1, textAlign: 'center' }]}>{monthLabel(month)}</Text>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Próximo mês" onPress={() => navigateMonth(1)} style={styles.iconButton}><Ionicons name="chevron-forward" size={24} color={colors.foreground} /></TouchableOpacity>
       </View>
-
-      <View style={[styles.dateNavigator, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <TouchableOpacity onPress={() => changeMonth(-1)} style={styles.navArrow}><Ionicons name="chevron-back" size={20} color={colors.primary} /></TouchableOpacity>
-        <View style={styles.dateLabelContainer}>
-          <Text style={[styles.monthLabel, { color: colors.foreground }]}>{MONTHS[currentDate.getMonth()]}</Text>
-          <Text style={[styles.yearLabel, { color: colors.mutedForeground }]}>{currentDate.getFullYear()}</Text>
-        </View>
-        <TouchableOpacity onPress={() => changeMonth(1)} style={styles.navArrow}><Ionicons name="chevron-forward" size={20} color={colors.primary} /></TouchableOpacity>
+      <View style={styles.toolbar}>
+        <TouchableOpacity accessibilityRole="button" onPress={() => { setMonth(today.slice(0, 7)); setLimit(20); }} style={styles.iconButton}><Text style={{ color: colors.foreground, textDecorationLine: 'underline' }}>Mês atual</Text></TouchableOpacity>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={hidden ? 'Mostrar valores' : 'Ocultar valores'} onPress={() => setHidden(v => !v)} style={styles.iconButton}><Ionicons name={hidden ? 'eye-off-outline' : 'eye-outline'} size={22} color={colors.foreground} /></TouchableOpacity>
       </View>
-    </>
-  ), [colors, activeFiltersCount, currentDate, changeMonth]);
-
-  const renderHeader = useCallback(() => (
-    <View style={{ gap: 16, paddingBottom: 8 }}>
-      {layoutBeforeTransactions.map((section: any) => (
-        <View key={section.id}>{renderSection(section)}</View>
-      ))}
-      
-      {isTransactionsVisible && renderTransactionsHeader()}
     </View>
-  ), [layoutBeforeTransactions, renderSection, isTransactionsVisible, renderTransactionsHeader]);
-
-  const renderFooter = useCallback(() => (
-    <View style={{ gap: 16, paddingTop: 16, paddingBottom: 32 }}>
-      {layoutAfterTransactions.map((section: any) => (
-        <View key={section.id}>{renderSection(section)}</View>
-      ))}
-    </View>
-  ), [layoutAfterTransactions, renderSection]);
-
-  const renderItem = useCallback(({ item: tx, index }: { item: Transaction; index: number }) => {
-    const isFirst = index === 0;
-    const isLast = index === paginatedTransactions.length - 1;
-    const account = accounts.find((a) => a.id === tx.accountId);
-    const tagInfo = tags.find(t => t.label === (tx as any).tag) || tags.find(t => t.label === 'Outros');
-
-    return (
-      <TransactionItem
-        transaction={tx}
-        account={account}
-        tag={tagInfo}
-        colors={colors}
-        isFirst={isFirst}
-        isLast={isLast}
-        swipeable
-        hideIcon={true}
-        rowRefs={rowRefs}
-        onSwipeableWillOpen={handleSwipeOpen}
-        renderRightActions={renderRightActions}
-      />
-    );
-  }, [paginatedTransactions.length, accounts, tags, colors, rowRefs, handleSwipeOpen, renderRightActions]);
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const keyExtractor = useCallback((item: Transaction) => item.id, []);
-
-if (loading) return <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}><ActivityIndicator size='large' color={colors.primary} /></View>;
-
-  return (
-    <View style={{ flex: 1 }}>
-      <FlatList
-        data={isTransactionsVisible ? paginatedTransactions : []}
-        keyExtractor={(item) => item.id}
-        renderItem={renderItem}
-        ListHeaderComponent={renderHeader}
-        ListFooterComponent={renderFooter}
-        showsVerticalScrollIndicator={false}
-        onEndReached={handleLoadMore}
-        onEndReachedThreshold={0.5}
-        initialNumToRender={8}
-        maxToRenderPerBatch={5}
-        windowSize={5}
-        removeClippedSubviews={false}
-        style={{ flex: 1, backgroundColor: colors.background }}
-        contentContainerStyle={styles.content}
-        ListEmptyComponent={
-          isTransactionsVisible ? (
-            <View style={[styles.emptyState, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <Ionicons name='calendar-outline' size={40} color={colors.mutedForeground} />
-              <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>Nenhum lançamento em {MONTHS[currentDate.getMonth()]}</Text>
-            </View>
-          ) : null
-        }
-      />
-
-      <Modal visible={isFilterModalOpen} transparent animationType='slide' onRequestClose={() => setIsFilterModalOpen(false)}>
-        <View style={styles.modalOverlayBottom}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setIsFilterModalOpen(false)} />
-          <View style={[styles.filterModalContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <View style={styles.filterModalHeader}>
-              <Text style={[styles.modalTitle, { color: colors.foreground }]}>Filtros</Text>
-              <TouchableOpacity onPress={() => setIsFilterModalOpen(false)} style={[styles.closeBtn, { backgroundColor: colors.background }]}><Ionicons name='close' size={20} color={colors.foreground} /></TouchableOpacity>
-            </View>
-            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: '80%' }}>
-              <Text style={[styles.filterGroupLabel, { color: colors.mutedForeground }]}>Tipo</Text>
-              <View style={styles.chipRow}>
-                {(['todas', 'receita', 'despesa', 'transferencia'] as const).map((t) => (
-                  <TouchableOpacity key={t} style={[styles.chip, { borderColor: colors.border, backgroundColor: filterType === t ? colors.primary : 'transparent' }]} onPress={() => setFilterType(t)}>
-                    <Text style={[styles.chipText, { color: filterType === t ? '#FFF' : colors.foreground }]}>{t.charAt(0).toUpperCase() + t.slice(1)}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-              <Text style={[styles.filterGroupLabel, { color: colors.mutedForeground, marginTop: 20 }]}>Contas</Text>
-              <View style={styles.chipRow}>
-                <TouchableOpacity style={[styles.chip, { borderColor: colors.border, backgroundColor: filterAccountId === 'todas' ? colors.primary : 'transparent' }]} onPress={() => setFilterAccountId('todas')}><Text style={[styles.chipText, { color: filterAccountId === 'todas' ? '#FFF' : colors.foreground }]}>Todas</Text></TouchableOpacity>
-                {accounts.map((acc) => (
-                  <TouchableOpacity key={acc.id} style={[styles.chip, { borderColor: acc.color, backgroundColor: filterAccountId === acc.id ? acc.color : 'transparent' }]} onPress={() => setFilterAccountId(acc.id)}>
-                    <Text style={[styles.chipText, { color: filterAccountId === acc.id ? '#FFF' : acc.color }]}>{acc.name}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-              <View style={{ height: 30 }} />
-            </ScrollView>
-            <TouchableOpacity style={[styles.applyBtn, { backgroundColor: colors.foreground }]} onPress={() => setIsFilterModalOpen(false)}><Text style={[styles.applyBtnText, { color: colors.background }]}>Aplicar Filtros</Text></TouchableOpacity>
-            {activeFiltersCount > 0 && (
-              <TouchableOpacity onPress={clearFilters} style={{ marginTop: 15, alignItems: 'center' }}><Text style={{ color: colors.destructive, fontWeight: '600' }}>Limpar Filtros</Text></TouchableOpacity>
-            )}
-          </View>
+    <OverviewSections sections={layout.before} {...blocks} />
+    {layout.transactions && <View style={styles.section}>
+      <View style={styles.toolbar}><Text style={[styles.title, { color: colors.foreground }]}>Lançamentos</Text><TouchableOpacity accessibilityRole="button" accessibilityLabel={`Filtrar lançamentos, ${activeCount} filtros ativos`} onPress={() => { setDraft(filters); setFilterOpen(true); }} style={styles.iconButton}><Text style={{ color: colors.foreground }}>Filtros{activeCount ? ` (${activeCount})` : ''}</Text></TouchableOpacity></View>
+      <Text style={[styles.caption, { color: colors.mutedForeground }]}>Filtros e busca alteram somente os lançamentos. O resumo acima considera todas as contas.</Text>
+      <TextInput accessibilityLabel="Buscar lançamentos" placeholder="Buscar por descrição" placeholderTextColor={colors.mutedForeground} value={filters.query} onChangeText={query => { setFilters(previous => ({ ...previous, query })); setLimit(20); }} style={[styles.input, { color: colors.foreground, backgroundColor: colors.card, borderColor: colors.border }]} />
+      <Text style={[styles.caption, { color: colors.mutedForeground }]}>{Math.min(limit, filtered.length)} de {filtered.length} lançamentos{filters.accountId !== 'todas' ? ` • ${index.accountById.get(filters.accountId)?.name || ''}` : ''}</Text>
+    </View>}
+  </View>;
+  const footer = <View style={styles.section}>
+    {layout.transactions && (limit < filtered.length ? <TouchableOpacity accessibilityRole="button" onPress={() => setLimit(v => v + 20)} style={[styles.button, { backgroundColor: colors.card, borderColor: colors.border }]}><Text style={{ color: colors.foreground }}>Carregar mais 20 lançamentos</Text></TouchableOpacity> : filtered.length > 0 ? <Text style={[styles.caption, { color: colors.mutedForeground }]}>Fim dos lançamentos deste filtro.</Text> : null)}
+    <OverviewSections sections={layout.after} {...blocks} />
+  </View>;
+  return <View style={{ flex: 1, backgroundColor: colors.background }}>
+    <FlatList data={layout.transactions ? visibleTransactions : EMPTY_TRANSACTIONS} keyExtractor={tx => tx.id} renderItem={renderItem} ListHeaderComponent={header} ListFooterComponent={footer} initialNumToRender={8} maxToRenderPerBatch={8} windowSize={5} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content} contentOffset={{ x: 0, y: initial.current?.scrollOffset || 0 }} scrollEventThrottle={200} onScroll={event => { scrollOffset.current = event.nativeEvent.contentOffset.y; if (viewStateRef?.current) viewStateRef.current.scrollOffset = scrollOffset.current; }} ListEmptyComponent={layout.transactions ? <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <Text style={{ color: colors.foreground }}>{activeCount ? 'Nenhum lançamento corresponde aos filtros.' : `Nenhum lançamento em ${monthLabel(month)}.`}</Text>
+      {activeCount > 0 && <TouchableOpacity accessibilityRole="button" onPress={clearFilters} style={styles.iconButton}><Text style={{ color: colors.foreground, textDecorationLine: 'underline' }}>Limpar filtros</Text></TouchableOpacity>}
+    </View> : null} />
+    <Modal visible={filterOpen} transparent animationType="slide" onRequestClose={() => setFilterOpen(false)}>
+      <View style={styles.overlay}><Pressable accessibilityLabel="Cancelar filtros" style={StyleSheet.absoluteFill} onPress={() => setFilterOpen(false)} />
+        <View style={[styles.modal, { backgroundColor: colors.card, paddingBottom: Math.max(24, insets.bottom + 16) }]}>
+          <Text style={[styles.title, { color: colors.foreground }]}>Filtrar lançamentos</Text>
+          <ScrollView keyboardShouldPersistTaps="handled">
+            <Text style={[styles.label, { color: colors.foreground }]}>Tipo</Text>
+            <View style={styles.chips}>{(['todas', 'receita', 'despesa', 'transferencia'] as const).map(type => <FilterChip key={type} label={{ todas: 'Todos os tipos', receita: 'Receita', despesa: 'Despesa', transferencia: 'Transferência' }[type]} selected={draft.type === type} onPress={() => setDraft(v => ({ ...v, type }))} colors={colors} />)}</View>
+            <Text style={[styles.label, { color: colors.foreground }]}>Situação</Text>
+            <View style={styles.chips}>{(['todos', 'realizado', 'previsto', 'vencido'] as const).map(status => <FilterChip key={status} label={{ todos: 'Todas as situações', realizado: 'Realizado', previsto: 'Previsto', vencido: 'Vencido' }[status]} selected={draft.status === status} onPress={() => setDraft(v => ({ ...v, status }))} colors={colors} />)}</View>
+            <Text style={[styles.label, { color: colors.foreground }]}>Conta</Text>
+            <View style={styles.chips}><FilterChip label="Todas as contas" selected={draft.accountId === 'todas'} onPress={() => setDraft(v => ({ ...v, accountId: 'todas' }))} colors={colors} />{accounts.map(account => <FilterChip key={account.id} label={account.name} selected={draft.accountId === account.id} onPress={() => setDraft(v => ({ ...v, accountId: account.id }))} colors={colors} />)}</View>
+            <View style={styles.toolbar}><Text style={[styles.caption, { color: colors.foreground, flex: 1 }]}>Mostrar ajustes e saldos iniciais</Text><Switch accessibilityLabel="Mostrar ajustes e saldos iniciais" value={draft.includeAdjustments} onValueChange={includeAdjustments => setDraft(v => ({ ...v, includeAdjustments }))} /></View>
+          </ScrollView>
+          <TouchableOpacity accessibilityRole="button" style={[styles.button, { backgroundColor: colors.foreground }]} onPress={() => { setFilters(draft); setLimit(20); setFilterOpen(false); }}><Text style={{ color: colors.background }}>Aplicar filtros</Text></TouchableOpacity>
+          <View style={styles.toolbar}><TouchableOpacity accessibilityRole="button" style={styles.iconButton} onPress={() => setDraft(DEFAULT_SALDOS_FILTERS)}><Text style={{ color: colors.foreground }}>Limpar seleção</Text></TouchableOpacity><TouchableOpacity accessibilityRole="button" style={styles.iconButton} onPress={() => setFilterOpen(false)}><Text style={{ color: colors.foreground }}>Cancelar</Text></TouchableOpacity></View>
         </View>
-      </Modal>
-
-      <RecurrenceActionModal visible={!!recurrenceDeleteData} actionType='delete' onClose={() => setRecurrenceDeleteData(null)} onSelect={(mode) => { if (recurrenceDeleteData) deleteTransaction(recurrenceDeleteData, mode); setRecurrenceDeleteData(null); }} />
-
-      {selectedProjectForDetails && (
-        <ProjectTransactionsModal project={selectedProjectForDetails} onClose={() => setSelectedProjectForDetails(null)} />
-      )}
-
-    </View>
-  );
+      </View>
+    </Modal>
+    <RecurrenceActionModal visible={!!deleteFamilyId} actionType="delete" onClose={() => setDeleteFamilyId(null)} onSelect={mode => { if (deleteFamilyId) void remove(deleteFamilyId, mode); setDeleteFamilyId(null); }} />
+    {selectedProject && <ProjectTransactionsModal project={selectedProject} hideValues={hidden} onClose={() => setSelectedProject(null)} />}
+  </View>;
 }
 
+function FilterChip({ label, selected, onPress, colors }: { label: string; selected: boolean; onPress: () => void; colors: ThemeColors }) {
+  return <TouchableOpacity accessibilityRole="button" accessibilityState={{ selected }} onPress={onPress} style={[styles.chip, { backgroundColor: selected ? colors.foreground : colors.card, borderColor: colors.border }]}><Text style={{ color: selected ? colors.background : colors.foreground }}>{label}</Text></TouchableOpacity>;
+}
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  content: { padding: 16, paddingBottom: 32 },
-  balanceCard: { borderRadius: 20, padding: 24, gap: 4 },
-  balanceLabel: { color: 'rgba(255,255,255,0.75)', fontSize: 13, fontWeight: '500' },
-  balanceValue: { color: '#FFF', fontSize: 36, fontWeight: '700', letterSpacing: -1 },
-  balanceRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 12 },
-  balanceStat: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  balanceStatText: { color: 'rgba(255,255,255,0.85)', fontSize: 13, fontWeight: '500' },
-  balanceDivider: { width: 1, height: 14, backgroundColor: 'rgba(255,255,255,0.3)' },
-  dateNavigator: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 12, borderRadius: 15, borderWidth: StyleSheet.hairlineWidth },
-  navArrow: { padding: 8 },
-  dateLabelContainer: { alignItems: 'center' },
-  monthLabel: { fontSize: 16, fontWeight: '700' },
-  yearLabel: { fontSize: 12, fontWeight: '500' },
-  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 8 },
-  filterBtn: { padding: 8, borderRadius: 12, borderWidth: 1, position: 'relative' },
-  filterBadge: { position: 'absolute', top: -6, right: -6, width: 18, height: 18, borderRadius: 9, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#FFF' },
-  filterBadgeText: { color: '#FFF', fontSize: 10, fontWeight: 'bold' },
-  sectionTitle: { fontSize: 16, fontWeight: '600' },
-  accountsRow: { flexDirection: 'row', gap: 12 },
-  accountCard: { width: 140, borderRadius: 20, padding: 16, borderWidth: StyleSheet.hairlineWidth, minHeight: 110 },
-  projectCard: { borderRadius: 24, padding: 20, borderWidth: StyleSheet.hairlineWidth, minHeight: 120 },
-  accountIcon: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
-  accountTextContainer: { gap: 2 },
-  accountName: { fontSize: 12, fontWeight: '500' },
-  accountBalance: { fontSize: 16, fontWeight: '700' },
-  secondaryText: { fontSize: 10, marginTop: 2 },
-  txItem: { flexDirection: 'row', alignItems: 'center', padding: 16, gap: 12, borderBottomWidth: StyleSheet.hairlineWidth },
-  txItemFirst: { borderTopLeftRadius: 20, borderTopRightRadius: 20 },
-  txItemLast: { borderBottomLeftRadius: 20, borderBottomRightRadius: 20, borderBottomWidth: 0 },
-  txIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
-  txInfo: { flex: 1 },
-  txDesc: { fontSize: 14, fontWeight: '600' },
-  txMetaText: { fontSize: 12 },
-  txAmount: { fontSize: 14, fontWeight: '700' },
-  emptyState: { alignItems: 'center', padding: 40, gap: 8, borderRadius: 20, borderWidth: StyleSheet.hairlineWidth, marginTop: 20 },
-  emptyText: { fontSize: 14, textAlign: 'center' },
-  modalOverlayBottom: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end', zIndex: 999, elevation: 999 },
-  filterModalContent: { width: '100%', borderTopLeftRadius: 28, borderTopRightRadius: 28, borderWidth: 1, padding: 24, paddingBottom: 40, maxHeight: '90%' },
-  filterModalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-  modalTitle: { fontSize: 20, fontWeight: '700' },
-  closeBtn: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  filterGroupLabel: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12 },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1 },
-  chipText: { fontSize: 14, fontWeight: '600' },
-  applyBtn: { padding: 16, borderRadius: 16, alignItems: 'center', marginTop: 10 },
-  applyBtnText: { fontSize: 16, fontWeight: '700' },
-  hiddenAction: { justifyContent: 'center', alignItems: 'center', width: 80 },
-  hiddenActionRight: { borderTopRightRadius: 20, borderBottomRightRadius: 20 },
-  hiddenActionText: { color: '#FFF', fontSize: 10, fontWeight: '700', marginTop: 4 },
-  progressBarBg: { height: 8, borderRadius: 4, backgroundColor: 'rgba(0,0,0,0.1)', overflow: 'hidden' },
-  progressBarFill: { height: '100%', borderRadius: 4 },
+  content: { padding: 16, paddingBottom: 32 }, section: { gap: 12, marginBottom: 16 }, card: { padding: 20, borderRadius: 20, borderWidth: StyleSheet.hairlineWidth, gap: 8 },
+  title: { fontSize: 17, fontWeight: '700', flexShrink: 1 }, label: { fontSize: 14, fontWeight: '600', marginVertical: 4 }, caption: { fontSize: 13, lineHeight: 19 }, balance: { fontSize: 32, fontWeight: '700', flexShrink: 1 }, value: { fontSize: 17, fontWeight: '600', flexShrink: 1 },
+  toolbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }, iconButton: { padding: 12, minHeight: 44, minWidth: 44, alignItems: 'center', justifyContent: 'center' }, stats: { flexDirection: 'row', flexWrap: 'wrap', gap: 16, marginVertical: 8 }, stat: { flexBasis: '44%', flexGrow: 1, gap: 4 },
+  smallCard: { padding: 16, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, marginRight: 12, gap: 6 }, wideCard: { padding: 20, borderRadius: 20, borderWidth: StyleSheet.hairlineWidth, marginRight: 12, gap: 8 }, track: { height: 8, borderRadius: 4, overflow: 'hidden', marginVertical: 8 }, fill: { height: 8, borderRadius: 4 },
+  input: { padding: 14, borderRadius: 12, borderWidth: 1, fontSize: 16 }, button: { padding: 16, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', marginVertical: 12 }, dayHeading: { fontSize: 13, fontWeight: '600', marginTop: 16, marginBottom: 8 }, deleteAction: { width: 88, alignItems: 'center', justifyContent: 'center' },
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' }, modal: { maxHeight: '90%', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 32, gap: 12 }, chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 }, chip: { borderWidth: 1, borderRadius: 20, padding: 12, minHeight: 44 },
 });

@@ -49,6 +49,7 @@ export interface Transaction {
   recurrence: RecurrenceType
   paid: boolean
   notes?: string
+  tag?: string
   paymentMethod?: 'debito' | 'credito' // Tracks the method used
   installmentNumber?: number // E.g., 1 (for 1/3)
   totalInstallments?: number // E.g., 3 (for 1/3)

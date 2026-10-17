@@ -4,16 +4,15 @@ import {
   Text,
   StyleSheet,
   FlatList,
-  Dimensions,
+  useWindowDimensions,
+  ScrollView,
   TouchableOpacity,
-  SafeAreaView,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/hooks/useTheme';
 import { useStoreContext } from '@/context/StoreContext';
 import { useRouter } from 'expo-router';
-
-const { width, height } = Dimensions.get('window');
 
 const STEPS = [
   {
@@ -47,6 +46,7 @@ const STEPS = [
 ];
 
 export default function OnboardingScreen() {
+  const { width, height } = useWindowDimensions();
   const { colors } = useTheme();
   const { completeOnboarding } = useStoreContext();
   const router = useRouter();
@@ -73,10 +73,10 @@ export default function OnboardingScreen() {
   };
 
   const renderItem = ({ item }: { item: typeof STEPS[0] }) => (
-    <View style={[styles.slide, { width: layoutWidth }]}>
+    <ScrollView style={{ width: layoutWidth }} contentContainerStyle={styles.slide}>
       <View style={styles.slideInner}>
-        <View style={[styles.iconContainer, { backgroundColor: item.color + '20' }]}>
-          <Ionicons name={item.icon as any} size={90} color={item.color} />
+        <View style={[styles.iconContainer, { backgroundColor: item.color + '20', width: height < 700 ? 100 : 180, height: height < 700 ? 100 : 180 }]}>
+          <Ionicons name={item.icon as any} size={height < 700 ? 50 : 90} color={item.color} />
         </View>
         <View style={styles.textContainer}>
           <Text style={[styles.title, { color: colors.foreground }]}>{item.title}</Text>
@@ -85,7 +85,7 @@ export default function OnboardingScreen() {
           </Text>
         </View>
       </View>
-    </View>
+    </ScrollView>
   );
 
   return (
@@ -95,6 +95,8 @@ export default function OnboardingScreen() {
     >
       <View style={{ flex: 1, justifyContent: 'center' }}>
         <FlatList
+          key={layoutWidth}
+          initialScrollIndex={currentIndex}
           ref={flatListRef}
           data={STEPS}
           renderItem={renderItem}
@@ -162,10 +164,11 @@ export default function OnboardingScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   slide: {
-    flex: 1,
+    flexGrow: 1,
     alignItems: 'center',
-    paddingTop: height * 0.15, // Empurra o conteúdo para baixo
-    paddingHorizontal: 40,
+    justifyContent: 'center',
+    paddingVertical: 24,
+    paddingHorizontal: 24,
   },
   slideInner: {
     alignItems: 'center',
@@ -177,7 +180,7 @@ const styles = StyleSheet.create({
     borderRadius: 90,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 48,
+    marginBottom: 24,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
@@ -203,12 +206,12 @@ const styles = StyleSheet.create({
   },
   footer: {
     paddingHorizontal: 24,
-    paddingBottom: 40,
+    paddingBottom: 16,
   },
   pagination: {
     flexDirection: 'row',
     justifyContent: 'center',
-    marginBottom: 32,
+    marginBottom: 16,
   },
   dot: {
     height: 8,
@@ -216,7 +219,8 @@ const styles = StyleSheet.create({
     marginHorizontal: 4,
   },
   button: {
-    height: 56,
+    minHeight: 56,
+    paddingVertical: 12,
     borderRadius: 16,
     flexDirection: 'row',
     alignItems: 'center',

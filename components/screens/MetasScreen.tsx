@@ -1,3 +1,4 @@
+import { financialDate, goalForecast } from '@/lib/financialDate';
 import React, { useState } from 'react';
 import {
   View,
@@ -23,7 +24,7 @@ const GOAL_COLORS = [
 export function MetasScreen() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  const { goals, addGoal, updateGoal, deleteGoal, getGoalSavedAmount } = useStoreContext();
+  const { goals, addGoal, updateGoal, deleteGoal, getGoalSavedAmount, today } = useStoreContext();
 
   const [modalVisible, setModalVisible] = useState(false);
   const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
@@ -152,24 +153,7 @@ export function MetasScreen() {
           goals.map(goal => {
             const savedAmount = getGoalSavedAmount(goal.id);
             const remainingAmount = Math.max(0, goal.targetAmount - savedAmount);
-            const monthsEstimated = Math.ceil(remainingAmount / goal.monthlyContribution);
-            const years = Math.floor(monthsEstimated / 12);
-            const months = monthsEstimated % 12;
-            
-            let timeString = '';
-            if (remainingAmount <= 0) {
-              timeString = 'Meta Concluída! 🎉';
-            } else {
-              if (years > 0) timeString += `${years} ano${years > 1 ? 's' : ''}`;
-              if (months > 0) timeString += `${years > 0 ? ' e ' : ''}${months} mê${months > 1 ? 's' : 's'}`;
-              if (monthsEstimated === 1 && years === 0) timeString = '1 mês';
-              if (monthsEstimated === 0) timeString = 'Concluindo este mês';
-              
-              const expectedDate = new Date();
-              expectedDate.setMonth(expectedDate.getMonth() + monthsEstimated);
-              const monthName = expectedDate.toLocaleString('pt-BR', { month: 'short' });
-              timeString += ` (${monthName}/${expectedDate.getFullYear()})`;
-            }
+            const timeString = goalForecast(remainingAmount, goal.monthlyContribution, financialDate(today));
 
             return (
               <TouchableOpacity

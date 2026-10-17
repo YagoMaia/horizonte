@@ -1,5 +1,5 @@
 // app/index.tsx
-import React, { useState, useCallback } from 'react'
+import React, { useState, useCallback, useRef } from 'react'
 import {
   View,
   Text,
@@ -13,7 +13,7 @@ import { useTheme } from '@/hooks/useTheme'
 import { useStoreContext } from '@/context/StoreContext'
 import { TabType, Account } from '@/constants/types'
 import { BottomNavigation } from '@/components/BottomNavigation'
-import { SaldosScreen } from '@/components/screens/SaldosScreen'
+import { SaldosScreen, SaldosViewState } from '@/components/screens/SaldosScreen'
 import { TotaisScreen } from '@/components/screens/TotaisScreen'
 import { HorizonteScreen } from '@/components/screens/HorizonteScreen'
 import { ContasScreen } from '@/components/screens/ContasScreen'
@@ -30,6 +30,12 @@ export default function HomePage() {
   const { colors } = useTheme()
   const store = useStoreContext()
   const [activeTab, setActiveTab] = useState<TabType>('saldos')
+  const saldosViewRef = useRef<SaldosViewState | null>(null)
+  const [initialCardId, setInitialCardId] = useState<string | undefined>()
+  const navigateFromSaldos = useCallback((tab: TabType, accountId?: string) => {
+    if (tab === 'cartao') setInitialCardId(accountId)
+    setActiveTab(tab)
+  }, [])
 
   // 👉 Estado para armazenar valores padrão dinâmicos para o modal
   const [defaultValues, setDefaultValues] = useState<{
@@ -65,7 +71,7 @@ export default function HomePage() {
 
   const renderScreen = () => {
     switch (activeTab) {
-      case 'saldos': return <SaldosScreen />
+      case 'saldos': return <SaldosScreen viewStateRef={saldosViewRef} onNavigate={navigateFromSaldos} />
       case 'totais': return <TotaisScreen />
       case 'horizonte': return <HorizonteScreen />
       case 'contas': return <ContasScreen />
@@ -76,6 +82,7 @@ export default function HomePage() {
       case 'cartao': 
         return (
           <CartaoScreen 
+            initialCardId={initialCardId}
             onSelectCard={handleSelectCard} 
           />
         )
@@ -89,12 +96,12 @@ export default function HomePage() {
             onNavigateToTotaisLayout={() => setActiveTab('totais_layout')}
           />
         )
-      default: return <SaldosScreen />
+      default: return <SaldosScreen viewStateRef={saldosViewRef} onNavigate={navigateFromSaldos} />
     }
   }
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top', 'left', 'right']}>
       <View style={[styles.header, { borderBottomColor: colors.border, backgroundColor: colors.card }]}>
         <View style={styles.headerLeft}>
           <View style={[styles.logo, { backgroundColor: colors.primary }]}>
@@ -168,6 +175,8 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   header: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,

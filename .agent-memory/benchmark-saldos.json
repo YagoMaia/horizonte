@@ -1,0 +1,15 @@
+{
+  "transactions": 50000,
+  "accounts": 40,
+  "projects": 40,
+  "goals": 40,
+  "medianMs": {
+    "previousPreparation": 249.027,
+    "indexedPreparation": 155.586,
+    "previousMonthSelection": 21.755,
+    "indexedMonthSelection": 0.072,
+    "previousFormatting1000": 44.933,
+    "cachedFormatting1000": 0.746
+  },
+  "note": "Mediana de 7 execuções após aquecimento no Node local. Inclui cálculo e indexação, não renderização nem FPS no celular. Referência anterior reproduz os laços de contas, projetos e metas; diferenças de regras de negócio não são medidas de UX."
+}

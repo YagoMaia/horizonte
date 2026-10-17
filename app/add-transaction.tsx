@@ -1,3 +1,4 @@
+import { financialDate } from '@/lib/financialDate';
 import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
@@ -116,17 +117,17 @@ export default function AddTransactionScreen() {
       setProjectId(transactionToEdit.projectId);
       setGoalIds(transactionToEdit.goalIds || []);
       setInstallments(transactionToEdit.totalInstallments || 1);
-      const d = new Date(transactionToEdit.date);
+      const d = financialDate(transactionToEdit.date);
       setDate(`${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`);
       // Inicializar campos de recorrência para edição
       if (transactionToEdit.recurrenceStartDate) {
-        const rs = new Date(transactionToEdit.recurrenceStartDate);
+        const rs = financialDate(transactionToEdit.recurrenceStartDate);
         setRecurrenceStart(`${String(rs.getDate()).padStart(2, '0')}/${String(rs.getMonth() + 1).padStart(2, '0')}/${rs.getFullYear()}`);
       } else {
         setRecurrenceStart(`${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`);
       }
       if (transactionToEdit.recurrenceEndDate) {
-        const re = new Date(transactionToEdit.recurrenceEndDate);
+        const re = financialDate(transactionToEdit.recurrenceEndDate);
         setRecurrenceEnd(`${String(re.getDate()).padStart(2, '0')}/${String(re.getMonth() + 1).padStart(2, '0')}/${re.getFullYear()}`);
       }
     } else {

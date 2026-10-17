@@ -41,7 +41,7 @@ const ALL_CARDS_VIRTUAL_ACCOUNT: Account = {
   balance: 0,
 };
 
-export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account | null) => void }) {
+export function CartaoScreen({ onSelectCard, initialCardId }: { onSelectCard?: (card: Account | null) => void; initialCardId?: string }) {
   const { colors } = useTheme();
   const {
     accounts,
@@ -58,7 +58,7 @@ export function CartaoScreen({ onSelectCard }: { onSelectCard?: (card: Account |
 
   // 👉 selectedCardId agora pode ser 'all' (Todos)
   const [selectedCardId, setSelectedCardId] = useState<string | null>(
-    creditCards.length > 0 ? 'all' : null,
+    initialCardId && creditCards.some((card: Account) => card.id === initialCardId) ? initialCardId : creditCards.length > 0 ? 'all' : null,
   );
 
   // 👉 Cria um cartão "Virtual" caso a opção Todos esteja selecionada

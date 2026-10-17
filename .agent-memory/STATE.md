@@ -1,8 +1,7 @@
-Projeto: Horizonte, finanças pessoais.
-Tarefa ativa: Nenhuma.
-Estado: pronta para iniciar.
-Último progresso: seis achados prioritários corrigidos e testados em 17-10-2026; ver CORRECOES_VALIDACAO.md.
-Decisões: baixa manual de pendências; limpeza de ajustes recalcula saldos; metas realizadas divididas entre vínculos; backup v2 completo com recuperação de falhas e migração legada.
-Últimas verificações: 26/26 testes; TypeScript aprovado; git diff --check aprovado. ESLint não instalado.
-Limitações: validação visual e nativa pendente; dependências não alteradas; não houve refatoração ampla.
-Próximo passo: validar os fluxos em celular e regularizar ferramentas de lint.
+Projeto: Horizonte.
+Última tarefa: tasks/completed/2026-10-17-mobile-backup.md
+Estado: concluída.
+Preferência: app móvel; Galaxy S23 como referência; adaptar largura, fonte e áreas seguras.
+Evidências: VALIDACAO_MOBILE.md; 53 testes e TypeScript aprovados; validação visual web móvel com backup legado.
+Dados pessoais: backup fora do repositório; testes opt-in via HORIZONTE_TEST_BACKUP.
+Limite: sem execução no aparelho físico; fonte, teclado, gestos e desempenho Android exigem validação nativa.

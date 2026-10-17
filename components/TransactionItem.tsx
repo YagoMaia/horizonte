@@ -4,6 +4,7 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
+  useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Transaction, Account, Tag } from '@/constants/types';
@@ -11,10 +12,17 @@ import { formatCurrency, formatDateShort } from '@/lib/utils';
 import { ThemeColors } from '@/constants/theme';
 import { Swipeable } from 'react-native-gesture-handler';
 import { useRouter } from 'expo-router';
+import { dayKey } from '@/lib/financialDate';
+import { PaymentStatus } from '@/lib/financialIndex';
 
 interface TransactionItemProps {
   transaction: Transaction;
   account?: Account;
+  targetAccount?: Account;
+  selectedAccountId?: string;
+  status?: PaymentStatus;
+  hideValues?: boolean;
+  onConfirm?: (transaction: Transaction) => void;
   tag?: Tag;
   colors: ThemeColors;
   onPress?: (transaction: Transaction) => void;
@@ -33,10 +41,14 @@ interface TransactionItemProps {
 export const TransactionItem = React.memo(({
   transaction,
   account,
+  targetAccount,
+  selectedAccountId,
+  status,
+  hideValues = false,
+  onConfirm,
   tag,
   colors,
   onPress,
-  onDelete,
   isFirst,
   isLast,
   showAccount = true,
@@ -47,7 +59,21 @@ export const TransactionItem = React.memo(({
   renderRightActions,
 }: TransactionItemProps) => {
   const router = useRouter();
+  const { width, fontScale } = useWindowDimensions();
+  const stacked = width / fontScale < 380;
   const isReceita = transaction.type === 'receita';
+  const isTransfer = transaction.type === 'transferencia';
+  const incoming = isTransfer && selectedAccountId === transaction.targetAccountId;
+  const outgoing = isTransfer && selectedAccountId === transaction.accountId;
+  const amountColor = isTransfer ? (incoming ? colors.success : outgoing ? colors.destructive : colors.foreground) : isReceita ? colors.success : colors.destructive;
+  const sign = isTransfer ? (incoming ? '+' : outgoing ? '-' : '') : isReceita ? '+' : '-';
+  const effectiveStatus = status || (transaction.paid && dayKey(transaction.date) <= dayKey(new Date()) ? 'realizado' : !transaction.paid && dayKey(transaction.date) < dayKey(new Date()) ? 'vencido' : 'previsto');
+  const statusLabel = effectiveStatus === 'realizado' ? (isTransfer ? 'Transferido' : isReceita ? 'Recebido' : 'Pago') : effectiveStatus === 'vencido' ? 'Vencido' : 'Previsto';
+  const setRowRef = React.useCallback((ref: Swipeable | null) => {
+    if (ref) rowRefs?.set(transaction.id, ref);
+    else rowRefs?.delete(transaction.id);
+  }, [rowRefs, transaction.id]);
+  React.useEffect(() => () => { rowRefs?.delete(transaction.id); }, [rowRefs, transaction.id]);
   const tagColor = tag?.color || colors.primary;
   
   const handlePress = () => {
@@ -67,6 +93,8 @@ export const TransactionItem = React.memo(({
         isLast && styles.txItemLast,
       ]}
       onPress={handlePress}
+      accessibilityRole="button"
+      accessibilityLabel={`${transaction.description}, ${statusLabel}, ${hideValues ? 'valor oculto' : sign + formatCurrency(transaction.amount)}`}
       activeOpacity={0.7}
     >
       {!hideIcon && (
@@ -78,16 +106,16 @@ export const TransactionItem = React.memo(({
           />
         </View>
       )}
-      <View style={[styles.txInfo, hideIcon && { paddingLeft: 4 }]}>
+      <View style={[styles.txInfo, stacked && styles.fullRow, hideIcon && { paddingLeft: 4 }]}>
         <View style={styles.descriptionRow}>
           <Text 
-            numberOfLines={1}
+            numberOfLines={2}
             ellipsizeMode="tail"
             style={[styles.txDesc, { color: colors.foreground, flexShrink: 1 }]}
           >
             {transaction.description}
           </Text>
-          {!hideIcon && transaction.paid && (
+          {effectiveStatus === 'realizado' && (
             <Ionicons 
               name='checkmark-circle' 
               size={14} 
@@ -98,13 +126,19 @@ export const TransactionItem = React.memo(({
         </View>
         <Text style={[styles.txMetaText, { color: colors.mutedForeground }]}>
           {formatDateShort(transaction.date)}
-          {showAccount && account ? ` • ${account.name}` : ''}
+          {showAccount && account ? ` • ${account.name}${isTransfer ? ` → ${targetAccount?.name || 'Destino'}` : ''}` : ''}
         </Text>
+        <Text style={[styles.txMetaText, { color: effectiveStatus === 'vencido' ? colors.destructive : colors.mutedForeground }]}>{statusLabel}{transaction.isAdjustment ? ' • Ajuste de saldo' : ''}</Text>
       </View>
-      <View style={styles.amountContainer}>
-        <Text style={[styles.txAmount, { color: isReceita ? colors.success : colors.destructive }]}>
-          {isReceita ? '+' : '-'}{formatCurrency(transaction.amount)}
+      <View style={[styles.amountContainer, stacked && styles.stackedAmount]}>
+        <Text style={[styles.txAmount, { color: amountColor }]}>
+          {hideValues ? '••••' : `${sign}${formatCurrency(transaction.amount)}`}
         </Text>
+        {onConfirm && !transaction.paid && transaction.paymentMethod !== 'credito' && (
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Confirmar ${isReceita ? 'recebimento' : 'pagamento'} de ${transaction.description}`} onPress={(event) => { event.stopPropagation(); onConfirm(transaction); }} style={{ paddingVertical: 10, paddingHorizontal: 4 }}>
+            <Text style={{ color: colors.foreground, textDecorationLine: 'underline', fontSize: 12 }}>Confirmar</Text>
+          </TouchableOpacity>
+        )}
       </View>
     </TouchableOpacity>
   );
@@ -112,7 +146,7 @@ export const TransactionItem = React.memo(({
   if (swipeable && renderRightActions) {
     return (
       <Swipeable
-        ref={(ref) => { if (ref && rowRefs) rowRefs.set(transaction.id, ref); }}
+        ref={setRowRef}
         renderRightActions={() => renderRightActions(transaction.id)}
         onSwipeableWillOpen={() => onSwipeableWillOpen?.(transaction.id)}
       >
@@ -127,6 +161,7 @@ export const TransactionItem = React.memo(({
 const styles = StyleSheet.create({
   txItem: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     padding: 16,
     gap: 12,
@@ -151,7 +186,10 @@ const styles = StyleSheet.create({
   txInfo: {
     flex: 1,
     flexShrink: 1,
+    minWidth: 100,
   },
+  fullRow: { flexBasis: '100%', flexGrow: 0 },
+  stackedAmount: { width: '100%', marginLeft: 0, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
   descriptionRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -160,6 +198,7 @@ const styles = StyleSheet.create({
   txDesc: {
     fontSize: 14,
     fontWeight: '600',
+    flexShrink: 1,
   },
   paidIcon: {
     flexShrink: 0,
@@ -171,6 +210,7 @@ const styles = StyleSheet.create({
     flexShrink: 0,
     alignItems: 'flex-end',
     marginLeft: 8,
+    maxWidth: '100%',
   },
   txAmount: {
     fontSize: 14,

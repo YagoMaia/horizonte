@@ -6,21 +6,24 @@ import { Project, Transaction } from '@/constants/types';
 import { useStoreContext } from '@/context/StoreContext';
 import { formatCurrency } from '@/lib/utils';
 import { TransactionItem } from './TransactionItem';
+import { financialDate } from '@/lib/financialDate';
 
 interface Props {
   project: Project | null;
   onClose: () => void;
+  hideValues?: boolean;
 }
 
-export function ProjectTransactionsModal({ project, onClose }: Props) {
+export function ProjectTransactionsModal({ project, onClose, hideValues = false }: Props) {
   const { colors } = useTheme();
-  const { transactions, getProjectSpent } = useStoreContext();
+  const { transactions, getProjectSpent, financialIndex } = useStoreContext();
+  const money = (value: number) => hideValues ? '••••' : formatCurrency(value);
 
   const projectTransactions = useMemo(() => {
     if (!project) return [];
     return transactions
       .filter((tx) => tx.projectId === project.id)
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      .sort((a, b) => financialDate(b.date).getTime() - financialDate(a.date).getTime());
   }, [project, transactions]);
 
   const totalSpent = useMemo(() => {
@@ -38,20 +41,17 @@ export function ProjectTransactionsModal({ project, onClose }: Props) {
     return totalSpent > project.targetBudget;
   }, [project, totalSpent]);
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const handlePressTx = useCallback((tx: Transaction) => {
-    // Aqui você pode adicionar lógica para abrir detalhes se necessário
-  }, []);
-
   const renderItem = useCallback(({ item: tx }: { item: Transaction }) => {
     return (
       <TransactionItem
         transaction={tx}
         colors={colors}
         showAccount={false}
+        hideValues={hideValues}
+        status={financialIndex.metadata.get(tx.id)?.status}
       />
     );
-  }, [colors]);
+  }, [colors, hideValues, financialIndex]);
 
   const keyExtractor = useCallback((item: Transaction) => item.id, []);
 
@@ -68,7 +68,7 @@ export function ProjectTransactionsModal({ project, onClose }: Props) {
         <View style={[styles.modalContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <View style={styles.header}>
             <Text style={[styles.modalTitle, { color: colors.foreground }]}>{project.name}</Text>
-            <TouchableOpacity onPress={onClose} style={[styles.closeBtn, { backgroundColor: colors.background }]}>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Fechar projeto" onPress={onClose} style={[styles.closeBtn, { backgroundColor: colors.background }]}>
               <Ionicons name="close" size={20} color={colors.foreground} />
             </TouchableOpacity>
           </View>
@@ -87,10 +87,10 @@ export function ProjectTransactionsModal({ project, onClose }: Props) {
             </View>
             <View style={styles.summaryTextRow}>
               <Text style={[styles.summarySpent, { color: isOverBudget ? colors.destructive : colors.foreground }]}>
-                {formatCurrency(totalSpent)}
+                Comprometido: {money(totalSpent)}
               </Text>
               <Text style={[styles.summaryBudget, { color: colors.mutedForeground }]}>
-                Meta: <Text style={{ color: colors.foreground, fontWeight: '600' }}>{formatCurrency(project.targetBudget)}</Text>
+                Orçamento: <Text style={{ color: colors.foreground, fontWeight: '600' }}>{money(project.targetBudget)}</Text>
               </Text>
             </View>
           </View>
@@ -168,6 +168,8 @@ const styles = StyleSheet.create({
   },
   summaryTextRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
     justifyContent: 'space-between',
     alignItems: 'center',
   },

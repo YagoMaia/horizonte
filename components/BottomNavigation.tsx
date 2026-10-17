@@ -31,6 +31,9 @@ export function BottomNavigation({ activeTab, onTabChange, onAddClick }: BottomN
       key={tab.id}
       style={styles.tab}
       onPress={() => onTabChange(tab.id)}
+      accessibilityRole="tab"
+      accessibilityLabel={tab.label}
+      accessibilityState={{ selected: activeTab === tab.id }}
       activeOpacity={0.7}
     >
       <Ionicons
@@ -71,6 +74,8 @@ export function BottomNavigation({ activeTab, onTabChange, onAddClick }: BottomN
           }
         ]}
         onPress={onAddClick}
+        accessibilityRole="button"
+        accessibilityLabel="Adicionar lançamento"
         activeOpacity={0.85}
       >
         <Ionicons name="add" size={28} color="#FFFFFF" />
@@ -91,6 +96,8 @@ const styles = StyleSheet.create({
   },
   tab: {
     flex: 1,
+    minWidth: 0,
+    minHeight: 48,
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 4,
@@ -99,6 +106,8 @@ const styles = StyleSheet.create({
   tabLabel: {
     fontSize: 10,
     fontWeight: '500',
+    textAlign: 'center',
+    maxWidth: '100%',
   },
   addButton: {
     width: 56,

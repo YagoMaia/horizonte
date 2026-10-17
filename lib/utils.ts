@@ -1,37 +1,32 @@
 import { Account, Transaction } from '@/constants/types';
+import { financialDate, dayKey } from './financialDate';
+
+const currencyFormatter = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+const dateFormatter = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+const shortDateFormatter = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short' });
 
 export function formatCurrency(value: number): string {
-  return new Intl.NumberFormat('pt-BR', {
-    style: 'currency',
-    currency: 'BRL',
-  }).format(value);
+  return currencyFormatter.format(value);
 }
 
 export function formatDate(dateString: string): string {
-  return new Intl.DateTimeFormat('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  }).format(new Date(dateString));
+  return dateFormatter.format(financialDate(dateString));
 }
 
 export function formatDateShort(dateString: string): string {
-  return new Intl.DateTimeFormat('pt-BR', {
-    day: '2-digit',
-    month: 'short',
-  }).format(new Date(dateString));
+  return shortDateFormatter.format(financialDate(dateString));
 }
 
 // 👉 NOVA FUNÇÃO: Determina mês/ano da fatura de um lançamento específico baseado nas regras do cartão
-export function getInvoiceForTx(dateStr: string, account: any) {
+export function getInvoiceForTx(dateStr: string, account: Pick<Account, 'closingDay' | 'dueDay'>) {
   const closingDay = account?.closingDay || 25;
   const dueDay = account?.dueDay || 5;
   
   // 👉 Extração Robusta (Sênior): Evita que shifts de Timezone alterem o dia/mês pretendido
-  const parts = dateStr.split('T')[0].split('-').map(Number);
-  let y = parts[0];
-  let m = parts[1]; // 1-indexed
-  const day = parts[2];
+  const date = financialDate(dateStr);
+  let y = date.getFullYear();
+  let m = date.getMonth() + 1;
+  const day = date.getDate();
 
   if (day >= closingDay) m += 1;
   if (dueDay < closingDay) m += 1;
@@ -73,7 +68,7 @@ export function getCurrentOpenInvoiceTotal(
   if (card.type !== 'cartao_credito') return 0;
   
   // A fatura "Aberta" é aquela correspondente à data de hoje
-  const today = new Date().toISOString();
+  const today = dayKey(new Date());
   const currentInvoice = getInvoiceForTx(today, card);
   
   return getInvoiceTotal(card, transactions, currentInvoice.viewMonth, currentInvoice.viewYear);

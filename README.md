@@ -2,6 +2,12 @@
 
 App de gestão financeira pessoal convertido de Next.js para React Native com Expo.
 
+## Critérios de interface móvel
+
+O aparelho de referência do usuário é um Galaxy S23. O layout deve usar largura lógica disponível, respeitar áreas seguras e escala de fonte, sem depender da resolução física de um modelo. Conferir 320, 360 e 412 pixels lógicos e orientação horizontal; testar fonte ampliada sem limitar a acessibilidade para fazer o texto caber. Preservar rolagem e acesso aos botões quando o conteúdo cresce. A simulação web não substitui testes Android de teclado, gestos, fonte e desempenho.
+
+Para validar um backup privado, definir `HORIZONTE_TEST_BACKUP` com o caminho local e executar `npm test -- --runInBand`. Os testes opt-in leem o arquivo sem incluí-lo no repositório e usam armazenamento simulado. Não adicionar backups pessoais como fixtures versionadas. Consulte `VALIDACAO_MOBILE.md`.
+
 ## Estrutura do Projeto
 
 ```

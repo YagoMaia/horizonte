@@ -5,7 +5,10 @@ import { Transaction, Account, Tag, DEFAULT_TAGS, Project, NotificationPreferenc
 import * as NotificationService from '../services/notificationService';
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { addMonths, addYears, addWeeks, addDays, setDate } from 'date-fns';
-import { getInvoiceForTx } from '@/lib/utils';
+import { getInvoiceForTx, getInvoiceTotal } from '@/lib/utils';
+import { financialDate, dayKey } from '@/lib/financialDate';
+import { buildFinancialIndex, calculateAccountBalances, EMPTY_PROJECT } from '@/lib/financialIndex';
+import { useToday } from './useToday';
 import { recoverPendingRestore, restoreBackup as restoreBackupStorage } from '@/lib/backup';
 
 const STORAGE_KEYS = {
@@ -41,7 +44,7 @@ const DEFAULT_NOTIFICATION_PREFS: NotificationPreferences = {
 
 export function useStore() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [storedAccounts, setAccounts] = useState<Account[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [goals, setGoals] = useState<any[]>([]);
   const [tags, setTags] = useState<Tag[]>(DEFAULT_TAGS);
@@ -65,49 +68,15 @@ export function useStore() {
   const [userSettings, setUserSettings] = useState<UserSettings>(DEFAULT_USER_SETTINGS);
   const [loading, setLoading] = useState(true);
 
+  const today = useToday();
+  const financialIndex = useMemo(() => buildFinancialIndex(storedAccounts, transactions, goals, financialDate(today)), [storedAccounts, transactions, goals, today]);
+  const accounts = useMemo(() => storedAccounts.map(account => ({ ...account, balance: financialIndex.balances.get(account.id) || 0 })), [storedAccounts, financialIndex]);
   // --- MÉTODOS DE PROCESSAMENTO BASE (Sincronização) ---
 
   // 👉 REESCRITA SÊNIOR: Função Mestre Única para Sincronização de Saldo
   // Garante que o saldo bancário reflita apenas dinheiro real hoje (pago e data <= hoje).
   const syncBalances = useCallback(async (currentTransactions: Transaction[], currentAccounts: Account[]) => {
-    // Pegamos o início do dia de hoje (meia-noite local)
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const updatedAccounts = currentAccounts.map((acc) => {
-      // Cartão de crédito não possui "saldo" positivo no banco, seu saldo é exibido como fatura.
-      if (acc.type === 'cartao_credito') {
-        return { ...acc, balance: 0 };
-      }
-
-      let calculatedBalance = 0;
-      currentTransactions.forEach((tx) => {
-        // Regra 1: Somente transações efetivadas (pagas)
-        if (!tx.paid) return;
-
-        // Regra 2: Ignora o futuro no saldo de HOJE
-        // Extraímos a data do ISO sem shift de fuso horário
-        const txDateParts = tx.date.split('T')[0].split('-').map(Number);
-        const txDate = new Date(txDateParts[0], txDateParts[1] - 1, txDateParts[2]);
-        txDate.setHours(0, 0, 0, 0);
-
-        if (txDate > today) return;
-
-        // Regra 3: Soma/Subtrai baseado na conta
-        if (tx.accountId === acc.id) {
-          if (tx.type === 'receita') calculatedBalance += tx.amount;
-          else if (tx.type === 'despesa') calculatedBalance -= tx.amount;
-          else if (tx.type === 'transferencia') calculatedBalance -= tx.amount;
-        }
-
-        // Regra 4: Entradas via transferência
-        if (tx.type === 'transferencia' && tx.targetAccountId === acc.id) {
-          calculatedBalance += tx.amount;
-        }
-      });
-
-      return { ...acc, balance: calculatedBalance };
-    });
+    const updatedAccounts = calculateAccountBalances(currentAccounts, currentTransactions);
 
     await AsyncStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(updatedAccounts));
     setAccounts(updatedAccounts);
@@ -281,7 +250,7 @@ export function useStore() {
 
     pendentes.forEach(tx => {
 
-      const txDate = new Date(tx.date);
+      const txDate = financialDate(tx.date);
       const txYear = txDate.getFullYear();
       const txMonth = txDate.getMonth();
 
@@ -328,7 +297,7 @@ export function useStore() {
 
     pendentes.forEach(tx => {
 
-      const txDate = new Date(tx.date);
+      const txDate = financialDate(tx.date);
       const txYear = txDate.getFullYear();
       const txMonth = txDate.getMonth();
 
@@ -661,7 +630,7 @@ export function useStore() {
       const dueDay = targetAccount?.dueDay || 5;
 
       if (isCreditCard && tx.totalInstallments && tx.totalInstallments > 1) {
-        const parts = tx.date.split('T')[0].split('-').map(Number);
+        const parts = dayKey(tx.date).split('-').map(Number);
         const baseDate = new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0);
         const installmentsCount = tx.totalInstallments;
         const installmentAmount = tx.amount / installmentsCount;
@@ -698,7 +667,7 @@ export function useStore() {
       }
       else if (tx.recurrence !== 'unica') {
         const baseId = Date.now().toString();
-        const parts = tx.date.split('T')[0].split('-').map(Number);
+        const parts = dayKey(tx.date).split('-').map(Number);
         let baseDate = new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0);
 
         if (tx.startNextMonth) {
@@ -806,8 +775,8 @@ export function useStore() {
         if (mode === 'all') {
           idsToDelete = familyTxs.map(t => t.id);
         } else if (mode === 'future') {
-          const targetDateStr = targetTx.date.split('T')[0];
-          idsToDelete = familyTxs.filter(t => t.date.split('T')[0] >= targetDateStr).map(t => t.id);
+          const targetDateStr = dayKey(targetTx.date);
+          idsToDelete = familyTxs.filter(t => dayKey(t.date) >= targetDateStr).map(t => t.id);
         }
       }
 
@@ -830,15 +799,15 @@ export function useStore() {
       if (isPartOfFamily && mode !== 'single') {
         const baseId = oldTx.groupId || oldTx.id.split('-')[0];
         const familyTxs = transactions.filter(t => t.groupId === baseId || t.id.startsWith(`${baseId}-`));
-        const targetDateStr = oldTx.date.split('T')[0];
-        const txsToMutate = mode === 'all' ? familyTxs : familyTxs.filter(t => t.date.split('T')[0] >= targetDateStr);
+        const targetDateStr = dayKey(oldTx.date);
+        const txsToMutate = mode === 'all' ? familyTxs : familyTxs.filter(t => dayKey(t.date) >= targetDateStr);
 
         const targetAccount = accounts.find(a => a.id === updatedTx.accountId);
         const isCreditCard = targetAccount?.type === 'cartao_credito';
         const closingDay = targetAccount?.closingDay || 25;
         const dueDay = targetAccount?.dueDay || 5;
 
-        const parts = updatedTx.date.split('T')[0].split('-').map(Number);
+        const parts = dayKey(updatedTx.date).split('-').map(Number);
         const newBaseDate = new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0);
         const refIndex = oldTx.groupIndex || 0;
 
@@ -972,14 +941,7 @@ export function useStore() {
     [monthlyBudgets],
   );
 
-  const totalBalance = useMemo(() => {
-    return accounts.reduce((sum, a) => {
-      if (a.type === 'cartao_credito') {
-        return sum;
-      }
-      return sum + a.balance;
-    }, 0);
-  }, [accounts]);
+  const totalBalance = financialIndex.totalBalance;
 
   const payCreditCardInvoice = useCallback(
     async (
@@ -1000,22 +962,8 @@ export function useStore() {
         )
           return false;
 
-        const closingDay = cardAccount.closingDay || 25;
-        const dueDay = cardAccount.dueDay || 5;
-        const d = new Date(tx.date);
-
-        let m = d.getMonth() + 1;
-        let y = d.getFullYear();
-
-        if (d.getDate() >= closingDay) m += 1;
-        if (dueDay < closingDay) m += 1;
-
-        while (m > 12) {
-          m -= 12;
-          y += 1;
-        }
-
-        return (m - 1) === targetMonth && y === targetYear;
+        const invoice = getInvoiceForTx(tx.date, cardAccount);
+        return invoice.viewMonth === targetMonth && invoice.viewYear === targetYear;
       });
 
       if (invoiceTxs.length === 0) return;
@@ -1147,83 +1095,18 @@ export function useStore() {
   }, [transactions, accounts, saveTransactions, syncBalances]);
 
   const getProjectStats = useCallback((projectId: string) => {
-    if (!projectId) return { income: 0, spent: 0, available: 0 };
-    const projectTxs = transactions.filter(tx => tx.projectId === projectId);
-    
-    let income = 0;
-    let spent = 0;
-    
-    projectTxs.forEach(tx => {
-      const amount = Number(tx.amount) || 0;
-      if (tx.type === 'despesa' || tx.type === 'transferencia') {
-        spent += amount;
-      } else if (tx.type === 'receita') {
-        income += amount;
-      }
-    });
-    
-    return { income, spent, available: income - spent };
-  }, [transactions]);
-
-  // Mantendo para compatibilidade ou uso legado
-  const getProjectSpent = useCallback((projectId: string) => {
-    return getProjectStats(projectId).spent;
-  }, [getProjectStats]);
-
-  const getGoalSavedAmount = useCallback((goalId: string) => {
-    const goal = goals.find(g => g.id === goalId);
-    if (!goal) return 0;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const validGoalIds = new Set(goals.map(g => g.id));
-    const cents = transactions.reduce((sum, tx) => {
-      if (!tx.paid || !tx.goalIds?.includes(goalId)) return sum;
-      const [year, month, day] = tx.date.split('T')[0].split('-').map(Number);
-      const date = new Date(year, month - 1, day);
-      if (!Number.isFinite(date.getTime()) || date > today) return sum;
-      // Vincular um lançamento significa destiná-lo como aporte; repartir evita dupla contagem.
-      const ids = [...new Set(tx.goalIds)].filter(id => validGoalIds.has(id)).sort();
-      const amount = Math.round(tx.amount * 100);
-      if (!Number.isFinite(amount) || amount <= 0) return sum;
-      const share = Math.floor(amount / ids.length);
-      const remainder = amount % ids.length;
-      return sum + share + (ids.indexOf(goalId) < remainder ? 1 : 0);
-    }, Math.round((goal.savedAmount || 0) * 100));
-    return cents / 100;
-  }, [transactions, goals]);
-
+    const stats = financialIndex.projects.get(projectId) || EMPTY_PROJECT;
+    return { income: stats.income, spent: stats.spent, available: stats.available };
+  }, [financialIndex]);
+  const getProjectSpent = useCallback((projectId: string) => getProjectStats(projectId).spent, [getProjectStats]);
+  const getGoalSavedAmount = useCallback((goalId: string) => financialIndex.goalAmounts.get(goalId) || 0, [financialIndex]);
   const getInvoiceTotalForMonth = useCallback((creditCardId: string, targetMonth: number, targetYear: number) => {
-    const cardAccount = accounts.find((a) => a.id === creditCardId);
-    if (!cardAccount || cardAccount.type !== 'cartao_credito') return 0;
-  
-    const closingDay = cardAccount.closingDay || 25;
-    const dueDay = cardAccount.dueDay || 5;
-    let invoiceTotal = 0;
-  
-    transactions.forEach((tx) => {
-      if (tx.accountId !== creditCardId || tx.paymentMethod !== 'credito') return;
-  
-      const d = new Date(tx.date);
-      let m = d.getMonth() + 1;
-      let y = d.getFullYear();
-  
-      if (d.getDate() >= closingDay) m += 1;
-      if (dueDay < closingDay) m += 1;
-  
-      while (m > 12) {
-        m -= 12;
-        y += 1;
-      }
-  
-      if ((m - 1) === targetMonth && y === targetYear) {
-        invoiceTotal += (tx.type === 'receita' ? -tx.amount : tx.amount);
-      }
-    });
-  
-    return invoiceTotal;
-  }, [transactions, accounts]);
-
+    const card = financialIndex.accountById.get(creditCardId);
+    return card ? getInvoiceTotal(card, transactions, targetMonth, targetYear) : 0;
+  }, [financialIndex, transactions]);
   return {
+    financialIndex,
+    today,
     restoreBackup,
     notificationPreferences,
     toggleNotificationPreference,
