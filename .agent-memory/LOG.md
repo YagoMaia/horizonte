@@ -24,3 +24,5 @@
 2026-10-20 BRT: correção da fatura inicial em Cartões concluída. A tela abre a próxima competência de vencimento e mantém a escolha salva. TypeScript e 21 suítes/120 testes com backup privado local aprovados. Ver CORRECOES_CARTOES.md.
 2026-10-20 BRT: iniciada inclusão de ação Cancelar pagamento na fatura de cartão.
 2026-10-20 BRT: ação Cancelar pagamento adicionada às faturas com pagamento registrado. Ela reverte somente o registro local e reabre a fatura. TypeScript e 22 suítes/130 testes com backup privado local aprovados. Ver CORRECOES_CARTOES.md.
+2026-10-20 BRT: iniciada preparação para geração de APK. Adicionados perfil EAS, versionCode Android e scripts de build.
+2026-10-20 BRT: projeto preparado para gerar APK. Adicionados eas.json, versionCode Android, scripts EAS e instruções. Configuração Expo, TypeScript e 22 suítes/130 testes com backup privado local aprovados.

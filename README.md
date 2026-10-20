@@ -68,6 +68,23 @@ npx expo start
 - Para iOS: Xcode + Simulator
 - Para Android: Android Studio + Emulator ou dispositivo físico com Expo Go
 
+## Gerar APK para instalar no Android
+
+O projeto possui o perfil `preview` em `eas.json`, configurado para gerar um APK assinado e instalável diretamente no celular. É necessário ter uma conta Expo.
+
+```bash
+# Entre na sua conta Expo (necessário apenas uma vez neste computador)
+npx eas-cli@latest login
+
+# Vincula o projeto à conta Expo e cria a configuração remota na primeira vez
+npm run eas:configure
+
+# Gera o APK; na primeira execução, escolha criar a chave Android quando solicitado
+npm run build:apk
+```
+
+Ao final, o EAS mostrará um link para baixar o arquivo `.apk`. Abra-o no celular e permita a instalação a partir dessa origem. Para publicar na Google Play, use o perfil `production`, que gera um `.aab`.
+
 ## Diferenças para a versão Web
 
 | Web (Next.js)           | Mobile (React Native)                   |

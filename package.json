@@ -10,6 +10,8 @@
     "prebuild": "expo prebuild -p android",
     "build:debug": "npm run prebuild && cd android && gradlew assembleDebug",
     "build:release": "npm run prebuild && cd android && gradlew assembleRelease",
+    "eas:configure": "npx eas-cli@latest build:configure",
+    "build:apk": "npx eas-cli@latest build --platform android --profile preview",
     "test": "jest",
     "lint": "eslint ."
   },
