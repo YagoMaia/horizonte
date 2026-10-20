@@ -18,7 +18,7 @@ import * as FileSystem from 'expo-file-system'
 import * as Sharing from 'expo-sharing'
 import * as DocumentPicker from 'expo-document-picker'
 import * as Notifications from 'expo-notifications'
-import { requestPermissions } from '@/services/notificationService'
+import { DEFAULT_NOTIFICATION_CHANNEL_ID, requestPermissions } from '@/services/notificationService'
 import { PRIMARY_COLORS } from '@/constants/theme'
 import { TagManagementModal } from '../TagManagementModal'
 import { AdjustmentManagementModal } from '../AdjustmentManagementModal'
@@ -116,9 +116,14 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavig
 
   const handleSaveTime = async () => {
     if (editingTimeKey) {
-      await updateNotificationTime(editingTimeKey, tempHour, tempMinute)
-      setTimePickerVisible(false)
-      setEditingTimeKey(null)
+      try {
+        await updateNotificationTime(editingTimeKey, tempHour, tempMinute)
+        setTimePickerVisible(false)
+        setEditingTimeKey(null)
+      } catch {
+        if (Platform.OS === 'web') alert('Não foi possível atualizar o horário da notificação.')
+        else Alert.alert('Erro', 'Não foi possível atualizar o horário da notificação.')
+      }
     }
   }
 
@@ -136,13 +141,18 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavig
   const currentColorLabel = PRIMARY_COLORS.find(c => c.value === primaryColor)?.label || 'Customizada'
 
   const handleNotificationToggle = async (key: 'dailyReminders' | 'expenseReminders' | 'creditCardAlerts', enabled: boolean) => {
-    if (!enabled) {
-      await toggleNotificationPreference(key, false)
-      return
+    try {
+      if (!enabled) {
+        await toggleNotificationPreference(key, false)
+        return
+      }
+      if (await requestPermissions()) await toggleNotificationPreference(key, true)
+      else if (Platform.OS === 'web') alert('Permissão necessária para notificações.')
+      else Alert.alert('Permissão necessária', 'Autorize as notificações nas configurações do dispositivo.')
+    } catch {
+      if (Platform.OS === 'web') alert('Não foi possível atualizar a notificação.')
+      else Alert.alert('Erro', 'Não foi possível atualizar a notificação.')
     }
-    if (await requestPermissions()) await toggleNotificationPreference(key, true)
-    else if (Platform.OS === 'web') alert('Permissão necessária para notificações.')
-    else Alert.alert('Permissão necessária', 'Autorize as notificações nas configurações do dispositivo.')
   }
 
   const handleSyncBalances = async () => {
@@ -208,8 +218,9 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavig
           sound: true,
         },
         trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
           seconds: 5,
-          channelId: 'default',
+          channelId: DEFAULT_NOTIFICATION_CHANNEL_ID,
         },
       });
       if (Platform.OS === 'web') {
@@ -503,16 +514,16 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavig
               accessibilityRole="button"
               accessibilityLabel="Editar horário dos lembretes diários"
               onPress={() => openTimePicker('dailyReminderTime')}
-              disabled={!(notificationPreferences?.dailyReminders ?? true)}
+              disabled={!(notificationPreferences?.dailyReminders ?? false)}
               style={[
                 styles.editIconContainer, 
-                { opacity: (notificationPreferences?.dailyReminders ?? true) ? 1 : 0.3 }
+                { opacity: (notificationPreferences?.dailyReminders ?? false) ? 1 : 0.3 }
               ]}
             >
               <Ionicons name="pencil" size={20} color="#FFF" />
             </TouchableOpacity>
             <Switch
-              value={notificationPreferences?.dailyReminders ?? true}
+              value={notificationPreferences?.dailyReminders ?? false}
               accessibilityLabel="Ativar lembretes diários"
               onValueChange={(value) => handleNotificationToggle('dailyReminders', value)}
               trackColor={{ true: colors.primary, false: colors.border }}
@@ -524,24 +535,24 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavig
         <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
           <View style={styles.switchItem}>
             <View style={{ flex: 1, paddingRight: 16 }}>
-              <Text style={[styles.switchLabel, { color: colors.foreground }]}>Lembrete de Despesas</Text>
-              <Text style={[styles.switchDesc, { color: colors.mutedForeground }]}>Avisar sobre o pagamento de despesas registradas.</Text>
+              <Text style={[styles.switchLabel, { color: colors.foreground }]}>Registro de Despesas</Text>
+              <Text style={[styles.switchDesc, { color: colors.mutedForeground }]}>Lembrar de registrar os gastos do dia.</Text>
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
               <TouchableOpacity 
                 accessibilityRole="button"
                 accessibilityLabel="Editar horário do lembrete de despesas"
                 onPress={() => openTimePicker('expenseReminderTime')}
-                disabled={!(notificationPreferences?.expenseReminders ?? true)}
+                disabled={!(notificationPreferences?.expenseReminders ?? false)}
                 style={[
                   styles.editIconContainer, 
-                  { opacity: (notificationPreferences?.expenseReminders ?? true) ? 1 : 0.3 }
+                  { opacity: (notificationPreferences?.expenseReminders ?? false) ? 1 : 0.3 }
                 ]}
               >
                 <Ionicons name="pencil" size={20} color="#FFF" />
               </TouchableOpacity>
               <Switch
-                value={notificationPreferences?.expenseReminders ?? true}
+                value={notificationPreferences?.expenseReminders ?? false}
                 accessibilityLabel="Ativar lembrete de despesas"
                 onValueChange={(value) => handleNotificationToggle('expenseReminders', value)}
                 trackColor={{ true: colors.primary, false: colors.border }}
@@ -554,24 +565,24 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavig
         <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
           <View style={styles.switchItem}>
             <View style={{ flex: 1, paddingRight: 16 }}>
-              <Text style={[styles.switchLabel, { color: colors.foreground }]}>Alertas de Cartão</Text>
-              <Text style={[styles.switchDesc, { color: colors.mutedForeground }]}>Avisar sobre o vencimento da fatura dos cartões.</Text>
+              <Text style={[styles.switchLabel, { color: colors.foreground }]}>Lembrete de Cartão</Text>
+              <Text style={[styles.switchDesc, { color: colors.mutedForeground }]}>Lembrar de conferir as faturas do cartão.</Text>
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
               <TouchableOpacity 
                 accessibilityRole="button"
                 accessibilityLabel="Editar horário dos alertas de cartão"
                 onPress={() => openTimePicker('creditCardAlertTime')}
-                disabled={!(notificationPreferences?.creditCardAlerts ?? true)}
+                disabled={!(notificationPreferences?.creditCardAlerts ?? false)}
                 style={[
                   styles.editIconContainer, 
-                  { opacity: (notificationPreferences?.creditCardAlerts ?? true) ? 1 : 0.3 }
+                  { opacity: (notificationPreferences?.creditCardAlerts ?? false) ? 1 : 0.3 }
                 ]}
               >
                 <Ionicons name="pencil" size={20} color="#FFF" />
               </TouchableOpacity>
               <Switch
-                value={notificationPreferences?.creditCardAlerts ?? true}
+                value={notificationPreferences?.creditCardAlerts ?? false}
                 accessibilityLabel="Ativar alertas de cartão"
                 onValueChange={(value) => handleNotificationToggle('creditCardAlerts', value)}
                 trackColor={{ true: colors.primary, false: colors.border }}

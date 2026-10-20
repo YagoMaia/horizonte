@@ -25,6 +25,8 @@ export const AccountItem = React.memo(({
   onDelete, 
   onSetPrimary 
 }: AccountItemProps) => {
+  const canBePrimary = account.type !== 'cartao_credito';
+
   return (
     <View
       style={[
@@ -87,10 +89,12 @@ export const AccountItem = React.memo(({
         )}
 
         <View style={styles.accountActions}>
-          {!isPrimary && (
+          {canBePrimary && !isPrimary && (
             <TouchableOpacity
               onPress={() => onSetPrimary(account.id)}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityRole='button'
+              accessibilityLabel={`Definir ${account.name} como conta principal`}
             >
               <Ionicons
                 name='star-outline'
@@ -99,7 +103,7 @@ export const AccountItem = React.memo(({
               />
             </TouchableOpacity>
           )}
-          {isPrimary && (
+          {canBePrimary && isPrimary && (
             <Ionicons
               name='star'
               size={16}
@@ -109,6 +113,8 @@ export const AccountItem = React.memo(({
           <TouchableOpacity
             onPress={() => onEdit(account)}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityRole='button'
+            accessibilityLabel={`Editar ${account.name}`}
           >
             <Ionicons
               name='pencil-outline'
@@ -119,6 +125,8 @@ export const AccountItem = React.memo(({
           <TouchableOpacity
             onPress={() => onDelete(account)}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityRole='button'
+            accessibilityLabel={`Excluir ${account.name}`}
           >
             <Ionicons
               name='trash-outline'

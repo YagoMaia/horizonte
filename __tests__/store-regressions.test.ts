@@ -11,6 +11,7 @@ jest.mock('../services/notificationService', () => ({
   scheduleDailyReminder: jest.fn(), scheduleExpenseReminder: jest.fn(),
   scheduleCreditCardAlert: jest.fn(), cancelDailyReminder: jest.fn(),
   cancelExpenseReminder: jest.fn(), cancelCreditCardAlert: jest.fn(),
+  hasNotificationPermission: jest.fn(async () => false),
 }));
 
 const account: Account = { id: 'bank', name: 'Banco', type: 'corrente', balance: 0, color: '#000', icon: 'wallet' };
@@ -123,4 +124,36 @@ it('mantém receitas e despesas vencidas pendentes ao reabrir e recalcula apenas
   const reopened = await openStore();
   expect(reopened.result.current.totalBalance).toBe(200);
   expect(reopened.result.current.transactions.filter(t => !t.paid)).toHaveLength(2);
+});
+
+it('respeita fim mensal e mantem pago um lancamento recorrente de hoje', async () => {
+  await seed([]); const { result } = await openStore();
+  await act(async () => { await result.current.addTransaction(tx({ recurrence: 'mensal', date: '2026-01-20', recurrenceEndDate: '2026-02-10', ...{ calculatedRecurrenceCount: 2 } })); });
+  expect(result.current.transactions).toHaveLength(1);
+  const today = require('../lib/financialDate').dayKey(new Date());
+  await act(async () => { await result.current.addTransaction({ ...tx({ date: today, recurrence: 'diaria', paid: true }), calculatedRecurrenceCount: 1 }); });
+  expect(result.current.transactions[0].paid).toBe(true);
+});
+it('dias uteis iniciam na segunda e rejeitam intervalo sem ocorrencias', async () => {
+  await seed([]); const { result } = await openStore();
+  await act(async () => { await result.current.addTransaction({ ...tx({ recurrence: 'dias_uteis', date: '2026-10-17', recurrenceEndDate: '2026-10-20' }), calculatedRecurrenceCount: 2 }); });
+  expect(result.current.transactions.map(t => require('../lib/financialDate').dayKey(t.date))).toEqual(['2026-10-19', '2026-10-20']);
+  await act(async () => { await expect(result.current.addTransaction(tx({ recurrence: 'dias_uteis', date: '2026-10-17', recurrenceEndDate: '2026-10-18' }))).rejects.toThrow('ocorrências'); });
+});
+it('distribui centavos das parcelas preservando o total', async () => {
+  await seed([], [{ ...account, type: 'cartao_credito' }]); const { result } = await openStore();
+  await act(async () => { await result.current.addTransaction(tx({ amount: 100, totalInstallments: 3 })); });
+  expect(result.current.transactions.map(t => t.amount)).toEqual([33.34, 33.33, 33.33]);
+  expect(result.current.transactions.map(t => t.installmentNumber)).toEqual([1, 2, 3]);
+});
+
+it('falha na exclusao preserva lancamento e saldo em memoria e armazenamento', async () => {
+  const original = tx({}); await seed([original]);
+  const { result } = await openStore();
+  const balance = result.current.accounts[0].balance;
+  (AsyncStorage.multiSet as jest.Mock).mockRejectedValueOnce(new Error('Falha na exclusao'));
+  await act(async () => { await expect(result.current.deleteTransaction(original.id)).rejects.toThrow('Falha na exclusao'); });
+  expect(result.current.transactions).toEqual([original]);
+  expect(result.current.accounts[0].balance).toBe(balance);
+  expect(JSON.parse((await AsyncStorage.getItem('@horizonte:transactions'))!)).toEqual([original]);
 });

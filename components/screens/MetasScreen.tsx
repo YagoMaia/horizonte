@@ -33,6 +33,8 @@ export function MetasScreen() {
   const [newGoalContribution, setNewGoalContribution] = useState('');
   const [newGoalSaved, setNewGoalSaved] = useState('');
   const [newGoalColor, setNewGoalColor] = useState(GOAL_COLORS[0]);
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState('');
 
   const formatCurrency = (value: number) => {
     return value.toLocaleString('pt-BR', {
@@ -57,6 +59,7 @@ export function MetasScreen() {
     setNewGoalContribution('');
     setNewGoalSaved('');
     setNewGoalColor(GOAL_COLORS[0]);
+    setFormError('');
     setModalVisible(true);
   };
 
@@ -67,13 +70,14 @@ export function MetasScreen() {
     setNewGoalContribution(formatCurrencyMask(String(goal.monthlyContribution * 100)));
     setNewGoalSaved(formatCurrencyMask(String((goal.savedAmount || 0) * 100)));
     setNewGoalColor(goal.color);
+    setFormError('');
     setModalVisible(true);
   };
 
   const handleDeleteGoal = (id: string) => {
     if (Platform.OS === 'web') {
       if (window.confirm('Tem certeza que deseja excluir esta meta?')) {
-        deleteGoal(id);
+        deleteGoal(id).catch(() => Alert.alert('Não foi possível excluir', 'Tente novamente. Seus dados foram preservados.'));
       }
     } else {
       Alert.alert(
@@ -81,46 +85,39 @@ export function MetasScreen() {
         'Tem certeza que deseja excluir esta meta?',
         [
           { text: 'Cancelar', style: 'cancel' },
-          { text: 'Excluir', style: 'destructive', onPress: () => deleteGoal(id) },
+          { text: 'Excluir', style: 'destructive', onPress: () => deleteGoal(id).catch(() => Alert.alert('Não foi possível excluir', 'Tente novamente. Seus dados foram preservados.')) },
         ]
       );
     }
   };
 
   const handleAddGoal = async () => {
-    if (!newGoalName.trim() || !newGoalTarget || !newGoalContribution) return;
-    
+    const name = newGoalName.trim();
     const targetNumeric = parseFloat(newGoalTarget.replace(/\./g, '').replace(',', '.'));
     const contribNumeric = parseFloat(newGoalContribution.replace(/\./g, '').replace(',', '.'));
     const savedNumeric = newGoalSaved ? parseFloat(newGoalSaved.replace(/\./g, '').replace(',', '.')) : 0;
 
-    if (targetNumeric <= 0 || contribNumeric <= 0) {
-      Alert.alert('Erro', 'Os valores devem ser maiores que zero.');
+    if (!name) {
+      setFormError('Informe um nome para a meta.');
       return;
     }
-    
-    if (editingGoalId) {
-      await updateGoal({
-        id: editingGoalId,
-        name: newGoalName.trim(),
-        targetAmount: targetNumeric,
-        monthlyContribution: contribNumeric,
-        savedAmount: savedNumeric,
-        color: newGoalColor,
-        icon: 'star',
-      });
-    } else {
-      await addGoal({
-        name: newGoalName.trim(),
-        targetAmount: targetNumeric,
-        monthlyContribution: contribNumeric,
-        savedAmount: savedNumeric,
-        color: newGoalColor,
-        icon: 'star',
-      });
+    if (!Number.isFinite(targetNumeric) || targetNumeric <= 0 || !Number.isFinite(contribNumeric) || contribNumeric <= 0 || !Number.isFinite(savedNumeric) || savedNumeric < 0) {
+      setFormError('Use valores válidos. Alvo e aporte devem ser maiores que zero.');
+      return;
     }
-    
-    setModalVisible(false);
+
+    setSaving(true);
+    setFormError('');
+    try {
+      const goal = { name, targetAmount: targetNumeric, monthlyContribution: contribNumeric, savedAmount: savedNumeric, color: newGoalColor, icon: 'star' };
+      if (editingGoalId) await updateGoal({ ...goal, id: editingGoalId });
+      else await addGoal(goal);
+      setModalVisible(false);
+    } catch {
+      setFormError('Não foi possível salvar a meta. Tente novamente.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -130,6 +127,8 @@ export function MetasScreen() {
         <TouchableOpacity
           style={[styles.addBtn, { backgroundColor: colors.primary }]}
           onPress={openNewGoalModal}
+          accessibilityRole="button"
+          accessibilityLabel="Criar nova meta"
         >
           <Ionicons name="add" size={24} color="#FFF" />
         </TouchableOpacity>
@@ -156,24 +155,22 @@ export function MetasScreen() {
             const timeString = goalForecast(remainingAmount, goal.monthlyContribution, financialDate(today));
 
             return (
-              <TouchableOpacity
+              <View
                 key={goal.id}
                 style={[styles.goalCard, { backgroundColor: colors.card, borderColor: colors.border }]}
-                onPress={() => handleEditGoal(goal)}
-                activeOpacity={0.7}
               >
                 <View style={styles.goalHeader}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                     <View style={[styles.goalIcon, { backgroundColor: goal.color + '20' }]}>
                       <Ionicons name="flag" size={16} color={goal.color} />
                     </View>
-                    <Text style={[styles.goalName, { color: colors.foreground }]}>{goal.name}</Text>
+                    <Text style={[styles.goalName, { color: colors.foreground }]} numberOfLines={1}>{goal.name}</Text>
                   </View>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
-                    <TouchableOpacity onPress={() => handleEditGoal(goal)}>
+                    <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Editar meta ${goal.name}`} onPress={() => handleEditGoal(goal)} hitSlop={10}>
                       <Ionicons name="pencil-outline" size={20} color={colors.primary} />
                     </TouchableOpacity>
-                    <TouchableOpacity onPress={() => handleDeleteGoal(goal.id)}>
+                    <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Excluir meta ${goal.name}`} onPress={() => handleDeleteGoal(goal.id)} hitSlop={10}>
                       <Ionicons name="trash-outline" size={20} color={colors.destructive} />
                     </TouchableOpacity>
                   </View>
@@ -200,29 +197,30 @@ export function MetasScreen() {
                     {remainingAmount <= 0 ? timeString : `Previsão: ${timeString}`}
                   </Text>
                 </View>
-              </TouchableOpacity>
+              </View>
             );
           })
         )}
       </ScrollView>
 
       {/* Modal Nova Meta */}
-      <Modal visible={modalVisible} transparent animationType="slide">
+      <Modal visible={modalVisible} transparent animationType="slide" onRequestClose={() => setModalVisible(false)}>
         <KeyboardAvoidingView 
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.modalOverlay}
         >
           <View style={[styles.modalContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+            <View style={[styles.modalHeader, { borderBottomColor: colors.border, paddingTop: Math.max(insets.top, 16) }]}>
               <Text style={[styles.modalTitle, { color: colors.foreground }]}>
                 {editingGoalId ? 'Editar Meta' : 'Nova Meta'}
               </Text>
-              <TouchableOpacity onPress={() => setModalVisible(false)} style={styles.closeBtn}>
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel="Fechar formulário" onPress={() => setModalVisible(false)} style={styles.closeBtn}>
                 <Ionicons name="close" size={24} color={colors.foreground} />
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+            <ScrollView style={styles.modalBody} contentContainerStyle={{ paddingBottom: insets.bottom + 16 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+              {!!formError && <Text accessibilityRole="alert" style={[styles.formError, { color: colors.destructive }]}>{formError}</Text>}
               <Text style={[styles.inputLabel, { color: colors.mutedForeground }]}>Nome da Meta</Text>
               <TextInput
                 style={[styles.input, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.background }]}
@@ -230,6 +228,7 @@ export function MetasScreen() {
                 placeholderTextColor={colors.mutedForeground}
                 value={newGoalName}
                 onChangeText={setNewGoalName}
+                onFocus={() => setFormError('')}
               />
 
               <Text style={[styles.inputLabel, { color: colors.mutedForeground }]}>Valor Alvo</Text>
@@ -240,6 +239,7 @@ export function MetasScreen() {
                 keyboardType="numeric"
                 value={newGoalTarget}
                 onChangeText={(text) => setNewGoalTarget(formatCurrencyMask(text))}
+                onFocus={() => setFormError('')}
               />
 
               <Text style={[styles.inputLabel, { color: colors.mutedForeground }]}>Aporte Mensal (Quanto consegue guardar?)</Text>
@@ -250,6 +250,7 @@ export function MetasScreen() {
                 keyboardType="numeric"
                 value={newGoalContribution}
                 onChangeText={(text) => setNewGoalContribution(formatCurrencyMask(text))}
+                onFocus={() => setFormError('')}
               />
 
               <Text style={[styles.inputLabel, { color: colors.mutedForeground }]}>Valor Inicial Guardado (Opcional)</Text>
@@ -260,6 +261,7 @@ export function MetasScreen() {
                 keyboardType="numeric"
                 value={newGoalSaved}
                 onChangeText={(text) => setNewGoalSaved(formatCurrencyMask(text))}
+                onFocus={() => setFormError('')}
               />
 
               <Text style={[styles.inputLabel, { color: colors.mutedForeground }]}>Cor de Destaque</Text>
@@ -268,6 +270,9 @@ export function MetasScreen() {
                   <TouchableOpacity
                     key={c}
                     onPress={() => setNewGoalColor(c)}
+                    accessibilityRole="radio"
+                    accessibilityLabel={`Usar cor ${c}`}
+                    accessibilityState={{ selected: newGoalColor === c }}
                     style={[
                       styles.colorOption,
                       { backgroundColor: c },
@@ -284,8 +289,11 @@ export function MetasScreen() {
               <TouchableOpacity
                 style={[styles.saveBtn, { backgroundColor: colors.primary }]}
                 onPress={handleAddGoal}
+                disabled={saving}
+                accessibilityRole="button"
+                accessibilityLabel="Salvar meta"
               >
-                <Text style={styles.saveBtnText}>Salvar Meta</Text>
+                <Text style={styles.saveBtnText}>{saving ? 'Salvando...' : 'Salvar Meta'}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -358,9 +366,11 @@ const styles = StyleSheet.create({
   goalName: {
     fontSize: 16,
     fontWeight: '600',
+    flexShrink: 1,
   },
   goalValues: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'space-between',
   },
   valueItem: {
@@ -410,9 +420,7 @@ const styles = StyleSheet.create({
   closeBtn: {
     padding: 4,
   },
-  modalBody: {
-    padding: 20,
-  },
+  modalBody: { padding: 20 },
   inputLabel: {
     fontSize: 14,
     marginBottom: 8,
@@ -457,4 +465,5 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
+  formError: { fontSize: 14, fontWeight: '600', marginBottom: 16 },
 });

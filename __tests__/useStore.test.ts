@@ -2,6 +2,7 @@ import { renderHook, act, waitFor } from '@testing-library/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useStore } from '../hooks/useStore';
 import { Account } from '../constants/types';
+import * as NotificationService from '../services/notificationService';
 
 // Mock do AsyncStorage
 jest.mock('@react-native-async-storage/async-storage', () =>
@@ -13,11 +14,60 @@ jest.mock('../services/notificationService', () => ({
   scheduleDailyReminder: jest.fn(), scheduleExpenseReminder: jest.fn(),
   scheduleCreditCardAlert: jest.fn(), cancelDailyReminder: jest.fn(),
   cancelExpenseReminder: jest.fn(), cancelCreditCardAlert: jest.fn(),
+  hasNotificationPermission: jest.fn(async () => false),
 }));
 
 beforeEach(async () => { jest.clearAllMocks(); await AsyncStorage.clear(); });
 
 describe('useStore hook', () => {
+  it('começa com lembretes desligados até a pessoa ativá-los', async () => {
+    const { result } = renderHook(() => useStore());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(result.current.notificationPreferences).toEqual(expect.objectContaining({
+      dailyReminders: false,
+      expenseReminders: false,
+      creditCardAlerts: false,
+    }));
+  });
+
+  it('cancela todos os lembretes antes de apagar os dados', async () => {
+    const { result } = renderHook(() => useStore());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => { await result.current.clearAllData(); });
+
+    expect(NotificationService.cancelDailyReminder).toHaveBeenCalled();
+    expect(NotificationService.cancelExpenseReminder).toHaveBeenCalled();
+    expect(NotificationService.cancelCreditCardAlert).toHaveBeenCalled();
+  });
+
+  it('protege lançamentos vinculados ao excluir ou trocar o tipo de uma conta', async () => {
+    const accounts = [
+      { id: 'bank', name: 'Banco', type: 'corrente' as const, balance: 0, color: '#000', icon: 'wallet' },
+      { id: 'cash', name: 'Carteira', type: 'carteira' as const, balance: 0, color: '#111', icon: 'cash' },
+    ];
+    const transactions = [{
+      id: 'tx', description: 'Mercado', amount: 100, type: 'despesa' as const,
+      date: '2026-10-20T12:00:00.000Z', accountId: 'bank', paid: true, recurrence: 'unica' as const,
+    }];
+    await AsyncStorage.multiSet([
+      ['@horizonte:accounts', JSON.stringify(accounts)],
+      ['@horizonte:transactions', JSON.stringify(transactions)],
+    ]);
+
+    const { result } = renderHook(() => useStore());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      await expect(result.current.deleteAccount('bank')).rejects.toThrow('possui lançamentos');
+      await expect(result.current.updateAccount({ ...result.current.accounts.find(a => a.id === 'bank')!, type: 'cartao_credito' })).rejects.toThrow('alterar o tipo');
+    });
+
+    expect(result.current.accounts).toHaveLength(2);
+    expect(result.current.transactions).toHaveLength(1);
+  });
+
   it('Cenário 1: Calculates total balance correctly after adding income and expense', async () => {
     const { result } = renderHook(() => useStore());
     await waitFor(() => expect(result.current.loading).toBe(false));
@@ -110,6 +160,75 @@ describe('useStore hook', () => {
     // Verifica a nova função centralizada
     const spent = result.current.getProjectSpent(addedProject.id);
     expect(spent).toBe(1500);
+  });
+
+  it('mantém todos os projetos quando são criados em sequência', async () => {
+    const { result } = renderHook(() => useStore());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      await Promise.all([
+        result.current.addProject({ name: 'Reforma', targetBudget: 1000, color: '#000', active: true }),
+        result.current.addProject({ name: 'Viagem', targetBudget: 2000, color: '#111', active: true }),
+      ]);
+    });
+
+    expect(result.current.projects.map(project => project.name)).toEqual(['Reforma', 'Viagem']);
+    expect(new Set(result.current.projects.map(project => project.id)).size).toBe(2);
+  });
+
+  it('desvincula lançamentos ao excluir projeto sem apagar o histórico', async () => {
+    const { result } = renderHook(() => useStore());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      await result.current.addProject({ name: 'Reforma', targetBudget: 1000, color: '#000', active: true });
+    });
+    const project = result.current.projects[0];
+    await act(async () => {
+      await result.current.addTransaction({ description: 'Material', amount: 200, type: 'despesa', date: new Date().toISOString(), accountId: 'conta', recurrence: 'unica', paid: true, projectId: project.id });
+      await result.current.deleteProject(project.id);
+    });
+
+    expect(result.current.projects).toEqual([]);
+    expect(result.current.transactions).toHaveLength(1);
+    expect(result.current.transactions[0].projectId).toBeUndefined();
+  });
+
+  it('mantém metas criadas em sequência e desvincula a meta excluída dos lançamentos', async () => {
+    const { result } = renderHook(() => useStore());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      await Promise.all([
+        result.current.addGoal({ name: 'Reserva', targetAmount: 1000, monthlyContribution: 100, savedAmount: 0, color: '#000', icon: 'flag' }),
+        result.current.addGoal({ name: 'Viagem', targetAmount: 2000, monthlyContribution: 200, savedAmount: 0, color: '#111', icon: 'flag' }),
+      ]);
+    });
+    expect(result.current.goals.map(goal => goal.name)).toEqual(['Reserva', 'Viagem']);
+    const goal = result.current.goals[0];
+
+    await act(async () => {
+      await result.current.addTransaction({ description: 'Aporte', amount: 100, type: 'receita', date: new Date().toISOString(), accountId: 'conta', recurrence: 'unica', paid: true, goalIds: [goal.id] });
+      await result.current.deleteGoal(goal.id);
+    });
+    expect(result.current.goals).toHaveLength(1);
+    expect(result.current.transactions[0].goalIds).toBeUndefined();
+  });
+
+  it('mantém categorias criadas em sequência', async () => {
+    const { result } = renderHook(() => useStore());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    const initialCount = result.current.tags.length;
+
+    await act(async () => {
+      await Promise.all([
+        result.current.addTag({ label: 'Assinaturas', icon: 'card', color: '#000' }),
+        result.current.addTag({ label: 'Freelance', icon: 'briefcase', color: '#111' }),
+      ]);
+    });
+    expect(result.current.tags).toHaveLength(initialCount + 2);
+    expect(result.current.tags.slice(-2).map(tag => tag.label)).toEqual(['Assinaturas', 'Freelance']);
   });
 
   it('Cenário 3: getProjectSpent should include both "despesa" and "transferencia"', async () => {

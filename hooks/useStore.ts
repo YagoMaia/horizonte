@@ -1,7 +1,7 @@
 // hooks/useStore.ts
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Transaction, Account, Tag, DEFAULT_TAGS, Project, NotificationPreferences, UserSettings } from '@/constants/types';
+import { Transaction, Account, Tag, DEFAULT_TAGS, Project, Goal, NotificationPreferences, UserSettings } from '@/constants/types';
 import * as NotificationService from '../services/notificationService';
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { addMonths, addYears, addWeeks, addDays, setDate } from 'date-fns';
@@ -11,6 +11,8 @@ import { buildFinancialIndex, calculateAccountBalances, EMPTY_PROJECT } from '@/
 import { useToday } from './useToday';
 import { prepareCardPayment, reverseRecordedPayment, CardPaymentRequest } from '@/lib/cardPayment';
 import { commitLedger } from '@/lib/ledgerStorage';
+import { commitProjectChange, recoverProjectWrite } from '@/lib/projectStorage';
+import { commitGoalChange, recoverGoalWrite } from '@/lib/goalStorage';
 import { recoverPendingRestore, restoreBackup as restoreBackupStorage } from '@/lib/backup';
 
 const STORAGE_KEYS = {
@@ -36,11 +38,11 @@ const DEFAULT_USER_SETTINGS: UserSettings = {
 const DEFAULT_ACCOUNTS: Account[] = [];
 const DEFAULT_TRANSACTIONS: Transaction[] = [];
 const DEFAULT_NOTIFICATION_PREFS: NotificationPreferences = {
-  dailyReminders: true,
+  dailyReminders: false,
   dailyReminderTime: { hour: 20, minute: 0 },
-  expenseReminders: true,
+  expenseReminders: false,
   expenseReminderTime: { hour: 9, minute: 0 },
-  creditCardAlerts: true,
+  creditCardAlerts: false,
   creditCardAlertTime: { hour: 8, minute: 0 }
 };
 
@@ -70,12 +72,22 @@ export function useStore() {
 
   const [userSettings, setUserSettings] = useState<UserSettings>(DEFAULT_USER_SETTINGS);
   const [loading, setLoading] = useState(true);
+  const transactionsRef = useRef<Transaction[]>([]);
+  const projectsRef = useRef<Project[]>([]);
+  const goalsRef = useRef<Goal[]>([]);
+  const tagsRef = useRef<Tag[]>([]);
+  const projectWriteQueue = useRef(Promise.resolve());
+  const goalWriteQueue = useRef(Promise.resolve());
+  const tagWriteQueue = useRef(Promise.resolve());
+
+  transactionsRef.current = transactions;
+  projectsRef.current = projects;
+  goalsRef.current = goals;
+  tagsRef.current = tags;
 
   const today = useToday();
   const financialIndex = useMemo(() => buildFinancialIndex(storedAccounts, transactions, goals, financialDate(today)), [storedAccounts, transactions, goals, today]);
   const accounts = useMemo(() => storedAccounts.map(account => ({ ...account, balance: financialIndex.balances.get(account.id) || 0 })), [storedAccounts, financialIndex]);
-  const transactionsRef = useRef(transactions);
-  transactionsRef.current = transactions;
   // --- MÉTODOS DE PROCESSAMENTO BASE (Sincronização) ---
 
   // 👉 REESCRITA SÊNIOR: Função Mestre Única para Sincronização de Saldo
@@ -93,6 +105,7 @@ export function useStore() {
   const saveTransactions = useCallback(async (data: Transaction[]) => {
     if (cardWriteLock.current) throw new Error('Aguarde a gravação do pagamento.');
     await AsyncStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(data));
+    transactionsRef.current = data;
     setTransactions(data);
   }, []);
 
@@ -103,11 +116,13 @@ export function useStore() {
 
   const saveProjects = useCallback(async (data: Project[]) => {
     await AsyncStorage.setItem(STORAGE_KEYS.PROJECTS, JSON.stringify(data));
+    projectsRef.current = data;
     setProjects(data);
   }, []);
 
   const saveTags = useCallback(async (data: Tag[]) => {
     await AsyncStorage.setItem(STORAGE_KEYS.TAGS, JSON.stringify(data));
+    tagsRef.current = data;
     setTags(data);
   }, []);
 
@@ -132,7 +147,6 @@ export function useStore() {
 
   const toggleNotificationPreference = useCallback(async (key: keyof NotificationPreferences, value: boolean) => {
     const updated = { ...notificationPreferences, [key]: value };
-    await saveNotificationPreferences(updated);
 
     if (key === 'dailyReminders') {
       if (value) await NotificationService.scheduleDailyReminder(updated.dailyReminderTime.hour, updated.dailyReminderTime.minute);
@@ -144,11 +158,12 @@ export function useStore() {
       if (value) await NotificationService.scheduleCreditCardAlert(updated.creditCardAlertTime.hour, updated.creditCardAlertTime.minute);
       else await NotificationService.cancelCreditCardAlert();
     }
+
+    await saveNotificationPreferences(updated);
   }, [notificationPreferences, saveNotificationPreferences]);
 
   const updateNotificationTime = useCallback(async (key: 'dailyReminderTime' | 'expenseReminderTime' | 'creditCardAlertTime', hour: number, minute: number) => {
     const updated = { ...notificationPreferences, [key]: { hour, minute } };
-    await saveNotificationPreferences(updated);
 
     if (key === 'dailyReminderTime' && updated.dailyReminders) {
       await NotificationService.scheduleDailyReminder(hour, minute);
@@ -157,56 +172,96 @@ export function useStore() {
     } else if (key === 'creditCardAlertTime' && updated.creditCardAlerts) {
       await NotificationService.scheduleCreditCardAlert(hour, minute);
     }
+
+    await saveNotificationPreferences(updated);
   }, [notificationPreferences, saveNotificationPreferences]);
 
-  const addProject = useCallback(async (project: Omit<Project, 'id'>) => {
-    const newProject: Project = { ...project, id: Date.now().toString() };
-    const updated = [...projects, newProject];
-    await saveProjects(updated);
-  }, [projects, saveProjects]);
+  const scheduleEnabledNotifications = useCallback(async (preferences: NotificationPreferences) => {
+    if (!(await NotificationService.hasNotificationPermission())) return;
 
-  const updateProject = useCallback(async (updatedProject: Project) => {
-    const updated = projects.map(p => p.id === updatedProject.id ? updatedProject : p);
-    await saveProjects(updated);
-  }, [projects, saveProjects]);
-
-  const deleteProject = useCallback(async (id: string) => {
-    const updatedProjects = projects.filter(p => p.id !== id);
-    await saveProjects(updatedProjects);
-
-    const updatedTxs = transactions.map(tx =>
-      tx.projectId === id ? { ...tx, projectId: undefined } : tx
-    );
-    await saveTransactions(updatedTxs);
-  }, [projects, transactions, saveProjects, saveTransactions]);
-
-  // --- MÉTODOS PARA METAS (GOALS) ---
-  const saveGoals = useCallback(async (newGoals: any[]) => {
-    try {
-      await AsyncStorage.setItem(STORAGE_KEYS.GOALS, JSON.stringify(newGoals));
-      setGoals(newGoals);
-    } catch (e) {
-      console.error('Failed to save goals', e);
-    }
+    await Promise.all([
+      preferences.dailyReminders
+        ? NotificationService.scheduleDailyReminder(preferences.dailyReminderTime.hour, preferences.dailyReminderTime.minute)
+        : NotificationService.cancelDailyReminder(),
+      preferences.expenseReminders
+        ? NotificationService.scheduleExpenseReminder(preferences.expenseReminderTime.hour, preferences.expenseReminderTime.minute)
+        : NotificationService.cancelExpenseReminder(),
+      preferences.creditCardAlerts
+        ? NotificationService.scheduleCreditCardAlert(preferences.creditCardAlertTime.hour, preferences.creditCardAlertTime.minute)
+        : NotificationService.cancelCreditCardAlert(),
+    ]);
   }, []);
 
-  const addGoal = useCallback(async (goal: Omit<any, 'id'>) => {
-    const newGoal = { ...goal, id: Date.now().toString() };
-    const updated = [...goals, newGoal];
+  const enqueueProjectWrite = useCallback(<T,>(operation: () => Promise<T>) => {
+    const write = projectWriteQueue.current.then(operation);
+    projectWriteQueue.current = write.then(() => undefined, () => undefined);
+    return write;
+  }, []);
+
+  const addProject = useCallback((project: Omit<Project, 'id'>) => enqueueProjectWrite(async () => {
+    const newProject: Project = {
+      ...project,
+      id: `project-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    };
+    const updated = [...projectsRef.current, newProject];
+    await saveProjects(updated);
+    projectsRef.current = updated;
+    return newProject;
+  }), [enqueueProjectWrite, saveProjects]);
+
+  const updateProject = useCallback((updatedProject: Project) => enqueueProjectWrite(async () => {
+    const updated = projectsRef.current.map(p => p.id === updatedProject.id ? updatedProject : p);
+    if (updated.length === projectsRef.current.length && !projectsRef.current.some(p => p.id === updatedProject.id)) {
+      throw new Error('Projeto não encontrado.');
+    }
+    await saveProjects(updated);
+    projectsRef.current = updated;
+  }), [enqueueProjectWrite, saveProjects]);
+
+  const deleteProject = useCallback((id: string) => enqueueProjectWrite(async () => {
+    const currentProjects = projectsRef.current;
+    if (!currentProjects.some(project => project.id === id)) throw new Error('Projeto não encontrado.');
+
+    const updatedProjects = currentProjects.filter(project => project.id !== id);
+    const updatedTransactions = transactionsRef.current.map(tx =>
+      tx.projectId === id ? { ...tx, projectId: undefined } : tx
+    );
+    await commitProjectChange(updatedProjects, updatedTransactions);
+    projectsRef.current = updatedProjects;
+    transactionsRef.current = updatedTransactions;
+    setProjects(updatedProjects);
+    setTransactions(updatedTransactions);
+  }), [enqueueProjectWrite]);
+
+  // --- MÉTODOS PARA METAS (GOALS) ---
+  const saveGoals = useCallback(async (newGoals: Goal[]) => {
+    await AsyncStorage.setItem(STORAGE_KEYS.GOALS, JSON.stringify(newGoals));
+    goalsRef.current = newGoals;
+    setGoals(newGoals);
+  }, []);
+
+  const enqueueGoalWrite = useCallback(<T,>(operation: () => Promise<T>) => {
+    const write = goalWriteQueue.current.then(operation);
+    goalWriteQueue.current = write.then(() => undefined, () => undefined);
+    return write;
+  }, []);
+
+  const addGoal = useCallback((goal: Omit<Goal, 'id'>) => enqueueGoalWrite(async () => {
+    const newGoal: Goal = { ...goal, id: `goal-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` };
+    const updated = [...goalsRef.current, newGoal];
     await saveGoals(updated);
-  }, [goals, saveGoals]);
+    return newGoal;
+  }), [enqueueGoalWrite, saveGoals]);
 
-  const updateGoal = useCallback(async (updatedGoal: any) => {
-    const updated = goals.map(g => g.id === updatedGoal.id ? updatedGoal : g);
-    await saveGoals(updated);
-  }, [goals, saveGoals]);
+  const updateGoal = useCallback((updatedGoal: Goal) => enqueueGoalWrite(async () => {
+    if (!goalsRef.current.some(goal => goal.id === updatedGoal.id)) throw new Error('Meta não encontrada.');
+    await saveGoals(goalsRef.current.map(goal => goal.id === updatedGoal.id ? updatedGoal : goal));
+  }), [enqueueGoalWrite, saveGoals]);
 
-  const deleteGoal = useCallback(async (id: string) => {
-    const updatedGoals = goals.filter(g => g.id !== id);
-    await saveGoals(updatedGoals);
-
-    // Remove the goal from any associated transactions
-    const updatedTxs = transactions.map(tx => {
+  const deleteGoal = useCallback((id: string) => enqueueGoalWrite(async () => {
+    if (!goalsRef.current.some(goal => goal.id === id)) throw new Error('Meta não encontrada.');
+    const updatedGoals = goalsRef.current.filter(goal => goal.id !== id);
+    const updatedTransactions = transactionsRef.current.map(tx => {
       if (tx.goalIds && tx.goalIds.includes(id)) {
         const newGoalIds = tx.goalIds.filter(gid => gid !== id);
         return { ...tx, goalIds: newGoalIds.length > 0 ? newGoalIds : undefined };
@@ -214,13 +269,12 @@ export function useStore() {
       return tx;
     });
     
-    // Check if any transactions were modified
-    const hasChanges = updatedTxs.some((tx, index) => tx.goalIds !== transactions[index].goalIds);
-    if (hasChanges) {
-      setTransactions(updatedTxs);
-      await AsyncStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(updatedTxs));
-    }
-  }, [goals, transactions, saveGoals]);
+    await commitGoalChange(updatedGoals, updatedTransactions);
+    goalsRef.current = updatedGoals;
+    transactionsRef.current = updatedTransactions;
+    setGoals(updatedGoals);
+    setTransactions(updatedTransactions);
+  }), [enqueueGoalWrite]);
 
   const updateHomeLayout = useCallback(async (newLayout: any[]) => {
     setHomeLayout(newLayout);
@@ -358,7 +412,7 @@ export function useStore() {
   const addAccount = useCallback(
     async (acc: Account) => {
       const updatedAccounts = [...accounts, acc];
-      await saveAccounts(updatedAccounts);
+      let finalTransactions = transactions;
 
       if (acc.type !== "cartao_credito" && acc.balance !== 0) {
         const now = new Date();
@@ -375,17 +429,28 @@ export function useStore() {
           recurrence: "unica",
           isAdjustment: true,
         };
-        await saveTransactions([adjustmentTx, ...transactions]);
+        finalTransactions = [adjustmentTx, ...transactions];
       }
+
+      const nextAccounts = calculateAccountBalances(updatedAccounts, finalTransactions);
+      await commitLedger(finalTransactions, nextAccounts);
+      setTransactions(finalTransactions);
+      setAccounts(nextAccounts);
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [accounts, transactions, saveAccounts, saveTransactions, notificationPreferences],
+    [accounts, transactions],
   );
 
   const updateAccount = useCallback(
     async (updatedAcc: Account, skipAdjustment = false) => {
       const oldAcc = accounts.find((a) => a.id === updatedAcc.id);
-      if (!oldAcc) return;
+      if (!oldAcc) throw new Error('Conta não encontrada.');
+
+      if (
+        oldAcc.type !== updatedAcc.type &&
+        transactions.some(tx => tx.accountId === updatedAcc.id || tx.targetAccountId === updatedAcc.id)
+      ) {
+        throw new Error('Não é possível alterar o tipo de uma conta que possui lançamentos.');
+      }
 
       let finalTransactions = transactions;
       if (
@@ -406,38 +471,42 @@ export function useStore() {
           isAdjustment: true,
         };
         finalTransactions = [adjustmentTx, ...transactions];
-        await saveTransactions(finalTransactions);
       }
 
       const updatedAccounts = accounts.map((a) =>
         a.id === updatedAcc.id ? updatedAcc : a,
       );
-      await syncBalances(finalTransactions, updatedAccounts);
+      const nextAccounts = calculateAccountBalances(updatedAccounts, finalTransactions);
+      await commitLedger(finalTransactions, nextAccounts);
+      setTransactions(finalTransactions);
+      setAccounts(nextAccounts);
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [accounts, transactions, saveTransactions, syncBalances, notificationPreferences],
+    [accounts, transactions],
   );
 
   const deleteAccount = useCallback(
     async (id: string) => {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const targetAcc = accounts.find(a => a.id === id);
+      if (!targetAcc) throw new Error('Conta não encontrada.');
+      if (accounts.length <= 1) throw new Error('É necessário manter pelo menos uma conta.');
+      if (transactions.some(tx => tx.accountId === id || tx.targetAccountId === id)) {
+        throw new Error('Esta conta possui lançamentos. Reatribua ou exclua os lançamentos antes de removê-la.');
+      }
 
       const updatedAccounts = accounts.filter((a) => a.id !== id);
-      const updatedTransactions = transactions.filter(
-        (tx) => tx.accountId !== id && tx.targetAccountId !== id,
-      );
-
-      await saveTransactions(updatedTransactions);
-      await syncBalances(updatedTransactions, updatedAccounts);
+      await commitLedger(transactions, updatedAccounts);
+      setAccounts(updatedAccounts);
     },
-    [accounts, transactions, saveTransactions, syncBalances],
+    [accounts, transactions],
   );
 
   const setPrimaryAccount = useCallback(
     async (id: string) => {
       const accIndex = accounts.findIndex((a) => a.id === id);
       if (accIndex <= 0) return;
+      if (accounts[accIndex].type === 'cartao_credito') {
+        throw new Error('Cartão de crédito não pode ser definido como conta principal.');
+      }
 
       const updated = [...accounts];
       const [acc] = updated.splice(accIndex, 1);
@@ -451,6 +520,8 @@ export function useStore() {
   const loadData = useCallback(async () => {
     try {
       await recoverPendingRestore();
+      await recoverProjectWrite();
+      await recoverGoalWrite();
       const [
         txRaw,
         accRaw,
@@ -498,19 +569,10 @@ export function useStore() {
       }
 
       if (notifPrefsRaw[1] !== null) {
-      const prefs = JSON.parse(notifPrefsRaw[1]);
-      setNotificationPreferences(prefs);
-      // Schedule notifications based on loaded preferences
-      if (prefs.dailyReminders) {
-        NotificationService.scheduleDailyReminder(prefs.dailyReminderTime.hour, prefs.dailyReminderTime.minute);
+        const prefs = JSON.parse(notifPrefsRaw[1]);
+        setNotificationPreferences(prefs);
+        await scheduleEnabledNotifications(prefs);
       }
-      if (prefs.expenseReminders) {
-        NotificationService.scheduleExpenseReminder(prefs.expenseReminderTime.hour, prefs.expenseReminderTime.minute);
-      }
-      if (prefs.creditCardAlerts) {
-        NotificationService.scheduleCreditCardAlert(prefs.creditCardAlertTime.hour, prefs.creditCardAlertTime.minute);
-      }
-    }
 
       if (homeLayoutRaw[1] !== null) {
         setHomeLayout(JSON.parse(homeLayoutRaw[1]));
@@ -526,9 +588,6 @@ export function useStore() {
         setUserSettings(JSON.parse(userSettingsRaw[1]));
       }
 
-      // Notificações agora são apenas agendadas quando a preferência é alterada pelo usuário.
-      // Removido o reagendamento forçado na inicialização para evitar notificações indesejadas no boot.
-
       // Vencimento não confirma pagamento. Reconstrói somente o saldo realizado.
       await syncBalances(loadedTransactions, loadedAccounts);
     } catch (e) {
@@ -536,7 +595,7 @@ export function useStore() {
     } finally {
       setLoading(false);
     }
-  }, [syncBalances]);
+  }, [scheduleEnabledNotifications, syncBalances]);
 
   useEffect(() => {
     loadData();
@@ -559,18 +618,19 @@ export function useStore() {
     const prefs = data.notificationPreferences;
     // Identificadores de notificações pertencem ao dispositivo, não ao backup.
     try {
-      await Promise.all([
-        prefs.dailyReminders ? NotificationService.scheduleDailyReminder(prefs.dailyReminderTime.hour, prefs.dailyReminderTime.minute) : NotificationService.cancelDailyReminder(),
-        prefs.expenseReminders ? NotificationService.scheduleExpenseReminder(prefs.expenseReminderTime.hour, prefs.expenseReminderTime.minute) : NotificationService.cancelExpenseReminder(),
-        prefs.creditCardAlerts ? NotificationService.scheduleCreditCardAlert(prefs.creditCardAlertTime.hour, prefs.creditCardAlertTime.minute) : NotificationService.cancelCreditCardAlert(),
-      ]);
+      await scheduleEnabledNotifications(prefs);
     } catch (error) {
       console.warn('Dados restaurados, mas não foi possível atualizar os lembretes.', error);
     }
     return data;
-  }, []);
+  }, [scheduleEnabledNotifications]);
 
   const clearAllData = useCallback(async () => {
+    await Promise.all([
+      NotificationService.cancelDailyReminder(),
+      NotificationService.cancelExpenseReminder(),
+      NotificationService.cancelCreditCardAlert(),
+    ]);
     await AsyncStorage.multiRemove([
       STORAGE_KEYS.TRANSACTIONS,
       STORAGE_KEYS.ACCOUNTS,
@@ -584,6 +644,8 @@ export function useStore() {
       STORAGE_KEYS.HOME_LAYOUT,
       STORAGE_KEYS.TOTAIS_LAYOUT,
       STORAGE_KEYS.USER_SETTINGS,
+      '@horizonte:project_journal',
+      '@horizonte:goal_journal',
     ]);
     setTransactions(DEFAULT_TRANSACTIONS);
     setAccounts(DEFAULT_ACCOUNTS);
@@ -614,21 +676,27 @@ export function useStore() {
     await AsyncStorage.setItem(STORAGE_KEYS.SHOW_PENDING, JSON.stringify(value));
   }, []);
 
-  const addTag = useCallback(async (tag: Omit<Tag, 'id'>) => {
-    const newTag: Tag = { ...tag, id: Date.now().toString() };
-    const updated = [...tags, newTag];
-    await saveTags(updated);
-  }, [tags, saveTags]);
+  const enqueueTagWrite = useCallback(<T,>(operation: () => Promise<T>) => {
+    const write = tagWriteQueue.current.then(operation);
+    tagWriteQueue.current = write.then(() => undefined, () => undefined);
+    return write;
+  }, []);
 
-  const updateTag = useCallback(async (updatedTag: Tag) => {
-    const updated = tags.map(t => t.id === updatedTag.id ? updatedTag : t);
-    await saveTags(updated);
-  }, [tags, saveTags]);
+  const addTag = useCallback((tag: Omit<Tag, 'id'>) => enqueueTagWrite(async () => {
+    const newTag: Tag = { ...tag, id: `tag-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` };
+    await saveTags([...tagsRef.current, newTag]);
+    return newTag;
+  }), [enqueueTagWrite, saveTags]);
 
-  const deleteTag = useCallback(async (id: string) => {
-    const updated = tags.filter(t => t.id !== id);
-    await saveTags(updated);
-  }, [tags, saveTags]);
+  const updateTag = useCallback((updatedTag: Tag) => enqueueTagWrite(async () => {
+    if (!tagsRef.current.some(tag => tag.id === updatedTag.id)) throw new Error('Categoria não encontrada.');
+    await saveTags(tagsRef.current.map(tag => tag.id === updatedTag.id ? updatedTag : tag));
+  }), [enqueueTagWrite, saveTags]);
+
+  const deleteTag = useCallback((id: string) => enqueueTagWrite(async () => {
+    if (!tagsRef.current.some(tag => tag.id === id)) throw new Error('Categoria não encontrada.');
+    await saveTags(tagsRef.current.filter(tag => tag.id !== id));
+  }), [enqueueTagWrite, saveTags]);
 
   const addTransaction = useCallback(
     async (tx: any) => {
@@ -644,7 +712,8 @@ export function useStore() {
         const parts = dayKey(tx.date).split('-').map(Number);
         const baseDate = new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0);
         const installmentsCount = tx.totalInstallments;
-        const installmentAmount = tx.amount / installmentsCount;
+        const totalCents = Math.round(tx.amount * 100);
+        const installmentCents = Math.floor(totalCents / installmentsCount);
         const baseId = Date.now().toString();
         const cleanDescription = tx.description.replace(/\s\(\d+\/\d+\)$/, "");
 
@@ -668,7 +737,8 @@ export function useStore() {
             groupId: baseId,
             groupIndex: i,
             description: `${cleanDescription} (${i + 1}/${installmentsCount})`,
-            amount: installmentAmount,
+            amount: (installmentCents + (i < totalCents % installmentsCount ? 1 : 0)) / 100,
+            installmentNumber: i + 1,
             date: currentDate.toISOString(),
             paid: false,
             paymentMethod: finalizedTxMethod,
@@ -683,6 +753,10 @@ export function useStore() {
 
         if (tx.startNextMonth) {
           baseDate = addMonths(baseDate, 1);
+        }
+
+        if (tx.recurrence === 'dias_uteis') {
+          while ([0, 6].includes(baseDate.getDay())) baseDate = addDays(baseDate, 1);
         }
 
         const maxRecurrences = tx.calculatedRecurrenceCount || 24;
@@ -735,11 +809,11 @@ export function useStore() {
               effectiveDate = addMonths(baseDate, i);
           }
 
-          const hojeFiltro = new Date();
-          hojeFiltro.setHours(0, 0, 0, 0);
-          const isFuture = effectiveDate > hojeFiltro;
+          if (dayKey(effectiveDate) < dayKey(tx.date)) continue;
+          if (tx.recurrenceEndDate && dayKey(effectiveDate) > dayKey(tx.recurrenceEndDate)) break;
+          const isFuture = dayKey(effectiveDate) > dayKey(new Date());
 
-          const isPaid = isCreditCard ? false : (i === 0 ? (isFuture ? false : tx.paid) : false);
+          const isPaid = isCreditCard ? false : (newTransactions.length === 0 ? (isFuture ? false : tx.paid) : false);
 
           newTransactions.push({
             ...tx,
@@ -763,9 +837,14 @@ export function useStore() {
         newTransactions.push(newTx);
       }
 
+      if (!newTransactions.length) throw new Error('Não há ocorrências no período selecionado.');
       const updated = [...newTransactions, ...transactions];
-      await saveTransactions(updated);
-      await syncBalances(updated, accounts);
+      if (cardWriteLock.current) throw new Error('Aguarde a gravação do pagamento.');
+      const nextAccounts = calculateAccountBalances(accounts, updated);
+      await commitLedger(updated, nextAccounts);
+      transactionsRef.current = updated;
+      setTransactions(updated);
+      setAccounts(nextAccounts);
       return newTransactions[0];
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -778,7 +857,7 @@ export function useStore() {
       if (!targetTx) return;
 
       let idsToDelete = [id];
-      const isPartOfFamily = targetTx.groupId || (/^\d+-\d+$/.test(id) && (targetTx.totalInstallments || targetTx.recurrence !== 'unica'));
+      const isPartOfFamily = targetTx.groupId || (/^\d+-\d+$/.test(id) && ((targetTx.totalInstallments || 1) > 1 || targetTx.recurrence !== 'unica'));
 
       if (isPartOfFamily && mode !== 'single') {
         const baseId = targetTx.groupId || id.split('-')[0];
@@ -794,8 +873,12 @@ export function useStore() {
       if (transactions.some(t => idsToDelete.includes(t.id) && (t.cardPaymentId || t.settledByPaymentId))) throw new Error('Estorne o registro na tela Cartões antes de excluir.');
       const updated = transactions.filter((t) => !idsToDelete.includes(t.id));
 
-      await saveTransactions(updated);
-      await syncBalances(updated, accounts);
+      if (cardWriteLock.current) throw new Error('Aguarde a gravação do pagamento.');
+      const nextAccounts = calculateAccountBalances(accounts, updated);
+      await commitLedger(updated, nextAccounts);
+      transactionsRef.current = updated;
+      setTransactions(updated);
+      setAccounts(nextAccounts);
     },
     [transactions, accounts, saveTransactions, syncBalances],
   );
@@ -900,11 +983,12 @@ export function useStore() {
           }
 
           const mutantNew = { 
+            ...mutantOld,
             ...updatedTx, 
             id: mutantOld.id, 
             groupId: mutantOld.groupId, 
             groupIndex: mutantOld.groupIndex, 
-            paid: mutantOld.paid,
+            paid: isCreditCard ? mutantOld.paid : (mutantOld.id === oldTx.id ? updatedTx.paid : mutantOld.paid),
             date: currentDate.toISOString(),
             description: finalDescription
           };
@@ -917,7 +1001,7 @@ export function useStore() {
         // Vínculos enviados como undefined são remoções explícitas; campos ausentes são preservados.
         const cleanedUpdatedTx = Object.fromEntries(
           Object.entries(updatedTx).filter(([key, value]) =>
-            value !== undefined || ['projectId', 'goalIds', 'targetAccountId'].includes(key)
+            value !== undefined || ['projectId', 'goalIds', 'targetAccountId', 'recurrenceStartDate', 'recurrenceEndDate'].includes(key)
           )
         );
         const mergedTx = {
@@ -934,8 +1018,12 @@ export function useStore() {
         finalTransactions = finalTransactions.map(t => t.id === mergedTx.id ? mergedTx : t);
       }
 
-      await saveTransactions(finalTransactions);
-      await syncBalances(finalTransactions, accounts);
+      if (cardWriteLock.current) throw new Error('Aguarde a gravação do pagamento.');
+      const nextAccounts = calculateAccountBalances(accounts, finalTransactions);
+      await commitLedger(finalTransactions, nextAccounts);
+      transactionsRef.current = finalTransactions;
+      setTransactions(finalTransactions);
+      setAccounts(nextAccounts);
     },
     [transactions, accounts, saveTransactions, syncBalances],
   );

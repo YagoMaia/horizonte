@@ -7,24 +7,26 @@ import { useTheme } from '@/hooks/useTheme';
 interface RecurrenceActionModalProps {
   visible: boolean;
   actionType: 'edit' | 'delete';
+  busy?: boolean;
   onClose: () => void;
   onSelect: (mode: 'single' | 'future' | 'all') => void;
 }
 
-export function RecurrenceActionModal({ visible, actionType, onClose, onSelect }: RecurrenceActionModalProps) {
+export function RecurrenceActionModal({ visible, actionType, onClose, onSelect, busy = false }: RecurrenceActionModalProps) {
   const { colors } = useTheme();
   
   const title = actionType === 'delete' ? 'Apagar Lançamento' : 'Editar Lançamento';
-  const subtitle = 'Esta transação faz parte de uma recorrência. Como deseja prosseguir?';
+  const subtitle = busy ? 'Aguarde a conclusão da operação...' : 'Este lançamento faz parte de uma recorrência ou parcelamento. Como deseja prosseguir?';
+  const verb = actionType === 'delete' ? 'Exclui' : 'Altera';
   const colorBase = actionType === 'delete' ? colors.destructive : colors.primary;
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={() => { if (!busy) onClose(); }}>
       <View style={styles.overlay}>
         <View style={[styles.content, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <View style={styles.header}>
             <Text style={[styles.title, { color: colors.foreground }]}>{title}</Text>
-            <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
+            <TouchableOpacity disabled={busy} accessibilityLabel="Fechar" onPress={onClose} style={styles.closeBtn}>
               <Ionicons name="close" size={24} color={colors.foreground} />
             </TouchableOpacity>
           </View>
@@ -32,27 +34,27 @@ export function RecurrenceActionModal({ visible, actionType, onClose, onSelect }
           <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>{subtitle}</Text>
 
           <View style={styles.optionsContainer}>
-            <TouchableOpacity style={[styles.optionBtn, { borderColor: colors.border }]} onPress={() => onSelect('single')}>
+            <TouchableOpacity disabled={busy} style={[styles.optionBtn, { borderColor: colors.border }]} onPress={() => onSelect('single')}>
               <Ionicons name="document-outline" size={20} color={colors.foreground} />
               <View style={styles.optionTextWrap}>
                 <Text style={[styles.optionTitle, { color: colors.foreground }]}>Somente este</Text>
-                <Text style={[styles.optionDesc, { color: colors.mutedForeground }]}>Altera apenas o mês selecionado.</Text>
+                <Text style={[styles.optionDesc, { color: colors.mutedForeground }]}>{verb} apenas o lançamento selecionado.</Text>
               </View>
             </TouchableOpacity>
 
-            <TouchableOpacity style={[styles.optionBtn, { borderColor: colors.border }]} onPress={() => onSelect('future')}>
+            <TouchableOpacity disabled={busy} style={[styles.optionBtn, { borderColor: colors.border }]} onPress={() => onSelect('future')}>
               <Ionicons name="documents-outline" size={20} color={colors.foreground} />
               <View style={styles.optionTextWrap}>
                 <Text style={[styles.optionTitle, { color: colors.foreground }]}>Este e os seguintes</Text>
-                <Text style={[styles.optionDesc, { color: colors.mutedForeground }]}>Altera este e todos os meses futuros.</Text>
+                <Text style={[styles.optionDesc, { color: colors.mutedForeground }]}>{verb} este e os lançamentos seguintes da série.</Text>
               </View>
             </TouchableOpacity>
 
-            <TouchableOpacity style={[styles.optionBtn, { borderColor: colors.border }]} onPress={() => onSelect('all')}>
+            <TouchableOpacity disabled={busy} style={[styles.optionBtn, { borderColor: colors.border }]} onPress={() => onSelect('all')}>
               <Ionicons name="copy-outline" size={20} color={colorBase} />
               <View style={styles.optionTextWrap}>
                 <Text style={[styles.optionTitle, { color: colorBase }]}>Todas as recorrências</Text>
-                <Text style={[styles.optionDesc, { color: colors.mutedForeground }]}>Altera todo o histórico passado e futuro.</Text>
+                <Text style={[styles.optionDesc, { color: colors.mutedForeground }]}>{verb} todos os lançamentos desta série, passados e futuros.</Text>
               </View>
             </TouchableOpacity>
           </View>

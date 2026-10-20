@@ -8,7 +8,6 @@ import { ThemeProvider as NavThemeProvider, DefaultTheme, DarkTheme } from '@rea
 import * as SystemUI from 'expo-system-ui'
 import { StoreProvider } from '@/context/StoreContext'
 import { ThemeProvider, useThemeContext } from '@/context/ThemeContext'
-import * as NotificationService from '../services/notificationService'
 
 // Suprime warning falso-positivo do Reanimated 3.16 com Switch nativo (bug conhecido)
 import { LogBox as RNLogBox } from 'react-native'
@@ -19,13 +18,6 @@ RNLogBox.ignoreLogs([
 
 function AppContent() {
   const { isDark, colors } = useThemeContext()
-
-  useEffect(() => {
-    async function setupNotifications() {
-      await NotificationService.requestPermissions()
-    }
-    setupNotifications()
-  }, [])
 
   useEffect(() => {
     // Set the root view background color natively to prevent white flashes

@@ -28,9 +28,9 @@ function defaults(): BackupData {
     accounts: [], transactions: [], tags: DEFAULT_TAGS, projects: [], goals: [], monthlyBudgets: {},
     showPending: true, hasSeenOnboarding: true,
     notificationPreferences: {
-      dailyReminders: true, dailyReminderTime: { hour: 20, minute: 0 },
-      expenseReminders: true, expenseReminderTime: { hour: 9, minute: 0 },
-      creditCardAlerts: true, creditCardAlertTime: { hour: 8, minute: 0 },
+      dailyReminders: false, dailyReminderTime: { hour: 20, minute: 0 },
+      expenseReminders: false, expenseReminderTime: { hour: 9, minute: 0 },
+      creditCardAlerts: false, creditCardAlertTime: { hour: 8, minute: 0 },
     },
     homeLayout: ['balance', 'accounts', 'projects', 'goals', 'transactions'].map(id => ({ id, visible: true })) as HomeSection[],
     totaisLayout: ['stats', 'category', 'period'].map(id => ({ id, visible: true })) as TotaisSection[],

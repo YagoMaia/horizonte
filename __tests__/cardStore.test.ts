@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useStore } from '../hooks/useStore';
 import { recoverLedgerWrite } from '../lib/ledgerStorage';
 jest.mock('@react-native-async-storage/async-storage', () => require('@react-native-async-storage/async-storage/jest/async-storage-mock'));
-jest.mock('../services/notificationService', () => ({ scheduleDailyReminder: jest.fn(), scheduleExpenseReminder: jest.fn(), scheduleCreditCardAlert: jest.fn(), cancelDailyReminder: jest.fn(), cancelExpenseReminder: jest.fn(), cancelCreditCardAlert: jest.fn() }));
+jest.mock('../services/notificationService', () => ({ scheduleDailyReminder: jest.fn(), scheduleExpenseReminder: jest.fn(), scheduleCreditCardAlert: jest.fn(), cancelDailyReminder: jest.fn(), cancelExpenseReminder: jest.fn(), cancelCreditCardAlert: jest.fn(), hasNotificationPermission: jest.fn(async () => false) }));
 const accounts = [{ id: 'bank', name: 'Conta', type: 'corrente', balance: 0, color: '#000', icon: 'wallet' }, { id: 'card', name: 'Cartão', type: 'cartao_credito', balance: 0, color: '#000', icon: 'card', closingDay: 25, dueDay: 5 }];
 const rows = [{ id: 'initial', accountId: 'bank', description: 'Saldo inicial', amount: 1000, type: 'receita', paymentMethod: 'debito', date: '2020-01-01', paid: true, recurrence: 'unica' }, { id: 'purchase', accountId: 'card', description: 'Compra', amount: 100, type: 'despesa', paymentMethod: 'credito', date: '2020-01-01', paid: false, recurrence: 'unica' }];
 beforeEach(async () => { jest.clearAllMocks(); await AsyncStorage.clear(); await AsyncStorage.multiSet([['@horizonte:accounts', JSON.stringify(accounts)], ['@horizonte:transactions', JSON.stringify(rows)]]); });

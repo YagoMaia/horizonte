@@ -11,6 +11,7 @@ import {
   Alert,
   Platform,
   InteractionManager,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -19,6 +20,7 @@ import { useStoreContext } from '@/context/StoreContext';
 import { formatCurrency } from '@/lib/utils';
 import { Account } from '@/constants/types';
 import { AccountItem } from '../AccountItem';
+import { parseAccountAmount, parseCardDay } from '@/lib/accountInput';
 
 const ACCOUNT_COLORS = [
   '#FF6D00', // Laranja Escuro
@@ -79,6 +81,7 @@ export function ContasScreen() {
   const [closingDay, setClosingDay] = useState('');
   const [dueDay, setDueDay] = useState('');
   const [creditLimit, setCreditLimit] = useState('');
+  const [saving, setSaving] = useState(false);
 
   const openAdd = useCallback(() => {
     setEditAccount(null);
@@ -115,7 +118,10 @@ export function ContasScreen() {
   }, []);
 
   const handleSave = async () => {
-    if (!name.trim()) return;
+    if (!name.trim()) {
+      Alert.alert('Nome obrigatório', 'Informe um nome para a conta.');
+      return;
+    }
 
     // 👉 LÓGICA DE SALVAMENTO SEPARADA
     let parsedBalance = 0;
@@ -124,38 +130,35 @@ export function ContasScreen() {
     let finalCreditLimit: number | undefined = undefined;
 
     if (type === 'cartao_credito') {
-      const parsedClosing = parseInt(closingDay, 10);
-      const parsedDue = parseInt(dueDay, 10);
-
-      // Validação Brutal: Se os dados vitais do cartão não existirem, bloqueia.
-      if (isNaN(parsedClosing) || isNaN(parsedDue)) {
-        Alert.alert(
-          'Erro',
-          'Para Cartões de Crédito, o Dia de Fechamento e o Vencimento são obrigatórios.',
-        );
+      try {
+        finalClosingDay = parseCardDay(closingDay, 'Dia de fechamento');
+        finalDueDay = parseCardDay(dueDay, 'Dia de vencimento');
+        finalCreditLimit = parseAccountAmount(creditLimit, 'o limite do cartão', false);
+      } catch (error) {
+        Alert.alert('Dados do cartão inválidos', error instanceof Error ? error.message : 'Revise os dados do cartão.');
         return;
       }
-
-      if (
-        parsedClosing < 1 ||
-        parsedClosing > 31 ||
-        parsedDue < 1 ||
-        parsedDue > 31
-      ) {
-        Alert.alert(
-          'Erro',
-          'Os dias de fechamento e vencimento devem estar entre 1 e 31.',
-        );
-        return;
-      }
-
-      parsedBalance = 0; // O saldo (liquidez) de um cartão recém criado é sempre 0
-      finalClosingDay = parsedClosing;
-      finalDueDay = parsedDue;
-      finalCreditLimit = parseFloat(creditLimit.replace(/\./g, '').replace(',', '.')) || 0;
     } else {
-      parsedBalance = parseFloat(balance.replace(',', '.')) || 0;
+      try {
+        parsedBalance = parseAccountAmount(balance, 'o saldo atual');
+      } catch (error) {
+        Alert.alert('Saldo inválido', error instanceof Error ? error.message : 'Revise o saldo informado.');
+        return;
+      }
     }
+
+    const saveAccount = async (account: Account, skipAdjustment = false) => {
+      setSaving(true);
+      try {
+        if (editAccount) await updateAccount(account, skipAdjustment);
+        else await addAccount(account);
+        setModalVisible(false);
+      } catch (error) {
+        Alert.alert('Não foi possível salvar', error instanceof Error ? error.message : 'Tente novamente.');
+      } finally {
+        setSaving(false);
+      }
+    };
 
     if (editAccount) {
       const updatedAcc: Account = {
@@ -175,9 +178,9 @@ export function ContasScreen() {
       if (hasBalanceChanged) {
         if (Platform.OS === 'web') {
           const choice = window.confirm(
-            `O saldo mudou de ${editAccount.balance} para ${parsedBalance}.\n\nClique em OK para "Lançar Ajuste" (mantém histórico).\nClique em CANCELAR para "Apenas Sincronizar" (corrige dessync de cache).`
+            `O saldo mudou de ${editAccount.balance} para ${parsedBalance}.\n\nClique em OK para lançar um ajuste no histórico. Clique em Cancelar para manter o saldo calculado pelos lançamentos.`
           );
-          await updateAccount(updatedAcc, !choice);
+          await saveAccount(updatedAcc, !choice);
         } else {
           Alert.alert(
             'Alteração de Saldo',
@@ -185,18 +188,19 @@ export function ContasScreen() {
             [
               {
                 text: 'Lançar Ajuste',
-                onPress: async () => await updateAccount(updatedAcc, false),
+                onPress: () => { void saveAccount(updatedAcc, false); },
               },
               {
-                text: 'Apenas Sincronizar',
-                onPress: async () => await updateAccount(updatedAcc, true),
+                text: 'Manter calculado',
+                onPress: () => { void saveAccount(updatedAcc, true); },
               },
               { text: 'Cancelar', style: 'cancel' },
             ]
           );
+          return;
         }
       } else {
-        await updateAccount(updatedAcc);
+        await saveAccount(updatedAcc);
       }
     } else {
       const newAccount: Account = {
@@ -210,9 +214,8 @@ export function ContasScreen() {
         dueDay: finalDueDay,
         creditLimit: finalCreditLimit,
       };
-      await addAccount(newAccount);
+      await saveAccount(newAccount);
     }
-    setModalVisible(false);
   };
 
   const handleDelete = useCallback((acc: Account) => {
@@ -222,13 +225,17 @@ export function ContasScreen() {
     }
 
     const performDelete = async () => {
-      await deleteAccount(acc.id);
+      try {
+        await deleteAccount(acc.id);
+      } catch (error) {
+        Alert.alert('Não foi possível excluir', error instanceof Error ? error.message : 'Tente novamente.');
+      }
     };
 
     if (Platform.OS === 'web') {
       if (
         window.confirm(
-          `Tem certeza que deseja excluir "${acc.name}"? Isso não apagará as transações associadas.`,
+          `Tem certeza que deseja excluir "${acc.name}"? A exclusão só será permitida se não houver lançamentos vinculados.`,
         )
       ) {
         performDelete();
@@ -236,7 +243,7 @@ export function ContasScreen() {
     } else {
       Alert.alert(
         'Excluir conta',
-        `Tem certeza que deseja excluir "${acc.name}"? Isso não apagará as transações associadas.`,
+        `Tem certeza que deseja excluir "${acc.name}"? A exclusão só será permitida se não houver lançamentos vinculados.`,
         [
           { text: 'Cancelar', style: 'cancel' },
           {
@@ -250,13 +257,15 @@ export function ContasScreen() {
   }, [accounts.length, deleteAccount]);
 
   const handleSetPrimary = useCallback((id: string) => {
-    setPrimaryAccount(id);
+    void setPrimaryAccount(id).catch((error) => {
+      Alert.alert('Não foi possível definir a conta principal', error instanceof Error ? error.message : 'Tente novamente.');
+    });
   }, [setPrimaryAccount]);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <ScrollView
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom + 32, 48) }]}
         showsVerticalScrollIndicator={false}
       >
         {/* Total */}
@@ -276,6 +285,8 @@ export function ContasScreen() {
           <TouchableOpacity
             style={[styles.addBtn, { backgroundColor: colors.primary }]}
             onPress={openAdd}
+            accessibilityRole='button'
+            accessibilityLabel='Adicionar nova conta'
           >
             <Ionicons name='add' size={18} color='#FFF' />
             <Text style={styles.addBtnText}>Nova conta</Text>
@@ -284,7 +295,13 @@ export function ContasScreen() {
 
         {/* Accounts list */}
         <View style={styles.accountsList}>
-          {accounts.map((acc) => {
+          {accounts.length === 0 ? (
+            <View style={[styles.emptyState, { borderColor: colors.border, backgroundColor: colors.card }]}>
+              <Ionicons name='wallet-outline' size={32} color={colors.mutedForeground} />
+              <Text style={[styles.emptyTitle, { color: colors.foreground }]}>Nenhuma conta cadastrada</Text>
+              <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>Cadastre uma conta ou cartão para começar.</Text>
+            </View>
+          ) : accounts.map((acc) => {
             const typeLabel =
               ACCOUNT_TYPES.find((t) => t.value === acc.type)?.label ??
               acc.type;
@@ -294,7 +311,7 @@ export function ContasScreen() {
                 account={acc}
                 colors={colors}
                 typeLabel={typeLabel}
-                isPrimary={acc.id === accounts[0]?.id}
+                isPrimary={acc.id === accounts.find(account => account.type !== 'cartao_credito')?.id}
                 onEdit={openEdit}
                 onDelete={handleDelete}
                 onSetPrimary={handleSetPrimary}
@@ -311,6 +328,10 @@ export function ContasScreen() {
         presentationStyle='pageSheet'
         onRequestClose={() => setModalVisible(false)}
       >
+        <KeyboardAvoidingView
+          style={styles.modal}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
         <View
           style={[
             styles.modal,
@@ -320,7 +341,11 @@ export function ContasScreen() {
           <View
             style={[styles.modalHeader, { borderBottomColor: colors.border }]}
           >
-            <TouchableOpacity onPress={() => setModalVisible(false)}>
+            <TouchableOpacity
+              onPress={() => setModalVisible(false)}
+              accessibilityRole='button'
+              accessibilityLabel='Fechar cadastro de conta'
+            >
               <Ionicons name='close' size={24} color={colors.foreground} />
             </TouchableOpacity>
             <Text style={[styles.modalTitle, { color: colors.foreground }]}>
@@ -329,8 +354,11 @@ export function ContasScreen() {
             <TouchableOpacity
               style={[styles.saveBtn, { backgroundColor: colors.primary }]}
               onPress={handleSave}
+              disabled={saving}
+              accessibilityRole='button'
+              accessibilityLabel={saving ? 'Salvando conta' : 'Salvar conta'}
             >
-              <Text style={styles.saveBtnText}>Salvar</Text>
+              <Text style={styles.saveBtnText}>{saving ? 'Salvando...' : 'Salvar'}</Text>
             </TouchableOpacity>
           </View>
 
@@ -358,6 +386,9 @@ export function ContasScreen() {
                     },
                   ]}
                   onPress={() => setType(t.value)}
+                  accessibilityRole='radio'
+                  accessibilityLabel={t.label}
+                  accessibilityState={{ selected: type === t.value }}
                 >
                   <Text
                     style={[
@@ -390,6 +421,7 @@ export function ContasScreen() {
               ]}
               value={name}
               onChangeText={setName}
+              accessibilityLabel='Nome da conta'
               placeholder='Ex: Nubank, Bradesco...'
               placeholderTextColor={colors.mutedForeground}
             />
@@ -412,6 +444,7 @@ export function ContasScreen() {
                   ]}
                   value={balance}
                   onChangeText={setBalance}
+                  accessibilityLabel='Saldo atual'
                   placeholder='0,00'
                   placeholderTextColor={colors.mutedForeground}
                   keyboardType='decimal-pad'
@@ -442,6 +475,7 @@ export function ContasScreen() {
                     ]}
                     value={closingDay}
                     onChangeText={setClosingDay}
+                    accessibilityLabel='Dia de fechamento'
                     placeholder='Ex: 25'
                     placeholderTextColor={colors.mutedForeground}
                     keyboardType='number-pad'
@@ -468,6 +502,7 @@ export function ContasScreen() {
                     ]}
                     value={dueDay}
                     onChangeText={setDueDay}
+                    accessibilityLabel='Dia de vencimento'
                     placeholder='Ex: 5'
                     placeholderTextColor={colors.mutedForeground}
                     keyboardType='number-pad'
@@ -498,6 +533,7 @@ export function ContasScreen() {
                   ]}
                   value={creditLimit}
                   onChangeText={setCreditLimit}
+                  accessibilityLabel='Limite total do cartão'
                   placeholder='0,00'
                   placeholderTextColor={colors.mutedForeground}
                   keyboardType='decimal-pad'
@@ -531,6 +567,9 @@ export function ContasScreen() {
                     },
                   ]}
                   onPress={() => setSelectedIcon(item.icon)}
+                  accessibilityRole='radio'
+                  accessibilityLabel={`Ícone ${item.label}`}
+                  accessibilityState={{ selected: selectedIcon === item.icon }}
                 >
                   <Ionicons
                     name={item.icon as any}
@@ -573,6 +612,9 @@ export function ContasScreen() {
                     selectedColor === color && styles.colorSwatchSelected,
                   ]}
                   onPress={() => setSelectedColor(color)}
+                  accessibilityRole='radio'
+                  accessibilityLabel={`Cor ${color}`}
+                  accessibilityState={{ selected: selectedColor === color }}
                 >
                   {selectedColor === color && (
                     <Ionicons name='checkmark' size={16} color='#FFF' />
@@ -582,6 +624,7 @@ export function ContasScreen() {
             </View>
           </ScrollView>
         </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -618,6 +661,9 @@ const styles = StyleSheet.create({
   },
   addBtnText: { color: '#FFF', fontSize: 14, fontWeight: '600' },
   accountsList: { gap: 10 },
+  emptyState: { alignItems: 'center', borderWidth: 1, borderRadius: 16, padding: 28, gap: 8 },
+  emptyTitle: { fontSize: 16, fontWeight: '700' },
+  emptyText: { textAlign: 'center', fontSize: 13, lineHeight: 18 },
   modal: { flex: 1 },
   modalHeader: {
     flexDirection: 'row',

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/hooks/useTheme';
 import { useStoreContext } from '@/context/StoreContext';
 import { formatCurrency, formatDate } from '@/lib/utils';
+import { financialDate } from '@/lib/financialDate';
 import { RecurrenceActionModal } from '@/components/RecurrenceActionModal';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
@@ -30,33 +31,41 @@ export default function TransactionDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { colors } = useTheme();
-  const { transactions, accounts, projects, goals, deleteTransaction } = useStoreContext();
+  const { transactions, accounts, projects, goals, deleteTransaction, loading } = useStoreContext();
   const insets = useSafeAreaInsets();
   
   const [recurrenceModalVisible, setRecurrenceModalVisible] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const deletingRef = useRef(false);
+  const leavingRef = useRef(false);
+
+  const leaveScreen = () => {
+    if (leavingRef.current) return;
+    leavingRef.current = true;
+    if (router.canGoBack()) router.back(); else router.replace('/');
+  };
 
   const transaction = transactions.find((t) => t.id === id);
 
   useEffect(() => {
-    if (!transaction) {
-      if (router.canGoBack()) {
-        router.back();
-      } else {
-        router.replace('/');
-      }
-    }
-  }, [transaction, router]);
+    if (!loading && !transaction && !deletingRef.current) leaveScreen();
+  // Navigation is guarded against duplicate redirects after deletion.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, transaction, router]);
 
   if (!transaction) return <View style={{ flex: 1, backgroundColor: colors.background }} />;
 
   const account = accounts.find((a) => a.id === transaction.accountId);
+  const targetAccount = accounts.find(a => a.id === (transaction.targetAccountId || transaction.toAccountId));
   const project = projects.find((p) => p.id === transaction.projectId);
   const txGoals = goals.filter((g) => transaction.goalIds && transaction.goalIds.includes(g.id));
   const isReceita = transaction.type === 'receita';
   const isTransf = transaction.type === 'transferencia';
   const amountColor = isReceita ? colors.success : isTransf ? colors.primary : colors.destructive;
 
-  const isFamily = !!(transaction.groupId || (transaction.id && String(transaction.id).includes('-')));
+  const isFamily = !!(transaction.groupId || (/^\d+-\d+$/.test(transaction.id) && ((transaction.totalInstallments || 1) > 1 || transaction.recurrence !== 'unica')));
+  const installmentNumber = transaction.installmentNumber ?? (transaction.groupIndex !== undefined ? transaction.groupIndex + 1 : undefined);
+  const displayDate = (value?: string) => value && Number.isFinite(financialDate(value).getTime()) ? formatDate(value) : '-';
 
   const paymentLinked = !!(transaction.cardPaymentId || transaction.settledByPaymentId);
   const showError = (error: unknown) => {
@@ -64,9 +73,18 @@ export default function TransactionDetailScreen() {
     if (Platform.OS === 'web') window.alert(message); else Alert.alert('Aviso', message);
   };
   const safeDelete = async (mode: 'single' | 'future' | 'all' = 'single') => {
-    try { await deleteTransaction(transaction.id, mode); } catch (error) { showError(error); }
+    if (deletingRef.current) return;
+    deletingRef.current = true;
+    setDeleting(true);
+    try {
+      await deleteTransaction(transaction.id, mode);
+      setRecurrenceModalVisible(false);
+      leaveScreen();
+    } catch (error) { showError(error); }
+    finally { deletingRef.current = false; setDeleting(false); }
   };
   const handleDelete = async () => {
+    if (deletingRef.current) return;
     if (paymentLinked) { showError(new Error('Estorne o registro na tela Cartões antes de excluir.')); return; }
     if (isFamily) {
       setRecurrenceModalVisible(true);
@@ -98,10 +116,10 @@ export default function TransactionDetailScreen() {
 
   const handleRecurrenceSelect = async (mode: 'single' | 'future' | 'all') => {
     await safeDelete(mode);
-    setRecurrenceModalVisible(false);
   };
 
   const handleEdit = () => {
+    if (deletingRef.current) return;
     if (paymentLinked) { showError(new Error('Estorne o registro na tela Cartões antes de editar.')); return; }
     router.push({
       pathname: '/add-transaction',
@@ -113,14 +131,14 @@ export default function TransactionDetailScreen() {
     <View style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top + 16 }]}>
       {/* Header */}
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
-        <TouchableOpacity onPress={() => router.back()}>
+        <TouchableOpacity accessibilityLabel="Voltar" disabled={deleting} onPress={leaveScreen}>
           <Ionicons name="arrow-back" size={24} color={colors.foreground} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: colors.foreground }]}>Detalhes do Lançamento</Text>
         <View style={{ width: 24 }} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 24 }]}>
         {/* Amount hero */}
         <View style={[
           styles.amountHero,
@@ -161,12 +179,15 @@ export default function TransactionDetailScreen() {
 
         {/* Details */}
         <View style={[styles.detailsCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <DetailRow label="Data" value={transaction.date ? formatDate(transaction.date) : '—'} colors={colors} />
+          <DetailRow label="Data" value={displayDate(transaction.date)} colors={colors} />
           <DetailRow label="Tipo" value={
             transaction.type === 'receita' ? 'Receita' :
               transaction.type === 'despesa' ? 'Despesa' : 'Transferência'
           } colors={colors} />
           <DetailRow label="Conta de Origem" value={account?.name || 'Conta não encontrada'} colors={colors} />
+          {isTransf && <DetailRow label="Conta de Destino" value={targetAccount?.name || 'Conta não encontrada'} colors={colors} />}
+          <DetailRow label="Categoria" value={transaction.tag || 'Sem categoria'} colors={colors} />
+          {(transaction.totalInstallments || 1) > 1 && <DetailRow label="Parcelamento" value={installmentNumber ? `${installmentNumber} de ${transaction.totalInstallments}` : `${transaction.totalInstallments} parcelas`} colors={colors} />}
           {project && (
             <DetailRow label="Projeto" value={project.name || 'Projeto'} colors={colors} />
           )}
@@ -174,16 +195,20 @@ export default function TransactionDetailScreen() {
             <DetailRow label={txGoals.length > 1 ? "Metas Relacionadas" : "Meta Relacionada"} value={txGoals.map(g => g.name).join(', ')} colors={colors} />
           )}
           <DetailRow label="Recorrência" value={transaction.recurrence ? (RECURRENCE_LABELS[transaction.recurrence] || '—') : '—'} colors={colors} />
+          {transaction.recurrence !== 'unica' && transaction.recurrenceStartDate && <DetailRow label="Início da recorrência" value={displayDate(transaction.recurrenceStartDate)} colors={colors} />}
+          {transaction.recurrence !== 'unica' && transaction.recurrenceEndDate && <DetailRow label="Fim da recorrência" value={displayDate(transaction.recurrenceEndDate)} colors={colors} />}
           {transaction.notes ? (
             <DetailRow label="Notas" value={transaction.notes} colors={colors} />
           ) : null}
         </View>
 
         {/* Action Buttons */}
+        {paymentLinked && <Text style={{ color: colors.mutedForeground }}>Este lançamento está vinculado a um pagamento de cartão. Para editar ou excluir, estorne o pagamento na tela Cartões.</Text>}
         <View style={styles.actionButtonsContainer}>
           <TouchableOpacity 
             style={[styles.actionButton, styles.editButton, { borderColor: colors.border, backgroundColor: colors.card }]} 
             onPress={handleEdit}
+            disabled={deleting}
             activeOpacity={0.7}
           >
             <Ionicons name="pencil-outline" size={20} color={colors.foreground} />
@@ -193,10 +218,11 @@ export default function TransactionDetailScreen() {
           <TouchableOpacity 
             style={[styles.actionButton, styles.deleteButton, { backgroundColor: colors.destructive }]} 
             onPress={handleDelete}
+            disabled={deleting}
             activeOpacity={0.7}
           >
             <Ionicons name="trash-outline" size={20} color="#FFF" />
-            <Text style={[styles.actionButtonText, { color: '#FFF' }]}>Excluir</Text>
+            <Text style={[styles.actionButtonText, { color: '#FFF' }]}>{deleting ? 'Excluindo...' : 'Excluir'}</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -204,6 +230,7 @@ export default function TransactionDetailScreen() {
       <RecurrenceActionModal
         visible={recurrenceModalVisible}
         actionType="delete"
+        busy={deleting}
         onClose={() => setRecurrenceModalVisible(false)}
         onSelect={handleRecurrenceSelect}
       />
@@ -230,7 +257,7 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  headerTitle: { fontSize: 17, fontWeight: '600' },
+  headerTitle: { fontSize: 17, fontWeight: '600', flex: 1, textAlign: 'center', marginHorizontal: 8 },
   headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -257,6 +284,7 @@ const styles = StyleSheet.create({
     letterSpacing: -1,
   },
   amountDesc: {
+    textAlign: 'center',
     fontSize: 16,
     fontWeight: '500',
   },
@@ -283,8 +311,8 @@ const styles = StyleSheet.create({
     padding: 14,
     borderTopWidth: StyleSheet.hairlineWidth,
   },
-  detailLabel: { fontSize: 13 },
-  detailValue: { fontSize: 14, fontWeight: '500' },
+  detailLabel: { fontSize: 13, flex: 1, marginRight: 12 },
+  detailValue: { fontSize: 14, fontWeight: '500', flex: 1, textAlign: 'right' },
   actionButtonsContainer: {
     flexDirection: 'row',
     gap: 12,

@@ -34,3 +34,14 @@ A inspeção visual foi feita na versão web. Teclado, gestos e fluidez nativa a
 Estorno automático se aplica aos novos pagamentos vinculados. Vínculos ausentes em pagamentos legados não são inferidos. O limite disponível é estimado; não substitui o informado pelo banco. Nenhuma operação bancária foi realizada.
 
 ESLint não estava instalado; essa verificação não foi executada. As demais verificações acima foram concluídas.
+
+## Competência inicial
+
+- A tela de cartões agora abre na próxima competência de vencimento. Por exemplo, em outubro ela inicia em novembro.
+- A escolha já feita pelo usuário continua sendo preservada ao sair e voltar à aba.
+- A virada de dezembro para janeiro também é coberta por teste.
+
+## Cancelamento de pagamento
+
+- Cada pagamento registrado na fatura agora apresenta o botão **Cancelar pagamento**.
+- A confirmação explica que a ação reabre a fatura somente no Horizonte e não cancela uma operação já feita no banco.

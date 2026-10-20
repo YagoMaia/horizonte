@@ -26,6 +26,8 @@ interface Props {
     onHiddenValuesChange?: (hidden: boolean) => void;
 }
 const labelMonth = (month: string) => financialDate(`${month}-01`).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+/** A tela abre na próxima competência de vencimento, que é a fatura a pagar após o mês atual. */
+export const defaultInvoiceMonth = (today: string) => shiftMonth(today.slice(0, 7), 1);
 export function paymentDateFromText(text: string) {
     if (!/^\d{2}\/\d{2}\/\d{4}$/.test(text))
         throw new Error('Use a data no formato DD/MM/AAAA.');
@@ -41,7 +43,7 @@ export function CartaoScreen({ onSelectCard, initialCardId, viewStateRef, onMana
     const cards = useMemo(() => accounts.filter(a => a.type === 'cartao_credito'), [accounts]);
     const initial = useRef(viewStateRef?.current);
     const [cardId, setCardId] = useState(initial.current?.cardId || initialCardId || 'all');
-    const [month, setMonth] = useState(initial.current?.month || today.slice(0, 7));
+    const [month, setMonth] = useState(initial.current?.month || defaultInvoiceMonth(today));
     const [query, setQuery] = useState(initial.current?.query || '');
     const [status, setStatus] = useState(initial.current?.status || 'todos');
     const [hidden, setHidden] = useState(hiddenValues ?? initial.current?.hidden ?? false);
@@ -81,7 +83,7 @@ export function CartaoScreen({ onSelectCard, initialCardId, viewStateRef, onMana
         viewStateRef.current = { cardId, month, query, status, hidden }; }, [cardId, month, query, status, hidden, viewStateRef]);
     const lastToday = useRef(today);
     useEffect(() => { const previous = lastToday.current.slice(0, 7); if (previous !== today.slice(0, 7))
-        setMonth(m => m === previous ? today.slice(0, 7) : m); lastToday.current = today; }, [today]);
+        setMonth(m => m === shiftMonth(previous, 1) ? defaultInvoiceMonth(today) : m); lastToday.current = today; }, [today]);
     const open = (next: NonNullable<typeof mode>) => { setMonthInput(month.split('-').reverse().join('/')); setSourceId(banks[0]?.id || ''); setAmount(''); setDate(formatDate(today)); setError(''); setMode(next); };
     const close = () => { if (!busyRef.current)
         setMode(null); };
@@ -148,7 +150,7 @@ export function CartaoScreen({ onSelectCard, initialCardId, viewStateRef, onMana
       {button('Registrar pagamento feito fora do app', () => open('mark'), remaining <= 0 && applied <= 0)}
       {banks.length === 0 && <Text style={muted}>Cadastre uma conta para registrar saída de dinheiro.</Text>}
     </>}
-    {card && payments.map((p, i) => <View key={p.id} style={[styles.card, surface]}><Text style={text}>Registro {i + 1} • {formatDate(p.date)} • {p.amount === undefined ? 'Sem débito em conta' : money(p.amount)}</Text>{button('Estornar registro ' + (i + 1), () => { setReverseId(p.id); open('reverse'); })}</View>)}
+    {card && payments.map((p, i) => <View key={p.id} style={[styles.card, surface]}><Text style={text}>Pagamento {i + 1} • {formatDate(p.date)} • {p.amount === undefined ? 'Sem débito em conta' : money(p.amount)}</Text>{button('Cancelar pagamento ' + (i + 1), () => { setReverseId(p.id); open('reverse'); })}</View>)}
     <Text style={[styles.title, text]}>Itens da fatura</Text>
     <TextInput accessibilityLabel="Buscar na fatura" placeholder="Buscar descrição" placeholderTextColor={colors.mutedForeground} value={query} onChangeText={setQuery} style={[styles.input, surface, text]}/>
     <View style={styles.wrap}>{(['todos', 'realizado', 'previsto', 'vencido'] as const).map(s => chip({ todos: 'Todos os itens', realizado: 'Realizados', previsto: 'Previstos', vencido: 'Vencidos' }[s], status === s, () => setStatus(s)))}</View>
@@ -161,7 +163,7 @@ export function CartaoScreen({ onSelectCard, initialCardId, viewStateRef, onMana
       <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <View style={[styles.modal, surface, { paddingBottom: Math.max(16, insets.bottom + 12) }]}>
           <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.section}>
-            <Text accessibilityRole="header" style={[styles.title, text]}>{mode === 'month' ? 'Escolher competência' : mode === 'reverse' ? 'Estornar registro' : mode === 'delete' ? 'Excluir lançamentos' : mode === 'partial' ? 'Antecipação parcial' : mode === 'mark' ? 'Pagamento feito fora do app' : 'Registrar pagamento'}</Text>
+            <Text accessibilityRole="header" style={[styles.title, text]}>{mode === 'month' ? 'Escolher competência' : mode === 'reverse' ? 'Cancelar pagamento' : mode === 'delete' ? 'Excluir lançamentos' : mode === 'partial' ? 'Antecipação parcial' : mode === 'mark' ? 'Pagamento feito fora do app' : 'Registrar pagamento'}</Text>
             <Text style={[styles.caption, muted]}>{card?.name} • {labelMonth(month)}</Text>
             {mode === 'month' ? <>
               <Text style={text}>Mês e ano do vencimento (MM/AAAA)</Text>
@@ -170,7 +172,7 @@ export function CartaoScreen({ onSelectCard, initialCardId, viewStateRef, onMana
             setError('Informe mês e ano válidos no formato MM/AAAA.');
             return;
         } setMonth(monthInput.split('/').reverse().join('-')); setMode(null); })}
-            </> : mode === 'reverse' ? <><Text style={text}>Desfaz o registro local, restaura o saldo da conta e reabre os itens quitados. Isso não cancela pagamentos feitos no banco.</Text>{button('Confirmar estorno local', () => void run(), busy)}</> : mode === 'delete' ? <>
+            </> : mode === 'reverse' ? <><Text style={text}>Cancela somente o registro no aplicativo, reabre a fatura e restaura o saldo local quando houver débito registrado. Isso não cancela pagamentos feitos no banco.</Text>{button('Confirmar cancelamento local', () => void run(), busy)}</> : mode === 'delete' ? <>
               <Text style={text}>A exclusão da fatura remove seus itens. A opção de famílias também alcança parcelas e recorrências em outros meses. Registros vinculados a pagamentos são protegidos.</Text>
               {button('Excluir somente esta fatura', () => void run('invoice'), busy)}
               {button('Excluir também as famílias', () => void run('family'), busy)}

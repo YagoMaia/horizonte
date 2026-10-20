@@ -1,5 +1,5 @@
 import { financialDate } from '@/lib/financialDate';
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
   Switch,
   TextInput,
   Modal,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -42,10 +43,13 @@ const RECURRENCE_OPTIONS: { value: RecurrenceType; label: string }[] = [
 export default function AddTransactionScreen() {
   const router = useRouter();
   const { accountId: initialAccountId, type: initialTypeStr, txId, initialDescription, initialAmount } = useLocalSearchParams<{ accountId?: string; type?: string; txId?: string; initialDescription?: string; initialAmount?: string }>();
-  const initialType = initialTypeStr as TransactionType | undefined;
+  const initialType = (['receita', 'despesa', 'transferencia'].includes(initialTypeStr ?? '') ? initialTypeStr : 'despesa') as TransactionType;
 
   const { colors } = useTheme();
-  const { tags, projects, goals, accounts, transactions, addTransaction, updateTransaction } = useStoreContext();
+  const { tags, projects, goals, accounts, transactions, addTransaction, updateTransaction, loading } = useStoreContext();
+  const savingRef = useRef(false);
+  const [saving, setSaving] = useState(false);
+  const initializedEdit = useRef<string>();
   const insets = useSafeAreaInsets();
   
   const transactionToEdit = useMemo(() => transactions.find(t => t.id === txId), [transactions, txId]);
@@ -73,7 +77,8 @@ export default function AddTransactionScreen() {
 
   const handleAmountChange = (text: string) => setAmount(formatCurrencyMask(text));
 
-  const [accountId, setAccountId] = useState(initialAccountId ?? accounts[0]?.id ?? '');
+  const firstCashAccountId = accounts.find(account => account.type !== 'cartao_credito')?.id ?? accounts[0]?.id ?? '';
+  const [accountId, setAccountId] = useState(initialAccountId ?? firstCashAccountId);
   const [recurrence, setRecurrence] = useState<RecurrenceType>('unica');
   const [paid, setPaid] = useState(true);
   const [targetAccountId, setTargetAccountId] = useState('');
@@ -81,7 +86,6 @@ export default function AddTransactionScreen() {
   const [pendingTxData, setPendingTxData] = useState<any>(null);
 
   const [installments, setInstallments] = useState(1);
-  const [enableNotification, setEnableNotification] = useState(true);
 
   const [date, setDate] = useState(getFormattedDate(0));
   const [recurrenceStart, setRecurrenceStart] = useState(getFormattedDate(0));
@@ -106,11 +110,33 @@ export default function AddTransactionScreen() {
   }, [isCreditCardSelected, type, isEditing]);
 
   useEffect(() => {
+    if (loading || isEditing) return;
+    if (!accounts.some(a => a.id === accountId)) setAccountId(firstCashAccountId);
+  }, [loading, accounts, accountId, firstCashAccountId, isEditing]);
+
+  useEffect(() => {
+    if (targetAccountId === accountId || !accounts.some(a => a.id === targetAccountId && a.type !== 'cartao_credito')) setTargetAccountId('');
+  }, [accountId, targetAccountId, accounts]);
+
+  useEffect(() => {
+    if (!calendarTarget) return;
+    const value = calendarTarget === 'main' ? date : calendarTarget === 'start' ? recurrenceStart : recurrenceEnd || recurrenceStart;
+    const [day, month, year] = value.split('/').map(Number);
+    setCalendarMonth(new Date(year, month - 1, day));
+    setIsFastNavOpen(false);
+  // Only reset navigation when opening a date field.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [calendarTarget]);
+
+  useEffect(() => {
     if (transactionToEdit) {
+      if (initializedEdit.current === transactionToEdit.id) return;
+      initializedEdit.current = transactionToEdit.id;
       setType(transactionToEdit.type);
       setDescription(transactionToEdit.description);
       setAmount(formatCurrencyMask(String(Math.round(transactionToEdit.amount * 100))));
       setAccountId(transactionToEdit.accountId);
+      setTargetAccountId(transactionToEdit.targetAccountId || '');
       setRecurrence(transactionToEdit.recurrence);
       setPaid(transactionToEdit.paid);
       setTag((transactionToEdit as any).tag || 'Outros');
@@ -132,8 +158,9 @@ export default function AddTransactionScreen() {
       }
     } else {
       setType(initialType ?? 'despesa');
-      setAccountId(initialAccountId ?? (accounts && accounts.length > 0 ? accounts[0].id : ''));
-      const acc = accounts?.find(a => a.id === (initialAccountId || (accounts && accounts.length > 0 ? accounts[0].id : '')));
+      const fallbackAccountId = accounts?.find(account => account.type !== 'cartao_credito')?.id ?? accounts?.[0]?.id ?? '';
+      setAccountId(initialAccountId ?? fallbackAccountId);
+      const acc = accounts?.find(a => a.id === (initialAccountId || fallbackAccountId));
       setPaid(acc?.type === 'cartao_credito' ? false : true);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -173,7 +200,7 @@ export default function AddTransactionScreen() {
     for (let y = currentYear - 5; y <= currentYear + 10; y++) fastYears.push(y);
 
     return (
-      <Modal transparent={true} visible={!!calendarTarget} animationType='fade'>
+      <Modal transparent={true} visible={!!calendarTarget} animationType='fade' onRequestClose={() => setCalendarTarget(null)}>
         <View style={styles.calendarOverlay}>
           <View style={[styles.calendarBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
             {isFastNavOpen ? (
@@ -253,10 +280,33 @@ export default function AddTransactionScreen() {
     );
   };
 
+  const showError = (message: string) => Platform.OS === 'web' ? alert(message) : Alert.alert('Não foi possível salvar', message);
+  const persist = async (data: any, mode: 'single' | 'future' | 'all' = 'single') => {
+    if (savingRef.current) return;
+    savingRef.current = true;
+    setSaving(true);
+    try {
+      if (isEditing) await updateTransaction(data, mode);
+      else await addTransaction(data);
+      router.back();
+    } catch (error) {
+      showError(error instanceof Error ? error.message : 'Tente novamente.');
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
+  };
+
   const handleSubmit = () => {
-    if (!hasAccounts || !amount || !accountId) return;
-    if (type === 'transferencia' && !targetAccountId) {
-      alert('Selecione uma conta de destino para a transferência.');
+    if (savingRef.current || loading) return;
+    if (txId && !transactionToEdit) { showError('Lançamento não encontrado.'); return; }
+    if (!accounts.some(a => a.id === accountId)) { showError('Selecione uma conta válida.'); return; }
+    const numericAmount = Number(amount.replace(/\./g, '').replace(',', '.'));
+    if (!Number.isFinite(numericAmount) || numericAmount <= 0 || !Number.isSafeInteger(Math.round(numericAmount * 100))) {
+      showError('Informe um valor válido maior que zero.'); return;
+    }
+    if (type === 'transferencia' && (targetAccountId === accountId || !accounts.some(a => a.id === targetAccountId && a.type !== 'cartao_credito'))) {
+      showError('Selecione uma conta de destino diferente da origem.');
       return;
     }
 
@@ -266,8 +316,10 @@ export default function AddTransactionScreen() {
       return new Date(Number(p[2]), Number(p[1]) - 1, Number(p[0])).toISOString();
     };
 
-    const numericAmount = parseFloat(amount.replace(/\./g, '').replace(',', '.'));
     const isInstallment = isCreditCardSelected && installments > 1;
+    if (!isEditing && isInstallment && Math.round(numericAmount * 100) < installments) {
+      showError('O valor deve permitir pelo menos um centavo por parcela.'); return;
+    }
     const finalRecurrence = isInstallment ? 'unica' : recurrence;
     let calculatedMaxRecurrences = 24; 
 
@@ -275,7 +327,7 @@ export default function AddTransactionScreen() {
       const startD = new Date(parseToISO(recurrenceStart));
       const endD = new Date(parseToISO(recurrenceEnd));
       if (endD < startD) {
-        alert('A data de fim não pode ser antes da data de início.');
+        showError('A data de fim não pode ser antes da data de início.');
         return;
       }
       if (finalRecurrence === 'mensal' || finalRecurrence === 'quinto_dia_util') {
@@ -302,13 +354,13 @@ export default function AddTransactionScreen() {
       description: description.trim(),
       amount: numericAmount,
       type,
-      date: (recurrence === 'unica' || isInstallment) ? parseToISO(date) : parseToISO(recurrenceStart),
+      date: (isEditing || recurrence === 'unica' || isInstallment) ? parseToISO(date) : parseToISO(recurrenceStart),
       accountId,
       tag,
       projectId: projectId || undefined,
       goalIds,
       recurrence: finalRecurrence,
-      paid,
+      paid: isCreditCardSelected ? (transactionToEdit?.paid ?? false) : paid,
       recurrenceStartDate: (!isInstallment && finalRecurrence !== 'unica') ? parseToISO(recurrenceStart) : undefined,
       recurrenceEndDate: (!isInstallment && finalRecurrence !== 'unica' && recurrenceEnd) ? parseToISO(recurrenceEnd) : undefined,
       totalInstallments: isCreditCardSelected ? installments : 1,
@@ -318,17 +370,15 @@ export default function AddTransactionScreen() {
     };
 
     if (isEditing) {
-      const isFamily = transactionToEdit.groupId || transactionToEdit.id.includes('-');
+      const isFamily = transactionToEdit.groupId || (/^\d+-\d+$/.test(transactionToEdit.id) && (transactionToEdit.totalInstallments! > 1 || transactionToEdit.recurrence !== 'unica'));
       if (isFamily) {
         setPendingTxData({ ...txData, id: transactionToEdit.id });
         setRecurrenceActionVisible(true);
       } else {
-        updateTransaction({ ...txData, id: transactionToEdit.id }, 'single');
-        router.back();
+        void persist({ ...txData, id: transactionToEdit.id });
       }
     } else {
-      addTransaction(txData);
-      router.back();
+      void persist(txData);
     }
   };
 
@@ -345,14 +395,14 @@ export default function AddTransactionScreen() {
           {isEditing ? 'Editar' : 'Novo Lançamento'}
         </Text>
         {hasAccounts ? (
-          <TouchableOpacity onPress={handleSubmit} style={[styles.saveBtn, { backgroundColor: colors.primary }]}>
-            <Text style={styles.saveBtnText}>Salvar</Text>
+          <TouchableOpacity disabled={saving || loading} onPress={handleSubmit} style={[styles.saveBtn, { backgroundColor: colors.primary, opacity: saving ? 0.5 : 1 }]}>
+            <Text style={styles.saveBtnText}>{saving ? 'Salvando...' : 'Salvar'}</Text>
           </TouchableOpacity>
         ) : <View style={{ width: 60 }} />}
       </View>
 
       {hasAccounts ? (
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 24 }]} showsVerticalScrollIndicator={false}>
           <View style={styles.field}>
             <Text style={[styles.label, { color: colors.mutedForeground }]}>Conta de Origem</Text>
             {accounts.filter(a => a.type !== 'cartao_credito').length > 0 && (
@@ -525,7 +575,7 @@ export default function AddTransactionScreen() {
             <View style={styles.field}>
               <Text style={[styles.label, { color: colors.mutedForeground }]}>Parcelamento</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexDirection: 'row', marginTop: 4 }}>
-                {[1, 2, 3, 4, 5, 6, 10, 12, 24].map((n) => (
+                {Array.from({ length: 24 }, (_, index) => index + 1).map((n) => (
                   <TouchableOpacity
                     key={n}
                     style={[styles.instBtn, { borderColor: colors.border }, installments === n && { backgroundColor: colors.primary, borderColor: colors.primary }]}
@@ -557,7 +607,7 @@ export default function AddTransactionScreen() {
             </View>
           )}
 
-          {recurrence === 'unica' ? (
+          {recurrence === 'unica' || isEditing ? (
             <View style={styles.field}>
               <Text style={[styles.label, { color: colors.mutedForeground }]}>Data da Compra</Text>
               <TouchableOpacity style={[styles.dateButton, { borderColor: colors.border, backgroundColor: colors.card }]} onPress={() => setCalendarTarget(calendarTarget === 'main' ? null : 'main')}>
@@ -580,14 +630,8 @@ export default function AddTransactionScreen() {
                   <Text style={{ color: colors.foreground }}>{recurrenceEnd || 'Não definido'}</Text>
                   <Ionicons name='calendar-outline' size={20} color={colors.primary} />
                 </TouchableOpacity>
+                {!!recurrenceEnd && <TouchableOpacity onPress={() => setRecurrenceEnd('')}><Text style={{ color: colors.primary }}>Remover data final</Text></TouchableOpacity>}
               </View>
-            </View>
-          )}
-
-          {recurrence !== 'unica' && (
-            <View style={styles.switchRow}>
-              <Text style={{ color: colors.foreground, fontWeight: '500' }}>Receber lembrete de vencimento</Text>
-              <Switch value={enableNotification} onValueChange={setEnableNotification} trackColor={{ false: colors.border, true: colors.primary }} />
             </View>
           )}
 
@@ -615,8 +659,7 @@ export default function AddTransactionScreen() {
         onSelect={(mode) => {
           setRecurrenceActionVisible(false);
           if (pendingTxData) {
-            updateTransaction(pendingTxData, mode);
-            router.back();
+            void persist(pendingTxData, mode);
           }
         }}
       />

@@ -13,6 +13,7 @@ import {
   KeyboardAvoidingView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/hooks/useTheme';
 import { useStoreContext } from '@/context/StoreContext';
 import { formatCurrency, formatDateShort } from '@/lib/utils';
@@ -25,6 +26,7 @@ interface AdjustmentManagementModalProps {
 
 export function AdjustmentManagementModal({ visible, onClose }: AdjustmentManagementModalProps) {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const { transactions, accounts, deleteTransaction, updateTransaction } = useStoreContext();
 
   const adjustments = transactions.filter(tx => tx.isAdjustment);
@@ -33,6 +35,8 @@ export function AdjustmentManagementModal({ visible, onClose }: AdjustmentManage
   const [editDesc, setEditDesc] = useState('');
   const [editAmount, setEditAmount] = useState('');
   const [editType, setEditType] = useState<'receita' | 'despesa'>('receita');
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState('');
 
   const formatCurrencyMask = (value: string) => {
     const cleanValue = value.replace(/\D/g, '');
@@ -48,13 +52,14 @@ export function AdjustmentManagementModal({ visible, onClose }: AdjustmentManage
     setEditDesc(tx.description);
     setEditAmount(formatCurrencyMask(String(Math.round(tx.amount * 100))));
     setEditType(tx.type as 'receita' | 'despesa');
+    setFormError('');
   };
 
   const handleSaveEdit = async () => {
     if (!editingTx) return;
     const numericAmount = parseFloat(editAmount.replace(/\./g, '').replace(',', '.'));
     if (isNaN(numericAmount) || numericAmount <= 0) {
-      Alert.alert('Erro', 'Digite um valor válido maior que zero.');
+      setFormError('Digite um valor válido maior que zero.');
       return;
     }
 
@@ -65,8 +70,16 @@ export function AdjustmentManagementModal({ visible, onClose }: AdjustmentManage
       type: editType,
     };
 
-    await updateTransaction(updatedTx, 'single');
-    setEditingTx(null);
+    setSaving(true);
+    setFormError('');
+    try {
+      await updateTransaction(updatedTx, 'single');
+      setEditingTx(null);
+    } catch {
+      setFormError('Não foi possível salvar o ajuste. Tente novamente.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleDelete = (tx: Transaction) => {
@@ -80,7 +93,7 @@ export function AdjustmentManagementModal({ visible, onClose }: AdjustmentManage
           'Deseja realmente excluir este ajuste? O saldo da conta será revertido automaticamente.',
         )
       ) {
-        performDelete();
+        performDelete().catch(() => Alert.alert('Não foi possível excluir', 'Tente novamente. Seus dados foram preservados.'));
       }
     } else {
       Alert.alert(
@@ -91,7 +104,7 @@ export function AdjustmentManagementModal({ visible, onClose }: AdjustmentManage
           {
             text: 'Excluir',
             style: 'destructive',
-            onPress: performDelete,
+            onPress: () => performDelete().catch(() => Alert.alert('Não foi possível excluir', 'Tente novamente. Seus dados foram preservados.')),
           },
         ],
       );
@@ -106,15 +119,15 @@ export function AdjustmentManagementModal({ visible, onClose }: AdjustmentManage
       onRequestClose={onClose}
     >
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <View style={[styles.header, { borderBottomColor: colors.border }]}>
-          <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
+        <View style={[styles.header, { borderBottomColor: colors.border, paddingTop: Math.max(insets.top, 16) }]}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Fechar ajustes de saldo" onPress={onClose} style={styles.closeBtn}>
             <Ionicons name="close" size={24} color={colors.foreground} />
           </TouchableOpacity>
           <Text style={[styles.title, { color: colors.foreground }]}>Ajustes de Saldo</Text>
           <View style={{ width: 40 }} />
         </View>
 
-        <ScrollView contentContainerStyle={styles.content}>
+        <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 32 }]} keyboardShouldPersistTaps="handled">
           {adjustments.length === 0 ? (
             <View style={styles.emptyState}>
               <Ionicons name="construct-outline" size={48} color={colors.mutedForeground} />
@@ -143,10 +156,10 @@ export function AdjustmentManagementModal({ visible, onClose }: AdjustmentManage
                       {isPositive ? '+' : '-'}{formatCurrency(tx.amount)}
                     </Text>
                     <View style={{ flexDirection: 'row', gap: 8 }}>
-                      <TouchableOpacity onPress={() => handleEditClick(tx)} style={styles.actionBtn}>
+                      <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Editar ajuste ${tx.description}`} onPress={() => handleEditClick(tx)} style={styles.actionBtn}>
                         <Ionicons name="pencil-outline" size={18} color={colors.mutedForeground} />
                       </TouchableOpacity>
-                      <TouchableOpacity onPress={() => handleDelete(tx)} style={styles.actionBtn}>
+                      <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Excluir ajuste ${tx.description}`} onPress={() => handleDelete(tx)} style={styles.actionBtn}>
                         <Ionicons name="trash-outline" size={18} color={colors.destructive} />
                       </TouchableOpacity>
                     </View>
@@ -157,10 +170,11 @@ export function AdjustmentManagementModal({ visible, onClose }: AdjustmentManage
           )}
         </ScrollView>
 
-        <Modal visible={!!editingTx} transparent animationType="fade">
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalOverlay}>
+        <Modal visible={!!editingTx} transparent animationType="fade" onRequestClose={() => setEditingTx(null)}>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalOverlay}>
             <View style={[styles.modalContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <Text style={[styles.modalTitle, { color: colors.foreground }]}>Editar Ajuste</Text>
+              {!!formError && <Text accessibilityRole="alert" style={[styles.formError, { color: colors.destructive }]}>{formError}</Text>}
               
               <View style={styles.field}>
                 <Text style={[styles.label, { color: colors.mutedForeground }]}>Valor</Text>
@@ -168,6 +182,7 @@ export function AdjustmentManagementModal({ visible, onClose }: AdjustmentManage
                   style={[styles.amountInput, { color: colors.foreground, borderBottomColor: colors.border }]}
                   value={editAmount}
                   onChangeText={(text) => setEditAmount(formatCurrencyMask(text))}
+                  onFocus={() => setFormError('')}
                   keyboardType="numeric"
                 />
               </View>
@@ -178,6 +193,7 @@ export function AdjustmentManagementModal({ visible, onClose }: AdjustmentManage
                   style={[styles.input, { color: colors.foreground, borderColor: colors.border }]}
                   value={editDesc}
                   onChangeText={setEditDesc}
+                  onFocus={() => setFormError('')}
                 />
               </View>
 
@@ -185,23 +201,29 @@ export function AdjustmentManagementModal({ visible, onClose }: AdjustmentManage
                 <TouchableOpacity 
                   style={[styles.typeBtn, editType === 'receita' && { backgroundColor: colors.success }]} 
                   onPress={() => setEditType('receita')}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: editType === 'receita' }}
+                  accessibilityLabel="Tipo receita"
                 >
                   <Text style={{ fontSize: 13, fontWeight: '600', color: editType === 'receita' ? '#FFF' : colors.mutedForeground }}>Receita (+)</Text>
                 </TouchableOpacity>
                 <TouchableOpacity 
                   style={[styles.typeBtn, editType === 'despesa' && { backgroundColor: colors.destructive }]} 
                   onPress={() => setEditType('despesa')}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: editType === 'despesa' }}
+                  accessibilityLabel="Tipo despesa"
                 >
                   <Text style={{ fontSize: 13, fontWeight: '600', color: editType === 'despesa' ? '#FFF' : colors.mutedForeground }}>Despesa (-)</Text>
                 </TouchableOpacity>
               </View>
 
               <View style={styles.modalActions}>
-                <TouchableOpacity style={styles.cancelBtn} onPress={() => setEditingTx(null)}>
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Cancelar edição do ajuste" style={styles.cancelBtn} onPress={() => setEditingTx(null)}>
                   <Text style={[styles.cancelBtnText, { color: colors.mutedForeground }]}>Cancelar</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.confirmBtn, { backgroundColor: colors.primary }]} onPress={handleSaveEdit}>
-                  <Text style={styles.confirmBtnText}>Salvar</Text>
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Salvar ajuste" disabled={saving} style={[styles.confirmBtn, { backgroundColor: colors.primary, opacity: saving ? 0.6 : 1 }]} onPress={handleSaveEdit}>
+                  <Text style={styles.confirmBtnText}>{saving ? 'Salvando...' : 'Salvar'}</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -254,4 +276,5 @@ const styles = StyleSheet.create({
   cancelBtnText: { fontSize: 15, fontWeight: '600' },
   confirmBtn: { flex: 1, paddingVertical: 16, alignItems: 'center', justifyContent: 'center', borderRadius: 12 },
   confirmBtnText: { color: '#FFF', fontSize: 15, fontWeight: '700' },
+  formError: { fontSize: 14, fontWeight: '600' },
 });

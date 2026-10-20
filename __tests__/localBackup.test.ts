@@ -9,6 +9,7 @@ import { prepareCardPayment } from '../lib/cardPayment';
 jest.mock('../services/notificationService', () => ({
   scheduleDailyReminder: jest.fn(), scheduleExpenseReminder: jest.fn(), scheduleCreditCardAlert: jest.fn(),
   cancelDailyReminder: jest.fn(), cancelExpenseReminder: jest.fn(), cancelCreditCardAlert: jest.fn(),
+  hasNotificationPermission: jest.fn(async () => false),
 }));
 jest.mock('@react-native-async-storage/async-storage', () => require('@react-native-async-storage/async-storage/jest/async-storage-mock'));
 const file = process.env.HORIZONTE_TEST_BACKUP;

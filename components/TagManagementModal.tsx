@@ -11,6 +11,7 @@ import {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   FlatList,
   Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -50,12 +51,20 @@ export function TagManagementModal({ visible, onClose }: TagManagementModalProps
   const [label, setLabel] = useState('');
   const [selectedIcon, setSelectedIcon] = useState(ICON_OPTIONS[0]);
   const [selectedColor, setSelectedColor] = useState(COLOR_OPTIONS[0]);
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState('');
 
   const resetForm = () => {
     setEditingTag(null);
     setLabel('');
     setSelectedIcon(ICON_OPTIONS[0]);
     setSelectedColor(COLOR_OPTIONS[0]);
+    setFormError('');
+  };
+
+  const handleClose = () => {
+    resetForm();
+    onClose();
   };
 
   const handleEdit = (tag: Tag) => {
@@ -63,14 +72,15 @@ export function TagManagementModal({ visible, onClose }: TagManagementModalProps
     setLabel(tag.label);
     setSelectedIcon(tag.icon);
     setSelectedColor(tag.color);
+    setFormError('');
 
     // Rolar para o topo suavemente
     scrollRef.current?.scrollTo({ y: 0, animated: true });
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!label.trim()) {
-      Alert.alert('Erro', 'O nome da categoria é obrigatório.');
+      setFormError('Informe um nome para a categoria.');
       return;
     }
 
@@ -80,16 +90,21 @@ export function TagManagementModal({ visible, onClose }: TagManagementModalProps
       color: selectedColor,
     };
 
-    if (editingTag) {
-      updateTag({ ...tagData, id: editingTag.id });
-    } else {
-      addTag(tagData);
+    setSaving(true);
+    setFormError('');
+    try {
+      if (editingTag) await updateTag({ ...tagData, id: editingTag.id });
+      else await addTag(tagData);
+      resetForm();
+    } catch {
+      setFormError('Não foi possível salvar a categoria. Tente novamente.');
+    } finally {
+      setSaving(false);
     }
-    resetForm();
   };
 
   const handleDelete = (id: string) => {
-    const performDelete = () => deleteTag(id);
+    const performDelete = () => deleteTag(id).catch(() => Alert.alert('Não foi possível excluir', 'Tente novamente. Seus dados foram preservados.'));
 
     if (Platform.OS === 'web') {
       if (window.confirm('Tem certeza? Isso não afetará os lançamentos já criados, mas eles ficarão sem categoria visual.')) {
@@ -104,10 +119,10 @@ export function TagManagementModal({ visible, onClose }: TagManagementModalProps
   };
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={handleClose}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={[styles.container, { backgroundColor: colors.background }]}>
         <View style={[styles.header, { borderBottomColor: colors.border, paddingTop: insets.top + 16 }]}>
-          <TouchableOpacity onPress={onClose} style={{ padding: 8 }}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Fechar categorias" onPress={handleClose} style={{ padding: 8 }}>
             <Ionicons name="close" size={24} color={colors.foreground} />
           </TouchableOpacity>
           <Text style={[styles.headerTitle, { color: colors.foreground }]}>Gerenciar Categorias</Text>
@@ -116,7 +131,7 @@ export function TagManagementModal({ visible, onClose }: TagManagementModalProps
 
         <ScrollView 
           ref={scrollRef}
-          contentContainerStyle={styles.content} 
+          contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 32 }]}
           keyboardShouldPersistTaps="handled"
         >
           {/* FORMULÁRIO */}
@@ -124,6 +139,7 @@ export function TagManagementModal({ visible, onClose }: TagManagementModalProps
             <Text style={[styles.formTitle, { color: colors.foreground }]}>
               {editingTag ? 'Editar Categoria' : 'Nova Categoria'}
             </Text>
+            {!!formError && <Text accessibilityRole="alert" style={[styles.formError, { color: colors.destructive }]}>{formError}</Text>}
             
             <View style={styles.field}>
               <Text style={[styles.label, { color: colors.mutedForeground }]}>Nome</Text>
@@ -131,6 +147,7 @@ export function TagManagementModal({ visible, onClose }: TagManagementModalProps
                 style={[styles.input, { color: colors.foreground, borderColor: colors.border }]}
                 value={label}
                 onChangeText={setLabel}
+                onFocus={() => setFormError('')}
                 placeholder="Ex: Assinaturas, Freelance..."
                 placeholderTextColor={colors.mutedForeground}
               />
@@ -148,6 +165,9 @@ export function TagManagementModal({ visible, onClose }: TagManagementModalProps
                       selectedIcon === icon && { backgroundColor: colors.primary, borderColor: colors.primary }
                     ]}
                     onPress={() => setSelectedIcon(icon)}
+                    accessibilityRole="radio"
+                    accessibilityLabel={`Usar ícone ${icon}`}
+                    accessibilityState={{ selected: selectedIcon === icon }}
                   >
                     <Ionicons name={icon as any} size={20} color={selectedIcon === icon ? '#FFF' : colors.foreground} />
                   </TouchableOpacity>
@@ -167,6 +187,9 @@ export function TagManagementModal({ visible, onClose }: TagManagementModalProps
                       selectedColor === color && { borderWidth: 3, borderColor: colors.foreground }
                     ]}
                     onPress={() => setSelectedColor(color)}
+                    accessibilityRole="radio"
+                    accessibilityLabel={`Usar cor ${color}`}
+                    accessibilityState={{ selected: selectedColor === color }}
                   />
                 ))}
               </ScrollView>
@@ -177,6 +200,8 @@ export function TagManagementModal({ visible, onClose }: TagManagementModalProps
                 <TouchableOpacity 
                   style={[styles.cancelBtn, { borderColor: colors.border }]} 
                   onPress={resetForm}
+                  accessibilityRole="button"
+                  accessibilityLabel="Cancelar edição da categoria"
                 >
                   <Text style={{ color: colors.mutedForeground }}>Cancelar</Text>
                 </TouchableOpacity>
@@ -184,8 +209,11 @@ export function TagManagementModal({ visible, onClose }: TagManagementModalProps
               <TouchableOpacity 
                 style={[styles.saveBtn, { backgroundColor: colors.primary }]} 
                 onPress={handleSave}
+                disabled={saving}
+                accessibilityRole="button"
+                accessibilityLabel="Salvar categoria"
               >
-                <Text style={styles.saveBtnText}>{editingTag ? 'Atualizar' : 'Adicionar'}</Text>
+                <Text style={styles.saveBtnText}>{saving ? 'Salvando...' : editingTag ? 'Atualizar' : 'Adicionar'}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -200,10 +228,10 @@ export function TagManagementModal({ visible, onClose }: TagManagementModalProps
                 </View>
                 <Text style={[styles.tagName, { color: colors.foreground }]}>{tag.label}</Text>
                 <View style={styles.tagActions}>
-                  <TouchableOpacity onPress={() => handleEdit(tag)} style={styles.actionBtn}>
+                  <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Editar categoria ${tag.label}`} onPress={() => handleEdit(tag)} style={styles.actionBtn}>
                     <Ionicons name="pencil" size={20} color={colors.primary} />
                   </TouchableOpacity>
-                  <TouchableOpacity onPress={() => handleDelete(tag.id)} style={styles.actionBtn}>
+                  <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Excluir categoria ${tag.label}`} onPress={() => handleDelete(tag.id)} style={styles.actionBtn}>
                     <Ionicons name="trash" size={20} color={colors.destructive} />
                   </TouchableOpacity>
                 </View>
@@ -211,7 +239,7 @@ export function TagManagementModal({ visible, onClose }: TagManagementModalProps
             ))}
           </View>
         </ScrollView>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -254,6 +282,7 @@ const styles = StyleSheet.create({
   cancelBtn: { flex: 1, height: 48, borderRadius: 12, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
   saveBtn: { flex: 2, height: 48, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
   saveBtnText: { color: '#FFF', fontWeight: '700' },
+  formError: { fontSize: 14, fontWeight: '600' },
   sectionTitle: { fontSize: 12, fontWeight: '700', textTransform: 'uppercase', marginBottom: 12 },
   tagList: { gap: 2 },
   tagItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth },

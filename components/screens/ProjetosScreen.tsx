@@ -32,6 +32,8 @@ export function ProjetosScreen() {
   const [newProjectBudget, setNewProjectBudget] = useState('');
   const [newProjectColor, setNewProjectColor] = useState(PROJECT_COLORS[0]);
   const [newProjectActive, setNewProjectActive] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState('');
 
   const formatCurrency = (value: number) => {
     return value.toLocaleString('pt-BR', {
@@ -55,6 +57,7 @@ export function ProjetosScreen() {
     setNewProjectBudget('');
     setNewProjectColor(PROJECT_COLORS[0]);
     setNewProjectActive(true);
+    setFormError('');
     setModalVisible(true);
   };
 
@@ -64,13 +67,14 @@ export function ProjetosScreen() {
     setNewProjectBudget(formatCurrencyMask(String(project.targetBudget * 100)));
     setNewProjectColor(project.color);
     setNewProjectActive(project.active !== false); // Default to true if undefined
+    setFormError('');
     setModalVisible(true);
   };
 
   const handleDeleteProject = (id: string) => {
     if (Platform.OS === 'web') {
       if (window.confirm('Tem certeza que deseja excluir este projeto? As transações vinculadas não serão apagadas, apenas desvinculadas.')) {
-        deleteProject(id);
+        deleteProject(id).catch(() => Alert.alert('Não foi possível excluir', 'Tente novamente. Seus dados foram preservados.'));
       }
     } else {
       Alert.alert(
@@ -78,40 +82,43 @@ export function ProjetosScreen() {
         'Tem certeza que deseja excluir este projeto? As transações vinculadas não serão apagadas, apenas desvinculadas.',
         [
           { text: 'Cancelar', style: 'cancel' },
-          { text: 'Excluir', style: 'destructive', onPress: () => deleteProject(id) },
+          { text: 'Excluir', style: 'destructive', onPress: () => deleteProject(id).catch(() => Alert.alert('Não foi possível excluir', 'Tente novamente. Seus dados foram preservados.')) },
         ]
       );
     }
   };
 
   const handleAddProject = async () => {
-    if (!newProjectName.trim() || !newProjectBudget) return;
-    
+    const name = newProjectName.trim();
     const numericBudget = parseFloat(newProjectBudget.replace(/\./g, '').replace(',', '.'));
-    
-    if (editingProjectId) {
-      await updateProject({
-        id: editingProjectId,
-        name: newProjectName.trim(),
-        targetBudget: numericBudget,
-        color: newProjectColor,
-        active: newProjectActive,
-      });
-    } else {
-      await addProject({
-        name: newProjectName.trim(),
-        targetBudget: numericBudget,
-        color: newProjectColor,
-        active: newProjectActive,
-      });
+    if (!name) {
+      setFormError('Informe um nome para o projeto.');
+      return;
+    }
+    if (!Number.isFinite(numericBudget) || numericBudget <= 0) {
+      setFormError('Informe um orçamento maior que zero.');
+      return;
     }
 
-    setModalVisible(false);
-    setEditingProjectId(null);
-    setNewProjectName('');
-    setNewProjectBudget('');
-    setNewProjectColor(PROJECT_COLORS[0]);
-    setNewProjectActive(true);
+    setSaving(true);
+    setFormError('');
+    try {
+      if (editingProjectId) {
+        await updateProject({ id: editingProjectId, name, targetBudget: numericBudget, color: newProjectColor, active: newProjectActive });
+      } else {
+        await addProject({ name, targetBudget: numericBudget, color: newProjectColor, active: newProjectActive });
+      }
+      setModalVisible(false);
+      setEditingProjectId(null);
+      setNewProjectName('');
+      setNewProjectBudget('');
+      setNewProjectColor(PROJECT_COLORS[0]);
+      setNewProjectActive(true);
+    } catch {
+      setFormError('Não foi possível salvar o projeto. Tente novamente.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const projectStats = useMemo(() => {
@@ -145,6 +152,8 @@ export function ProjetosScreen() {
         <TouchableOpacity
           style={[styles.newProjectBtn, { backgroundColor: colors.primary }]}
           onPress={openNewProjectModal}
+          accessibilityRole="button"
+          accessibilityLabel="Criar novo projeto"
         >
           <Text style={styles.newProjectBtnText}>Novo Projeto</Text>
         </TouchableOpacity>
@@ -158,15 +167,13 @@ export function ProjetosScreen() {
             <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
               Crie projetos para isolar e acompanhar gastos específicos (ex: Reforma, Viagem, Setup PC).
             </Text>
-            {/* Auto mock data button for testing if requested */}
             <TouchableOpacity
               style={[styles.mockBtn, { borderColor: colors.primary }]}
-              onPress={() => {
-                addProject({ name: 'Robô Equilibrista', targetBudget: 400, color: '#5856D6', active: true });
-                addProject({ name: 'Setup PC (Ryzen + 650W)', targetBudget: 2500, color: '#007AFF', active: true });
-              }}
+              onPress={openNewProjectModal}
+              accessibilityRole="button"
+              accessibilityLabel="Criar primeiro projeto"
             >
-              <Text style={{ color: colors.primary, fontWeight: '600' }}>Carregar Exemplos</Text>
+              <Text style={{ color: colors.primary, fontWeight: '600' }}>Criar Projeto</Text>
             </TouchableOpacity>
           </View>
         ) : (
@@ -190,10 +197,10 @@ export function ProjetosScreen() {
                     </View>
                   </View>
                   <View style={{ flexDirection: 'row', gap: 16, alignItems: 'center' }}>
-                    <TouchableOpacity onPress={() => handleEditProject(project)} hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
+                    <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Editar ${project.name}`} onPress={() => handleEditProject(project)} hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
                       <Ionicons name="pencil-outline" size={20} color={colors.mutedForeground} />
                     </TouchableOpacity>
-                    <TouchableOpacity onPress={() => handleDeleteProject(project.id)} hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
+                    <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Excluir ${project.name}`} onPress={() => handleDeleteProject(project.id)} hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
                       <Ionicons name="trash-outline" size={20} color={colors.destructive} />
                     </TouchableOpacity>
                   </View>
@@ -235,29 +242,31 @@ export function ProjetosScreen() {
       >
         <KeyboardAvoidingView
           style={{ flex: 1, backgroundColor: colors.background }}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
-          <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
-            <TouchableOpacity onPress={() => setModalVisible(false)}>
+          <View style={[styles.modalHeader, { borderBottomColor: colors.border, paddingTop: Math.max(insets.top, 16) }]}>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Fechar formulário" onPress={() => setModalVisible(false)}>
               <Ionicons name="close" size={24} color={colors.foreground} />
             </TouchableOpacity>
             <Text style={[styles.modalTitle, { color: colors.foreground }]}>
               {editingProjectId ? 'Editar Projeto' : 'Novo Projeto'}
             </Text>
-            <TouchableOpacity onPress={handleAddProject} disabled={!newProjectName || !newProjectBudget}>
-              <Text style={[styles.saveBtnText, { color: (!newProjectName || !newProjectBudget) ? colors.mutedForeground : colors.primary }]}>
-                Salvar
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Salvar projeto" onPress={handleAddProject} disabled={saving}>
+              <Text style={[styles.saveBtnText, { color: saving ? colors.mutedForeground : colors.primary }]}>
+                {saving ? 'Salvando...' : 'Salvar'}
               </Text>
             </TouchableOpacity>
           </View>
 
-          <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
+          <ScrollView style={styles.modalContent} contentContainerStyle={{ paddingBottom: insets.bottom + 32 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+            {!!formError && <Text accessibilityRole="alert" style={[styles.formError, { color: colors.destructive }]}>{formError}</Text>}
             <View style={styles.field}>
               <Text style={[styles.label, { color: colors.mutedForeground }]}>Nome do Projeto</Text>
               <TextInput
                 style={[styles.input, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.card }]}
                 value={newProjectName}
                 onChangeText={setNewProjectName}
+                onFocus={() => setFormError('')}
                 placeholder="Ex: Reforma do Quarto"
                 placeholderTextColor={colors.mutedForeground}
               />
@@ -269,6 +278,7 @@ export function ProjetosScreen() {
                 style={[styles.amountInput, { color: colors.foreground, borderBottomColor: colors.border }]}
                 value={newProjectBudget}
                 onChangeText={(t) => setNewProjectBudget(formatCurrencyMask(t))}
+                onFocus={() => setFormError('')}
                 placeholder="0,00"
                 keyboardType="numeric"
                 placeholderTextColor={colors.mutedForeground}
@@ -341,7 +351,7 @@ const styles = StyleSheet.create({
   progressContainer: { gap: 8 },
   progressBarBg: { height: 8, borderRadius: 4, overflow: 'hidden' },
   progressBarFill: { height: '100%', borderRadius: 4 },
-  budgetLabels: { flexDirection: 'row', justifyContent: 'space-between' },
+  budgetLabels: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 6 },
   budgetLabelText: { fontSize: 12, fontWeight: '500' },
   modalHeader: {
     flexDirection: 'row',
@@ -364,4 +374,5 @@ const styles = StyleSheet.create({
   emptyTitle: { fontSize: 18, fontWeight: '700', marginTop: 8 },
   emptyText: { textAlign: 'center', fontSize: 14, lineHeight: 20, paddingHorizontal: 20 },
   mockBtn: { marginTop: 16, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, borderWidth: 1 },
+  formError: { fontSize: 14, fontWeight: '600', marginBottom: 4 },
 });
