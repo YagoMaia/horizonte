@@ -28,7 +28,8 @@ export function getInvoiceForTx(dateStr: string, account: Pick<Account, 'closing
   let m = date.getMonth() + 1;
   const day = date.getDate();
 
-  if (day >= closingDay) m += 1;
+  const effectiveClosingDay = Math.min(closingDay, new Date(y, m, 0).getDate());
+  if (day >= effectiveClosingDay) m += 1;
   if (dueDay < closingDay) m += 1;
 
   while (m > 12) {
@@ -54,7 +55,7 @@ export function getInvoiceTotal(
   return transactions
     .filter((tx) => {
       if (tx.accountId !== card.id || tx.paymentMethod !== 'credito') return false;
-      const txInvoice = getInvoiceForTx(tx.date, card);
+      const txInvoice = tx.invoiceMonth ? { value: Number(tx.invoiceMonth.replace('-', '')) } : getInvoiceForTx(tx.date, card);
       return txInvoice.value === targetValue;
     })
     .reduce((sum, tx) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount), 0);

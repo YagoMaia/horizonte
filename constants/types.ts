@@ -50,6 +50,11 @@ export interface Transaction {
   paid: boolean
   notes?: string
   tag?: string
+  invoiceMonth?: string; // Competência de vencimento YYYY-MM; preserva a data real do pagamento.
+  cardPaymentId?: string;
+  paidCardId?: string;
+  settledByPaymentId?: string;
+  settledAt?: string;
   paymentMethod?: 'debito' | 'credito' // Tracks the method used
   installmentNumber?: number // E.g., 1 (for 1/3)
   totalInstallments?: number // E.g., 3 (for 1/3)
@@ -61,6 +66,8 @@ export interface Transaction {
   groupId?: string
   groupIndex?: number;
   isAdjustment?: boolean;
+  /** Lançamento calculado apenas para uma projeção, nunca persistido. */
+  isVirtual?: boolean;
   notificationId?: string;
   projectId?: string; // 👉 Novo: ID do projeto vinculado
   goalIds?: string[]; // 👉 ID(s) das metas vinculadas

@@ -13,8 +13,6 @@ import {
 } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { useTheme } from '@/hooks/useTheme'
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-import { formatCurrency } from '@/lib/utils'
 import { useStoreContext } from '@/context/StoreContext'
 import * as FileSystem from 'expo-file-system'
 import * as Sharing from 'expo-sharing'
@@ -25,6 +23,7 @@ import { PRIMARY_COLORS } from '@/constants/theme'
 import { TagManagementModal } from '../TagManagementModal'
 import { AdjustmentManagementModal } from '../AdjustmentManagementModal'
 import { createBackup, parseBackup } from '@/lib/backup'
+import { buildTransactionsCsv } from '@/lib/csvExport'
 
 interface MenuItemProps {
   icon: string
@@ -32,16 +31,20 @@ interface MenuItemProps {
   value?: string
   onPress?: () => void
   danger?: boolean
+  disabled?: boolean
   colors: any
 }
 
-function MenuItem({ icon, label, value, onPress, danger, colors }: MenuItemProps) {
+function MenuItem({ icon, label, value, onPress, danger, disabled = false, colors }: MenuItemProps) {
   return (
     <TouchableOpacity
-      style={styles.menuItem}
+      style={[styles.menuItem, disabled && { opacity: 0.55 }]}
       onPress={onPress}
       activeOpacity={0.7}
-      disabled={!onPress}
+      disabled={!onPress || disabled}
+      accessibilityRole="button"
+      accessibilityLabel={value ? `${label}, ${value}` : label}
+      accessibilityState={{ disabled: !onPress || disabled }}
     >
       <View style={[styles.menuIcon, { backgroundColor: danger ? colors.dangerLight : colors.secondary }]}>
         <Ionicons
@@ -95,6 +98,13 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavig
   const [editingTimeKey, setEditingTimeKey] = useState<'dailyReminderTime' | 'expenseReminderTime' | 'creditCardAlertTime' | null>(null)
   const [tempHour, setTempHour] = useState(0)
   const [tempMinute, setTempMinute] = useState(0)
+  const [busyOperation, setBusyOperation] = useState<string | null>(null)
+
+  const runOperation = async (name: string, operation: () => Promise<unknown>) => {
+    if (busyOperation) return
+    setBusyOperation(name)
+    try { await operation() } finally { setBusyOperation(null) }
+  }
 
   const openTimePicker = (key: 'dailyReminderTime' | 'expenseReminderTime' | 'creditCardAlertTime') => {
     const time = notificationPreferences[key] || { hour: 0, minute: 0 }
@@ -112,7 +122,6 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavig
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const formatTime = (time: { hour: number; minute: number }) => {
     if (!time) return '00:00'
     return `${String(time.hour).padStart(2, '0')}:${String(time.minute).padStart(2, '0')}`
@@ -126,10 +135,20 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavig
 
   const currentColorLabel = PRIMARY_COLORS.find(c => c.value === primaryColor)?.label || 'Customizada'
 
+  const handleNotificationToggle = async (key: 'dailyReminders' | 'expenseReminders' | 'creditCardAlerts', enabled: boolean) => {
+    if (!enabled) {
+      await toggleNotificationPreference(key, false)
+      return
+    }
+    if (await requestPermissions()) await toggleNotificationPreference(key, true)
+    else if (Platform.OS === 'web') alert('Permissão necessária para notificações.')
+    else Alert.alert('Permissão necessária', 'Autorize as notificações nas configurações do dispositivo.')
+  }
+
   const handleSyncBalances = async () => {
     if (Platform.OS === 'web') {
       if (window.confirm('Isso irá recalcular o saldo de todas as suas contas com base no histórico de transações. Deseja continuar?')) {
-        await syncBalances(transactions, accounts);
+        await runOperation('sync', () => syncBalances(transactions, accounts));
         alert('Saldos sincronizados com sucesso!');
       }
     } else {
@@ -141,7 +160,7 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavig
           { 
             text: 'Sincronizar', 
             onPress: async () => {
-              await syncBalances(transactions, accounts);
+              await runOperation('sync', () => syncBalances(transactions, accounts));
               Alert.alert('Sucesso', 'Saldos sincronizados com sucesso!');
             } 
           }
@@ -153,7 +172,7 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavig
   const handlePurgeAdjustments = async () => {
     if (Platform.OS === 'web') {
       if (window.confirm('Isso irá excluir todos os ajustes, inclusive os saldos iniciais. Os saldos das contas serão recalculados imediatamente sem esses valores. Deseja continuar?')) {
-        await purgeAdjustments();
+        await runOperation('purge', purgeAdjustments);
         alert('Ajustes removidos com sucesso!');
       }
     } else {
@@ -166,7 +185,7 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavig
             text: 'Limpar Ajustes', 
             style: 'destructive',
             onPress: async () => {
-              await purgeAdjustments();
+              await runOperation('purge', purgeAdjustments);
               Alert.alert('Sucesso', 'Ajustes removidos com sucesso!');
             } 
           }
@@ -177,6 +196,11 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavig
 
   const handleTestNotification = async () => {
     try {
+      if (!(await requestPermissions())) {
+        if (Platform.OS === 'web') alert('Permissão necessária para notificações.')
+        else Alert.alert('Permissão necessária', 'Autorize as notificações nas configurações do dispositivo.')
+        return
+      }
       await Notifications.scheduleNotificationAsync({
         content: {
           title: 'Notificação de Teste 🚀',
@@ -208,26 +232,7 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavig
         return
       }
 
-      const BOM = '\uFEFF';
-      let csvString = BOM + 'Data;Tipo;Descricao;Valor;Conta;Tag;Status\n'
-
-      transactions.forEach((tx) => {
-        const dateObj = new Date(tx.date)
-        const day = String(dateObj.getDate()).padStart(2, '0')
-        const month = String(dateObj.getMonth() + 1).padStart(2, '0')
-        const year = dateObj.getFullYear()
-        const formattedDate = `${day}/${month}/${year}`
-
-        const type = tx.type === 'receita' ? 'Receita' : 'Despesa'
-        const amount = tx.amount.toFixed(2).replace('.', ',')
-        const account = accounts.find((a) => a.id === tx.accountId)?.name || 'N/A'
-        const tag = (tx as any).tag || 'N/A'
-        const status = tx.paid ? 'Pago' : 'Pendente'
-
-        const cleanDescription = tx.description.replace(/;/g, ',')
-
-        csvString += `${formattedDate};${type};${cleanDescription};${amount};${account};${tag};${status}\n`
-      })
+      const csvString = buildTransactionsCsv(transactions, accounts)
 
       const fileName = `Horizonte_Relatorio_${new Date().getTime()}.csv`
 
@@ -353,7 +358,7 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavig
         ? '\nEste backup antigo não contém todos os cadastros e configurações. Campos ausentes serão redefinidos e vínculos sem cadastro serão removidos.'
         : '';
 
-      const performRestore = async () => {
+      const performRestore = () => runOperation('restore', async () => {
         try {
           await restoreBackup(parsedData);
           await reloadTheme();
@@ -361,7 +366,7 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavig
         } catch {
           Alert.alert('Erro', 'Não foi possível concluir a restauração. Os dados anteriores serão preservados ou recuperados na próxima abertura.');
         }
-      };
+      });
       // 4. Confirmação crítica de substituição
       if (Platform.OS === 'web') {
         if (window.confirm(`Isso irá apagar todos os dados atuais e restaurar o backup com ${extractedData.transactions.length} lançamentos. Tem certeza?${legacyWarning}`)) {
@@ -468,7 +473,7 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavig
         <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
           <MenuItem 
             icon="moon-outline" 
-            label="Tema escuro" 
+            label="Tema"
             value={themeModeLabel} 
             onPress={() => setThemeModalVisible(true)}
             colors={colors} 
@@ -495,6 +500,8 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavig
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
             <TouchableOpacity 
+              accessibilityRole="button"
+              accessibilityLabel="Editar horário dos lembretes diários"
               onPress={() => openTimePicker('dailyReminderTime')}
               disabled={!(notificationPreferences?.dailyReminders ?? true)}
               style={[
@@ -506,18 +513,12 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavig
             </TouchableOpacity>
             <Switch
               value={notificationPreferences?.dailyReminders ?? true}
-              onValueChange={async (val) => {
-                const granted = await requestPermissions()
-                if (granted) {
-                  await toggleNotificationPreference('dailyReminders', val)
-                } else {
-                  if (Platform.OS === 'web') alert('Permissão necessária para notificações.');
-                  else Alert.alert('Erro', 'Permissão de notificação negada.');
-                }
-              }}
+              accessibilityLabel="Ativar lembretes diários"
+              onValueChange={(value) => handleNotificationToggle('dailyReminders', value)}
               trackColor={{ true: colors.primary, false: colors.border }}
             />
           </View>
+          <Text style={[styles.timeValue, { color: colors.mutedForeground }]}>{formatTime(notificationPreferences?.dailyReminderTime)}</Text>
         </View>
 
         <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
@@ -528,6 +529,8 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavig
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
               <TouchableOpacity 
+                accessibilityRole="button"
+                accessibilityLabel="Editar horário do lembrete de despesas"
                 onPress={() => openTimePicker('expenseReminderTime')}
                 disabled={!(notificationPreferences?.expenseReminders ?? true)}
                 style={[
@@ -539,18 +542,12 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavig
               </TouchableOpacity>
               <Switch
                 value={notificationPreferences?.expenseReminders ?? true}
-                onValueChange={async (val) => {
-                  const granted = await requestPermissions()
-                  if (granted) {
-                    await toggleNotificationPreference('expenseReminders', val)
-                  } else {
-                    if (Platform.OS === 'web') alert('Permissão necessária para notificações.');
-                    else Alert.alert('Erro', 'Permissão de notificação negada.');
-                  }
-                }}
+                accessibilityLabel="Ativar lembrete de despesas"
+                onValueChange={(value) => handleNotificationToggle('expenseReminders', value)}
                 trackColor={{ true: colors.primary, false: colors.border }}
               />
             </View>
+            <Text style={[styles.timeValue, { color: colors.mutedForeground }]}>{formatTime(notificationPreferences?.expenseReminderTime)}</Text>
           </View>
         </View>
 
@@ -562,6 +559,8 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavig
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
               <TouchableOpacity 
+                accessibilityRole="button"
+                accessibilityLabel="Editar horário dos alertas de cartão"
                 onPress={() => openTimePicker('creditCardAlertTime')}
                 disabled={!(notificationPreferences?.creditCardAlerts ?? true)}
                 style={[
@@ -573,25 +572,21 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavig
               </TouchableOpacity>
               <Switch
                 value={notificationPreferences?.creditCardAlerts ?? true}
-                onValueChange={async (val) => {
-                  const granted = await requestPermissions()
-                  if (granted) {
-                    await toggleNotificationPreference('creditCardAlerts', val)
-                  } else {
-                    if (Platform.OS === 'web') alert('Permissão necessária para notificações.');
-                    else Alert.alert('Erro', 'Permissão de notificação negada.');
-                  }
-                }}
+                accessibilityLabel="Ativar alertas de cartão"
+                onValueChange={(value) => handleNotificationToggle('creditCardAlerts', value)}
                 trackColor={{ true: colors.primary, false: colors.border }}
               />
             </View>
+            <Text style={[styles.timeValue, { color: colors.mutedForeground }]}>{formatTime(notificationPreferences?.creditCardAlertTime)}</Text>
           </View>
         </View>
         <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
           <MenuItem
             icon="flask-outline"
             label="Enviar Notificação de Teste"
-            onPress={handleTestNotification}
+            value={busyOperation === 'notification' ? 'Enviando...' : undefined}
+            disabled={!!busyOperation}
+            onPress={() => runOperation('notification', handleTestNotification)}
             colors={colors}
           />
         </View>
@@ -603,14 +598,18 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavig
         <MenuItem
           icon="download-outline"
           label="Criar Backup de Segurança"
-          onPress={handleCreateBackup}
+          value={busyOperation === 'backup' ? 'Preparando...' : undefined}
+          disabled={!!busyOperation}
+          onPress={() => runOperation('backup', handleCreateBackup)}
           colors={colors}
         />
         <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
           <MenuItem
             icon="push-outline"
             label="Restaurar Backup"
-            onPress={handleRestoreBackup}
+          value={busyOperation === 'restore' ? 'Lendo...' : undefined}
+          disabled={!!busyOperation}
+          onPress={() => runOperation('restore', handleRestoreBackup)}
             colors={colors}
           />
         </View>
@@ -618,7 +617,9 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavig
           <MenuItem
             icon="document-text-outline"
             label="Exportar para Excel (CSV)"
-            onPress={handleExportCSV}
+          value={busyOperation === 'export' ? 'Exportando...' : undefined}
+          disabled={!!busyOperation}
+          onPress={() => runOperation('export', handleExportCSV)}
             colors={colors}
           />
         </View>
@@ -629,6 +630,8 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavig
         <MenuItem
           icon="sync-outline"
           label="Sincronizar Saldos (Correção)"
+          value={busyOperation === 'sync' ? 'Sincronizando...' : undefined}
+          disabled={!!busyOperation}
           onPress={handleSyncBalances}
           colors={colors}
         />
@@ -636,7 +639,10 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavig
           <MenuItem
             icon="beaker-outline"
             label="Limpar Ajustes de Saldo"
+            value={busyOperation === 'purge' ? 'Limpando...' : undefined}
             onPress={handlePurgeAdjustments}
+            disabled={!!busyOperation}
+            danger
             colors={colors}
           />
         </View>
@@ -644,10 +650,12 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavig
           <MenuItem
             icon="trash-outline"
             label="Limpar todos os dados"
+            value={busyOperation === 'clear' ? 'Limpando...' : undefined}
+            disabled={!!busyOperation}
             onPress={() => {
               if (Platform.OS === 'web') {
                 if (window.confirm('Atenção: Isso irá apagar todos os dados permanentemente. Tem certeza?')) {
-                  clearAllData()
+                  void runOperation('clear', clearAllData)
                 }
               } else {
                 Alert.alert(
@@ -655,7 +663,7 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavig
                   'Isso irá apagar todos os seus dados permanentemente e não pode ser desfeito. Faça um backup antes. Tem certeza?',
                   [
                     { text: 'Cancelar', style: 'cancel' },
-                    { text: 'Apagar Tudo', style: 'destructive', onPress: clearAllData }
+                    { text: 'Apagar Tudo', style: 'destructive', onPress: () => void runOperation('clear', clearAllData) }
                   ]
                 )
               }
@@ -675,7 +683,7 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavig
       <Modal visible={themeModalVisible} transparent animationType="fade" onRequestClose={() => setThemeModalVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Text style={[styles.modalTitle, { color: colors.foreground }]}>Tema Escuro</Text>
+            <Text style={[styles.modalTitle, { color: colors.foreground }]}>Tema</Text>
             {[
               { id: 'system', label: 'Automático (Sistema)' },
               { id: 'light', label: 'Desativado (Claro)' },
@@ -683,6 +691,9 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavig
             ].map(option => (
               <TouchableOpacity
                 key={option.id}
+                accessibilityRole="radio"
+                accessibilityLabel={`Tema ${option.label}`}
+                accessibilityState={{ selected: themeMode === option.id }}
                 style={[styles.modalOption, themeMode === option.id && { backgroundColor: colors.primary + '15' }]}
                 onPress={() => {
                   setThemeMode(option.id as any);
@@ -695,7 +706,7 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavig
                 {themeMode === option.id && <Ionicons name="checkmark-circle" size={20} color={colors.primary} />}
               </TouchableOpacity>
             ))}
-            <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setThemeModalVisible(false)}>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Fechar seleção de tema" style={styles.modalCloseBtn} onPress={() => setThemeModalVisible(false)}>
               <Text style={{ color: colors.primary, fontSize: 16, fontWeight: '600' }}>Fechar</Text>
             </TouchableOpacity>
           </View>
@@ -710,6 +721,9 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavig
               {PRIMARY_COLORS.map(color => (
                 <TouchableOpacity
                   key={color.value}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Usar cor ${color.label}`}
+                  accessibilityState={{ selected: primaryColor === color.value }}
                   style={[styles.colorCircle, { backgroundColor: color.value }, primaryColor === color.value && { borderWidth: 3, borderColor: colors.foreground }]}
                   onPress={() => {
                     setPrimaryColor(color.value);
@@ -718,7 +732,7 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavig
                 />
               ))}
             </View>
-            <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setColorModalVisible(false)}>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Fechar seleção de cor" style={styles.modalCloseBtn} onPress={() => setColorModalVisible(false)}>
               <Text style={{ color: colors.primary, fontSize: 16, fontWeight: '600' }}>Fechar</Text>
             </TouchableOpacity>
           </View>
@@ -741,13 +755,13 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavig
             
             <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 24, marginBottom: 32 }}>
               <View style={{ alignItems: 'center', gap: 12 }}>
-                <TouchableOpacity onPress={() => setTempHour(h => (h + 1) % 24)}>
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Aumentar hora" style={styles.timeControl} onPress={() => setTempHour(h => (h + 1) % 24)}>
                   <Ionicons name="chevron-up" size={32} color={colors.primary} />
                 </TouchableOpacity>
                 <Text style={{ fontSize: 42, fontWeight: '700', color: colors.foreground }}>
                   {String(tempHour).padStart(2, '0')}
                 </Text>
-                <TouchableOpacity onPress={() => setTempHour(h => (h - 1 + 24) % 24)}>
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Diminuir hora" style={styles.timeControl} onPress={() => setTempHour(h => (h - 1 + 24) % 24)}>
                   <Ionicons name="chevron-down" size={32} color={colors.primary} />
                 </TouchableOpacity>
                 <Text style={{ fontSize: 12, color: colors.mutedForeground, fontWeight: '600' }}>HORA</Text>
@@ -756,13 +770,13 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavig
               <Text style={{ fontSize: 42, fontWeight: '700', color: colors.foreground, marginTop: -20 }}>:</Text>
 
               <View style={{ alignItems: 'center', gap: 12 }}>
-                <TouchableOpacity onPress={() => setTempMinute(m => (m + 5) % 60)}>
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Aumentar minutos" style={styles.timeControl} onPress={() => setTempMinute(m => (m + 5) % 60)}>
                   <Ionicons name="chevron-up" size={32} color={colors.primary} />
                 </TouchableOpacity>
                 <Text style={{ fontSize: 42, fontWeight: '700', color: colors.foreground }}>
                   {String(tempMinute).padStart(2, '0')}
                 </Text>
-                <TouchableOpacity onPress={() => setTempMinute(m => (m - 5 + 60) % 60)}>
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Diminuir minutos" style={styles.timeControl} onPress={() => setTempMinute(m => (m - 5 + 60) % 60)}>
                   <Ionicons name="chevron-down" size={32} color={colors.primary} />
                 </TouchableOpacity>
                 <Text style={{ fontSize: 12, color: colors.mutedForeground, fontWeight: '600' }}>MIN</Text>
@@ -771,12 +785,16 @@ export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavig
 
             <View style={{ flexDirection: 'row', gap: 12 }}>
               <TouchableOpacity 
+                accessibilityRole="button"
+                accessibilityLabel="Cancelar edição de horário"
                 style={[styles.modalCloseBtn, { flex: 1, borderTopWidth: 0 }]} 
                 onPress={() => setTimePickerVisible(false)}
               >
                 <Text style={{ color: colors.mutedForeground, fontSize: 16, fontWeight: '600' }}>Cancelar</Text>
               </TouchableOpacity>
               <TouchableOpacity 
+                accessibilityRole="button"
+                accessibilityLabel="Salvar horário"
                 style={[styles.modalCloseBtn, { flex: 1, borderTopWidth: 0 }]} 
                 onPress={handleSaveTime}
               >
@@ -812,6 +830,7 @@ const styles = StyleSheet.create({
   switchLabel: { fontSize: 15, fontWeight: '500' },
   switchDesc: { fontSize: 12, marginTop: 4 },
   timeBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
+  timeValue: { fontSize: 12, fontWeight: '700', marginRight: 4 },
   footer: { textAlign: 'center', fontSize: 12, marginTop: 8 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 24 },
   modalContent: { width: '100%', borderRadius: 20, borderWidth: 1, padding: 24 },
@@ -819,5 +838,6 @@ const styles = StyleSheet.create({
   modalOption: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 14, paddingHorizontal: 16, borderRadius: 12, marginBottom: 8 },
   modalCloseBtn: { alignItems: 'center', paddingTop: 16, marginTop: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(0,0,0,0.1)' },
   colorCircle: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
-  editIconContainer: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  editIconContainer: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
+  timeControl: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
 })

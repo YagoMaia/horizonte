@@ -5,6 +5,7 @@ import { buildFinancialIndex, filterMonth, DEFAULT_SALDOS_FILTERS } from '../lib
 import { dayKey } from '../lib/financialDate';
 import { renderHook, waitFor } from '@testing-library/react-native';
 import { useStore } from '../hooks/useStore';
+import { prepareCardPayment } from '../lib/cardPayment';
 jest.mock('../services/notificationService', () => ({
   scheduleDailyReminder: jest.fn(), scheduleExpenseReminder: jest.fn(), scheduleCreditCardAlert: jest.fn(),
   cancelDailyReminder: jest.fn(), cancelExpenseReminder: jest.fn(), cancelCreditCardAlert: jest.fn(),
@@ -57,5 +58,18 @@ localTest('backup local privado (opt-in)', () => {
     expect(JSON.stringify(hook.result.current.transactions) === JSON.stringify(data.transactions)).toBe(true);
     expect(hook.result.current.accounts.length === data.accounts.length).toBe(true);
     hook.unmount();
+  });
+  it('simula pagamento na base privada e concilia a saída com a redução da dívida', () => {
+    const { data } = parseBackup(source);
+    const date = new Date(source.timestamp);
+    const before = buildFinancialIndex(data.accounts, data.transactions, data.goals, date);
+    const invoice = [...before.cardIndex.invoices.values()].find(i => i.pending > 0)!;
+    const bank = data.accounts.find(a => a.type !== 'cartao_credito')!;
+    const amount = Math.max(1, Math.floor(invoice.pending / 2)) / 100;
+    const next = prepareCardPayment(data.accounts, data.transactions, { cardId: invoice.cardId, sourceId: bank.id, month: invoice.month, amount, date }, date);
+    const after = buildFinancialIndex(data.accounts, next, data.goals, date);
+    expect(Math.round((before.totalBalance - after.totalBalance) * 100) === Math.round(amount * 100)).toBe(true);
+    expect(before.cardIndex.debt.get(invoice.cardId)! - after.cardIndex.debt.get(invoice.cardId)! === Math.round(amount * 100)).toBe(true);
+    expect(source.data.transactions.length === data.transactions.length).toBe(true);
   });
 });

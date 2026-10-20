@@ -7,15 +7,17 @@ import { useTheme } from '@/hooks/useTheme';
 import { useStoreContext } from '@/context/StoreContext';
 import { TransactionItem } from './TransactionItem';
 import { formatCurrency } from '@/lib/utils';
+import { financialDate } from '@/lib/financialDate';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface CategoryTransactionsModalProps {
   category: string;
   transactions: Transaction[];
+  hiddenValues?: boolean;
   onClose: () => void;
 }
 
-export function CategoryTransactionsModal({ category, transactions, onClose }: CategoryTransactionsModalProps) {
+export function CategoryTransactionsModal({ category, transactions, hiddenValues = false, onClose }: CategoryTransactionsModalProps) {
   const { colors } = useTheme();
   const { accounts, tags } = useStoreContext();
   const insets = useSafeAreaInsets();
@@ -23,7 +25,7 @@ export function CategoryTransactionsModal({ category, transactions, onClose }: C
   const categoryTransactions = useMemo(() => {
     return transactions
       .filter((t) => t.type === 'despesa' && ((t as any).tag === category || (!(t as any).tag && category === 'Outros')))
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      .sort((a, b) => financialDate(b.date).getTime() - financialDate(a.date).getTime());
   }, [transactions, category]);
 
   const totalAmount = useMemo(() => {
@@ -36,7 +38,7 @@ export function CategoryTransactionsModal({ category, transactions, onClose }: C
     <Modal visible animationType="slide" transparent={false} onRequestClose={onClose}>
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border, paddingTop: Math.max(insets.top, 20) }]}>
-          <TouchableOpacity onPress={onClose} style={[styles.closeBtn, { backgroundColor: colors.background }]}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Fechar detalhes da categoria" onPress={onClose} style={[styles.closeBtn, { backgroundColor: colors.background }]}>
             <Ionicons name="close" size={20} color={colors.foreground} />
           </TouchableOpacity>
           <View style={styles.headerInfo}>
@@ -53,7 +55,7 @@ export function CategoryTransactionsModal({ category, transactions, onClose }: C
         <View style={[styles.summaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <Text style={[styles.summaryLabel, { color: colors.mutedForeground }]}>Total Gasto</Text>
           <Text style={[styles.summaryValue, { color: colors.destructive }]}>
-            - {formatCurrency(totalAmount)}
+            - {hiddenValues ? '••••' : formatCurrency(totalAmount)}
           </Text>
         </View>
 
@@ -80,6 +82,7 @@ export function CategoryTransactionsModal({ category, transactions, onClose }: C
                 isFirst={index === 0}
                 isLast={index === categoryTransactions.length - 1}
                 hideIcon={true}
+                hideValues={hiddenValues}
               />
             );
           }}
@@ -102,8 +105,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   closeBtn: {
-    width: 40,
-    height: 40,
+    width: 48,
+    height: 48,
     borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',

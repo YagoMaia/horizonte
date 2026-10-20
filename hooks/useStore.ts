@@ -1,14 +1,16 @@
 // hooks/useStore.ts
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Transaction, Account, Tag, DEFAULT_TAGS, Project, NotificationPreferences, UserSettings } from '@/constants/types';
 import * as NotificationService from '../services/notificationService';
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { addMonths, addYears, addWeeks, addDays, setDate } from 'date-fns';
-import { getInvoiceForTx, getInvoiceTotal } from '@/lib/utils';
+import { getInvoiceTotal } from '@/lib/utils';
 import { financialDate, dayKey } from '@/lib/financialDate';
 import { buildFinancialIndex, calculateAccountBalances, EMPTY_PROJECT } from '@/lib/financialIndex';
 import { useToday } from './useToday';
+import { prepareCardPayment, reverseRecordedPayment, CardPaymentRequest } from '@/lib/cardPayment';
+import { commitLedger } from '@/lib/ledgerStorage';
 import { recoverPendingRestore, restoreBackup as restoreBackupStorage } from '@/lib/backup';
 
 const STORAGE_KEYS = {
@@ -43,6 +45,7 @@ const DEFAULT_NOTIFICATION_PREFS: NotificationPreferences = {
 };
 
 export function useStore() {
+  const cardWriteLock = useRef(false);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [storedAccounts, setAccounts] = useState<Account[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -71,6 +74,8 @@ export function useStore() {
   const today = useToday();
   const financialIndex = useMemo(() => buildFinancialIndex(storedAccounts, transactions, goals, financialDate(today)), [storedAccounts, transactions, goals, today]);
   const accounts = useMemo(() => storedAccounts.map(account => ({ ...account, balance: financialIndex.balances.get(account.id) || 0 })), [storedAccounts, financialIndex]);
+  const transactionsRef = useRef(transactions);
+  transactionsRef.current = transactions;
   // --- MÉTODOS DE PROCESSAMENTO BASE (Sincronização) ---
 
   // 👉 REESCRITA SÊNIOR: Função Mestre Única para Sincronização de Saldo
@@ -86,6 +91,7 @@ export function useStore() {
   // --- MÉTODOS DE SALVAMENTO ---
 
   const saveTransactions = useCallback(async (data: Transaction[]) => {
+    if (cardWriteLock.current) throw new Error('Aguarde a gravação do pagamento.');
     await AsyncStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(data));
     setTransactions(data);
   }, []);
@@ -603,6 +609,11 @@ export function useStore() {
     setUserSettings(DEFAULT_USER_SETTINGS);
   }, []);
 
+  const setShowPending = useCallback(async (value: boolean) => {
+    setShowPendingState(value);
+    await AsyncStorage.setItem(STORAGE_KEYS.SHOW_PENDING, JSON.stringify(value));
+  }, []);
+
   const addTag = useCallback(async (tag: Omit<Tag, 'id'>) => {
     const newTag: Tag = { ...tag, id: Date.now().toString() };
     const updated = [...tags, newTag];
@@ -767,7 +778,7 @@ export function useStore() {
       if (!targetTx) return;
 
       let idsToDelete = [id];
-      const isPartOfFamily = targetTx.groupId || id.includes('-');
+      const isPartOfFamily = targetTx.groupId || (/^\d+-\d+$/.test(id) && (targetTx.totalInstallments || targetTx.recurrence !== 'unica'));
 
       if (isPartOfFamily && mode !== 'single') {
         const baseId = targetTx.groupId || id.split('-')[0];
@@ -780,6 +791,7 @@ export function useStore() {
         }
       }
 
+      if (transactions.some(t => idsToDelete.includes(t.id) && (t.cardPaymentId || t.settledByPaymentId))) throw new Error('Estorne o registro na tela Cartões antes de excluir.');
       const updated = transactions.filter((t) => !idsToDelete.includes(t.id));
 
       await saveTransactions(updated);
@@ -792,9 +804,10 @@ export function useStore() {
     async (updatedTx: Transaction, mode: 'single' | 'future' | 'all' = 'single') => {
       const oldTx = transactions.find((t) => t.id === updatedTx.id);
       if (!oldTx) return;
+      if (oldTx.cardPaymentId || oldTx.settledByPaymentId) throw new Error('Estorne o registro na tela Cartões antes de editar.');
 
       let finalTransactions = [...transactions];
-      const isPartOfFamily = oldTx.groupId || oldTx.id.includes('-');
+      const isPartOfFamily = oldTx.groupId || (/^\d+-\d+$/.test(oldTx.id) && (oldTx.totalInstallments || oldTx.recurrence !== 'unica'));
 
       if (isPartOfFamily && mode !== 'single') {
         const baseId = oldTx.groupId || oldTx.id.split('-')[0];
@@ -802,6 +815,7 @@ export function useStore() {
         const targetDateStr = dayKey(oldTx.date);
         const txsToMutate = mode === 'all' ? familyTxs : familyTxs.filter(t => dayKey(t.date) >= targetDateStr);
 
+        if (txsToMutate.some(t => t.cardPaymentId || t.settledByPaymentId)) throw new Error('A família contém registros de pagamento. Estorne antes de editar.');
         const targetAccount = accounts.find(a => a.id === updatedTx.accountId);
         const isCreditCard = targetAccount?.type === 'cartao_credito';
         const closingDay = targetAccount?.closingDay || 25;
@@ -943,123 +957,37 @@ export function useStore() {
 
   const totalBalance = financialIndex.totalBalance;
 
-  const payCreditCardInvoice = useCallback(
-    async (
-      creditCardId: string,
-      sourceAccountId: string | null,
-      targetMonth: number,
-      targetYear: number,
-      gerarLancamento = true,
-    ) => {
-      const cardAccount = accounts.find((a) => a.id === creditCardId);
-      if (!cardAccount || cardAccount.type !== 'cartao_credito') return;
-
-      const invoiceTxs = transactions.filter((tx) => {
-        if (
-          tx.accountId !== creditCardId ||
-          tx.paymentMethod !== 'credito' ||
-          tx.paid
-        )
-          return false;
-
-        const invoice = getInvoiceForTx(tx.date, cardAccount);
-        return invoice.viewMonth === targetMonth && invoice.viewYear === targetYear;
-      });
-
-      if (invoiceTxs.length === 0) return;
-
-      const invoiceTotal = invoiceTxs.reduce(
-        (sum, tx) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount),
-        0,
-      );
-
-      const invoiceTxIds = invoiceTxs.map((t) => t.id);
-      const updatedTransactions = transactions.map((tx) => {
-        if (invoiceTxIds.includes(tx.id)) {
-          return { ...tx, paid: true };
-        }
-        return tx;
-      });
-
-      let finalTransactions = updatedTransactions;
-
-      if (gerarLancamento && sourceAccountId) {
-        const paymentTx: Transaction = {
-          id: Date.now().toString(),
-          description: `Pagamento Fatura - ${cardAccount.name}`,
-          amount: invoiceTotal,
-          type: 'despesa',
-          date: new Date().toISOString(),
-          accountId: sourceAccountId,
-          paymentMethod: 'debito',
-          paid: true,
-          recurrence: 'unica',
-        };
-
-        finalTransactions = [paymentTx, ...updatedTransactions];
-      }
-
-      await saveTransactions(finalTransactions);
-      await syncBalances(finalTransactions, accounts);
-    },
-    [transactions, accounts, saveTransactions, syncBalances],
-  );
-
-  const anticipateCreditCardPayment = useCallback(
-    async (
-      creditCardId: string,
-      sourceAccountId: string,
-      amount: number,
-      targetMonth: number,
-      targetYear: number,
-      paymentDate?: Date,
-    ) => {
-      const cardAccount = accounts.find((a) => a.id === creditCardId);
-      if (!cardAccount) return;
-
-      const baseId = Date.now().toString();
-      const effectiveDate = paymentDate || new Date();
-
-      const paymentTx: Transaction = {
-        id: `${baseId}-out`,
-        description: `Antecipação - ${cardAccount.name}`,
-        amount: amount,
-        type: 'despesa',
-        date: effectiveDate.toISOString(),
-        accountId: sourceAccountId,
-        paymentMethod: 'debito',
-        paid: true,
-        recurrence: 'unica',
-      };
-
-      const closingDay = cardAccount.closingDay || 25;
-      const dueDay = cardAccount.dueDay || 5;
-
-      const monthOffset = (dueDay < closingDay ? 1 : 0);
-      const creditTxDate = new Date(targetYear, targetMonth - monthOffset, 1, 12, 0, 0);
-
-      const creditTx: Transaction = {
-        id: `${baseId}-in`,
-        description: `Pagamento Antecipado`,
-        amount: amount,
-        type: 'receita',
-        date: creditTxDate.toISOString(),
-        accountId: creditCardId,
-        paymentMethod: 'credito',
-        paid: false,
-        recurrence: 'unica',
-      };
-
-      const finalTransactions = [paymentTx, creditTx, ...transactions];
-
-      await saveTransactions(finalTransactions);
-      await syncBalances(finalTransactions, accounts);
-    },
-    [transactions, accounts, saveTransactions, syncBalances],
-  );
+  const recordCardPayment = useCallback(async (request: CardPaymentRequest) => {
+    if (cardWriteLock.current) throw new Error('Um pagamento já está sendo processado.');
+    cardWriteLock.current = true;
+    try {
+      const next = prepareCardPayment(accounts, transactionsRef.current, request);
+      const updatedAccounts = calculateAccountBalances(accounts, next);
+      await commitLedger(next, updatedAccounts);
+      transactionsRef.current = next;
+      setTransactions(next); setAccounts(updatedAccounts);
+    } finally { cardWriteLock.current = false; }
+  }, [accounts]);
+  const reverseCardPayment = useCallback(async (paymentId: string) => {
+    if (cardWriteLock.current) throw new Error('Aguarde a gravação atual.');
+    cardWriteLock.current = true;
+    try {
+      const next = reverseRecordedPayment(transactionsRef.current, paymentId);
+      const updatedAccounts = calculateAccountBalances(accounts, next);
+      await commitLedger(next, updatedAccounts);
+      transactionsRef.current = next; setTransactions(next); setAccounts(updatedAccounts);
+    } finally { cardWriteLock.current = false; }
+  }, [accounts]);
+  const payCreditCardInvoice = useCallback(async (creditCardId: string, sourceAccountId: string | null, targetMonth: number, targetYear: number, gerarLancamento = true, paymentDate = new Date()) => {
+    await recordCardPayment({ cardId: creditCardId, sourceId: sourceAccountId, month: dayKey(new Date(targetYear, targetMonth, 1, 12)).slice(0,7), markOnly: !gerarLancamento, date: paymentDate });
+  }, [recordCardPayment]);
+  const anticipateCreditCardPayment = useCallback(async (creditCardId: string, sourceAccountId: string, amount: number, targetMonth: number, targetYear: number, paymentDate = new Date()) => {
+    await recordCardPayment({ cardId: creditCardId, sourceId: sourceAccountId, month: dayKey(new Date(targetYear, targetMonth, 1, 12)).slice(0,7), amount, date: paymentDate });
+  }, [recordCardPayment]);
 
   const deleteMultipleTransactions = useCallback(
-    async (txIds: string[]) => {
+    async (txIds: string[], scope: 'invoice' | 'family' = 'invoice') => {
+      if (transactions.some(t => txIds.includes(t.id) && (t.cardPaymentId || t.settledByPaymentId))) throw new Error('Esta seleção contém pagamentos vinculados. Preserve os registros para manter a conciliação.');
       let idsToRemove = new Set<string>();
 
       txIds.forEach((id) => {
@@ -1067,9 +995,9 @@ export function useStore() {
         if (!targetTx) return;
 
         idsToRemove.add(id);
-        const isPartOfFamily = targetTx.groupId || id.includes('-');
+        const isPartOfFamily = targetTx.groupId || (/^\d+-\d+$/.test(id) && (targetTx.totalInstallments || targetTx.recurrence !== 'unica'));
 
-        if (isPartOfFamily) {
+        if (scope === 'family' && isPartOfFamily) {
           const baseId = targetTx.groupId || id.split('-')[0];
           const familyTxs = transactions.filter(
             (t) => t.groupId === baseId || t.id.startsWith(`${baseId}-`)
@@ -1078,9 +1006,9 @@ export function useStore() {
         }
       });
 
-      const finalIdsToRemove = Array.from(idsToRemove);
 
-      const updated = transactions.filter((t) => !finalIdsToRemove.includes(t.id));
+      if (transactions.some(t => idsToRemove.has(t.id) && (t.cardPaymentId || t.settledByPaymentId))) throw new Error('A família contém pagamentos vinculados.');
+      const updated = transactions.filter((t) => !idsToRemove.has(t.id));
 
       await saveTransactions(updated);
       await syncBalances(updated, accounts);
@@ -1100,6 +1028,10 @@ export function useStore() {
   }, [financialIndex]);
   const getProjectSpent = useCallback((projectId: string) => getProjectStats(projectId).spent, [getProjectStats]);
   const getGoalSavedAmount = useCallback((goalId: string) => financialIndex.goalAmounts.get(goalId) || 0, [financialIndex]);
+  const getInvoicePendingForMonth = useCallback((creditCardId: string, targetMonth: number, targetYear: number) => {
+    const month = dayKey(new Date(targetYear, targetMonth, 1, 12)).slice(0,7);
+    return (financialIndex.cardIndex.invoices.get(creditCardId + ':' + month)?.pending || 0) / 100;
+  }, [financialIndex]);
   const getInvoiceTotalForMonth = useCallback((creditCardId: string, targetMonth: number, targetYear: number) => {
     const card = financialIndex.accountById.get(creditCardId);
     return card ? getInvoiceTotal(card, transactions, targetMonth, targetYear) : 0;
@@ -1119,6 +1051,7 @@ export function useStore() {
     deleteProject,
     getProjectSpent,
     getProjectStats,
+    getInvoicePendingForMonth,
     getInvoiceTotalForMonth,
     goals,
     addGoal,
@@ -1133,6 +1066,7 @@ export function useStore() {
     getEffectiveBudget,
     saveMonthlyBudget,
     showPending,
+    setShowPending,
     hasSeenOnboarding,
     completeOnboarding,
     totalBalance,
@@ -1146,6 +1080,7 @@ export function useStore() {
     syncBalances,
     purgeAdjustments,
     clearAllData,
+    reverseCardPayment,
     payCreditCardInvoice,
     anticipateCreditCardPayment,
     deleteMultipleTransactions,

@@ -1,6 +1,7 @@
 import { Account, Goal, Transaction } from '@/constants/types';
 import { dayKey, financialDate } from './financialDate';
 import { getInvoiceForTx } from './utils';
+import { buildCardInvoices, invoiceMonth } from './cardInvoices';
 
 export type PaymentStatus = 'realizado' | 'previsto' | 'vencido';
 export interface TransactionMeta { day: string; month: string; time: number; status: PaymentStatus; search: string }
@@ -23,7 +24,7 @@ export function buildFinancialIndex(accounts: Account[], transactions: Transacti
   const pendingFlow = new Map<string, number>();
   const projects = new Map<string, ProjectTotals>();
   const goalCents = new Map(goals.map(g => [g.id, cents(g.savedAmount || 0)]));
-  const invoices = new Map<string, { cardId: string; due: string; total: number; pending: number }>();
+  const cardIndex = buildCardInvoices(accounts, transactions);
   const openInvoiceTotals = new Map<string, number>();
   const cardDebt = new Map<string, number>();
   const openInvoices = new Map(accounts.filter(a => a.type === 'cartao_credito').map(a => [a.id, getInvoiceForTx(todayKey, a).value]));
@@ -63,17 +64,11 @@ export function buildFinancialIndex(accounts: Account[], transactions: Transacti
 
     const card = accountById.get(tx.accountId);
     if (card?.type === 'cartao_credito' && tx.paymentMethod === 'credito') {
-      const invoice = getInvoiceForTx(tx.date, card);
-      const dueDay = Math.min(card.dueDay || 5, new Date(invoice.viewYear, invoice.viewMonth + 1, 0).getDate());
-      const due = dayKey(new Date(invoice.viewYear, invoice.viewMonth, dueDay, 12));
-      if (!tx.paid) metadata.get(tx.id)!.status = due < todayKey ? 'vencido' : 'previsto';
-      const key = `${card.id}:${invoice.value}`;
+      const month = invoiceMonth(tx, card);
+      const invoice = cardIndex.invoices.get(card.id + ':' + month)!;
+      metadata.get(tx.id)!.status = tx.paid || invoice.pending === 0 ? 'realizado' : invoice.due < todayKey ? 'vencido' : 'previsto';
       const value = tx.type === 'receita' ? -amount : amount;
-      const entry = invoices.get(key) || { cardId: card.id, due, total: 0, pending: 0 };
-      entry.total += value;
-      if (!tx.paid) entry.pending += value;
-      invoices.set(key, entry);
-      if (day <= todayKey && invoice.value === openInvoices.get(card.id)) openInvoiceTotals.set(card.id, (openInvoiceTotals.get(card.id) || 0) + value);
+      if (day <= todayKey && Number(month.replace('-', '')) === openInvoices.get(card.id)) openInvoiceTotals.set(card.id, (openInvoiceTotals.get(card.id) || 0) + value);
     }
     if (tx.projectId) {
       const stats = projects.get(tx.projectId) || { ...EMPTY_PROJECT };
@@ -87,7 +82,7 @@ export function buildFinancialIndex(accounts: Account[], transactions: Transacti
       ids.forEach((id, index) => goalCents.set(id, goalCents.get(id)! + share + (index < amount % ids.length ? 1 : 0)));
     }
   }
-  for (const invoice of invoices.values()) {
+  for (const invoice of cardIndex.invoices.values()) {
     const pending = Math.max(0, invoice.pending);
     const month = invoice.due.slice(0, 7);
     const summary = summaries.get(month) || emptyMonth();
@@ -104,7 +99,7 @@ export function buildFinancialIndex(accounts: Account[], transactions: Transacti
   for (const summary of summaries.values()) for (const key of Object.keys(summary) as (keyof MonthTotals)[]) summary[key] /= 100;
   const balances = new Map([...balanceCents].map(([id, value]) => [id, value / 100]));
   const totalBalance = [...balanceCents.values()].reduce((sum, value) => sum + value, 0) / 100;
-  return { todayKey, accountById, balances, totalBalance, metadata, months, summaries, projects,
+  return { cardIndex, todayKey, accountById, balances, totalBalance, metadata, months, summaries, projects,
     goalAmounts: new Map([...goalCents].map(([id, value]) => [id, value / 100])),
     openInvoiceTotals: new Map([...openInvoiceTotals].map(([id, value]) => [id, value / 100])),
     cardDebt: new Map([...cardDebt].map(([id, value]) => [id, value / 100])),

@@ -12,9 +12,10 @@ interface CategoryDonutChartProps {
   title?: string;
   headerComponent?: React.ReactNode;
   onCategoryPress?: (category: string) => void;
+  hiddenValues?: boolean;
 }
 
-export function CategoryDonutChart({ transactions, title = 'Divisão por Categoria', headerComponent, onCategoryPress }: CategoryDonutChartProps) {
+export function CategoryDonutChart({ transactions, title = 'Divisão por Categoria', headerComponent, onCategoryPress, hiddenValues = false }: CategoryDonutChartProps) {
   const { colors } = useTheme();
   const { tags } = useStoreContext();
 
@@ -109,7 +110,7 @@ export function CategoryDonutChart({ transactions, title = 'Divisão por Categor
               <View style={styles.centerTextContainer}>
                 <Text style={[styles.centerLabel, { color: colors.mutedForeground }]}>Total</Text>
                 <Text style={[styles.centerValue, { color: colors.foreground }]}>
-                  {formatCurrency(data.total)}
+                  {hiddenValues ? '••••' : formatCurrency(data.total)}
                 </Text>
               </View>
             </View>
@@ -120,6 +121,8 @@ export function CategoryDonutChart({ transactions, title = 'Divisão por Categor
             {data.tags.map((tag) => (
               <TouchableOpacity 
                 key={tag.name} 
+                accessibilityRole="button"
+                accessibilityLabel={`${tag.name}, ${tag.percent.toFixed(0)}%, ${hiddenValues ? 'valor oculto' : formatCurrency(tag.value)}`}
                 style={styles.legendItemBtn}
                 onPress={() => {
                   if (onCategoryPress) onCategoryPress(tag.name);
@@ -135,7 +138,7 @@ export function CategoryDonutChart({ transactions, title = 'Divisão por Categor
                 </View>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                   <Text style={[styles.tagValue, { color: colors.foreground }]}>
-                    {formatCurrency(tag.value)}
+                    {hiddenValues ? '••••' : formatCurrency(tag.value)}
                   </Text>
                   {onCategoryPress && (
                     <Ionicons name="chevron-forward" size={16} color={colors.mutedForeground} />

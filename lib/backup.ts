@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Account, Transaction, Tag, Project, Goal, HomeSection, TotaisSection, UserSettings, NotificationPreferences, DEFAULT_TAGS } from '@/constants/types';
 import { PRIMARY_COLORS } from '@/constants/theme';
+import { recoverLedgerWrite } from './ledgerStorage';
 
 export interface BackupData {
   accounts: Account[]; transactions: Transaction[]; tags: Tag[];
@@ -82,6 +83,9 @@ export function parseBackup(input: unknown): { version: string; data: BackupData
   const projects = new Set(data.projects.map(p => p.id));
   const goals = new Set(data.goals.map(g => g.id));
   for (const t of data.transactions) {
+    ensure(t.invoiceMonth === undefined || /^\d{4}-(0[1-9]|1[0-2])$/.test(t.invoiceMonth), 'competência da fatura');
+    ensure(t.settledAt === undefined || validDate(t.settledAt), 'data de quitação');
+    for (const link of [t.cardPaymentId, t.paidCardId, t.settledByPaymentId]) ensure(link === undefined || text(link), 'vínculo de pagamento');
     ensure(typeof t.description === 'string' && nonnegative(t.amount) && validDate(t.date) && typeof t.paid === 'boolean', 'lançamento');
     ensure(['receita', 'despesa', 'transferencia'].includes(t.type), 'tipo de lançamento');
     ensure(['unica', 'diaria', 'dias_uteis', 'semanal', 'mensal', 'anual', 'quinto_dia_util'].includes(t.recurrence), 'recorrência');
@@ -136,6 +140,7 @@ async function rollback(previous: readonly (readonly [string, string | null])[])
   await AsyncStorage.removeItem(JOURNAL_KEY);
 }
 export async function recoverPendingRestore() {
+  await recoverLedgerWrite();
   const journal = await AsyncStorage.getItem(JOURNAL_KEY);
   if (!journal) return;
   const previous = JSON.parse(journal);

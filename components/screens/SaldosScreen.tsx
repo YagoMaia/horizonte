@@ -14,7 +14,7 @@ import { RecurrenceActionModal } from '../RecurrenceActionModal';
 import { TransactionItem } from '../TransactionItem';
 
 export interface SaldosViewState { month: string; filters: SaldosFilters; limit: number; hideValues: boolean; scrollOffset: number }
-interface Props { viewStateRef?: React.MutableRefObject<SaldosViewState | null>; onNavigate?: (tab: TabType, accountId?: string) => void }
+interface Props { hiddenValues?: boolean; onHiddenValuesChange?: (hidden: boolean) => void; viewStateRef?: React.MutableRefObject<SaldosViewState | null>; onNavigate?: (tab: TabType, accountId?: string) => void }
 const EMPTY_TRANSACTIONS: Transaction[] = [];
 const monthLabel = (month: string) => financialDate(`${month}-01`).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
 const filterCount = (f: SaldosFilters) => Number(f.type !== 'todas') + Number(f.accountId !== 'todas') + Number(f.status !== 'todos') + Number(!!f.query.trim()) + Number(f.includeAdjustments);
@@ -97,7 +97,7 @@ const OverviewSections = React.memo(function OverviewSections({ sections, index,
   </>;
 });
 
-export function SaldosScreen({ viewStateRef, onNavigate }: Props) {
+export function SaldosScreen({ viewStateRef, onNavigate, hiddenValues, onHiddenValuesChange }: Props) {
   const { colors } = useTheme();
   const dimensions = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -108,7 +108,8 @@ export function SaldosScreen({ viewStateRef, onNavigate }: Props) {
   const [month, setMonth] = useState(initial.current?.month || today.slice(0, 7));
   const [filters, setFilters] = useState<SaldosFilters>(initial.current?.filters || DEFAULT_SALDOS_FILTERS);
   const [limit, setLimit] = useState(initial.current?.limit || 20);
-  const [hidden, setHidden] = useState(initial.current?.hideValues || false);
+  useEffect(() => { if (hiddenValues !== undefined) setHidden(hiddenValues); }, [hiddenValues]);
+  const [hidden, setHidden] = useState(hiddenValues ?? initial.current?.hideValues ?? false);
   const [draft, setDraft] = useState(filters);
   const [filterOpen, setFilterOpen] = useState(false);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
@@ -192,7 +193,7 @@ export function SaldosScreen({ viewStateRef, onNavigate }: Props) {
       </View>
       <View style={styles.toolbar}>
         <TouchableOpacity accessibilityRole="button" onPress={() => { setMonth(today.slice(0, 7)); setLimit(20); }} style={styles.iconButton}><Text style={{ color: colors.foreground, textDecorationLine: 'underline' }}>Mês atual</Text></TouchableOpacity>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel={hidden ? 'Mostrar valores' : 'Ocultar valores'} onPress={() => setHidden(v => !v)} style={styles.iconButton}><Ionicons name={hidden ? 'eye-off-outline' : 'eye-outline'} size={22} color={colors.foreground} /></TouchableOpacity>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={hidden ? 'Mostrar valores' : 'Ocultar valores'} onPress={() => { setHidden(!hidden); onHiddenValuesChange?.(!hidden); }} style={styles.iconButton}><Ionicons name={hidden ? 'eye-off-outline' : 'eye-outline'} size={22} color={colors.foreground} /></TouchableOpacity>
       </View>
     </View>
     <OverviewSections sections={layout.before} {...blocks} />

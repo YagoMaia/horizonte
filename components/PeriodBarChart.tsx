@@ -1,10 +1,10 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import Svg, { Rect, G, Text as SvgText, Line } from 'react-native-svg';
 import { Transaction } from '@/constants/types';
 import { useTheme } from '@/hooks/useTheme';
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-import { formatCurrency } from '@/lib/utils';
+import { financialDate } from '@/lib/financialDate';
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { startOfWeek, endOfWeek, getDate, getMonth, getYear, getDaysInMonth } from 'date-fns';
 
@@ -15,9 +15,10 @@ interface PeriodBarChartProps {
   period: Period;
   refDate: Date;
   title?: string;
+  hiddenValues?: boolean;
 }
 
-export function PeriodBarChart({ transactions, period, refDate, title = 'Comparativo de Gastos' }: PeriodBarChartProps) {
+export function PeriodBarChart({ transactions, period, refDate, title = 'Comparativo de Gastos', hiddenValues = false }: PeriodBarChartProps) {
   const { colors } = useTheme();
   const [selectedBar, setSelectedBar] = useState<number | null>(null);
   const [containerWidth, setContainerWidth] = useState(320);
@@ -30,7 +31,7 @@ export function PeriodBarChart({ transactions, period, refDate, title = 'Compara
       const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
       chartData = months.map((label) => ({ label, value: 0 }));
       expenses.forEach((tx) => {
-        const date = new Date(tx.date);
+        const date = financialDate(tx.date);
         chartData[date.getMonth()].value += tx.amount;
       });
     } else if (period === 'mes') {
@@ -44,7 +45,7 @@ export function PeriodBarChart({ transactions, period, refDate, title = 'Compara
       if (daysInMonth > 28) chartData.push({ label: 'S5', value: 0 });
 
       expenses.forEach((tx) => {
-        const date = new Date(tx.date);
+        const date = financialDate(tx.date);
         const day = date.getDate();
         if (day <= 7) chartData[0].value += tx.amount;
         else if (day <= 14) chartData[1].value += tx.amount;
@@ -56,13 +57,15 @@ export function PeriodBarChart({ transactions, period, refDate, title = 'Compara
       const weekDays = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab'];
       chartData = weekDays.map((label) => ({ label, value: 0 }));
       expenses.forEach((tx) => {
-        const date = new Date(tx.date);
+        const date = financialDate(tx.date);
         chartData[date.getDay()].value += tx.amount;
       });
     }
 
     return chartData;
   }, [transactions, period, refDate]);
+
+  useEffect(() => { setSelectedBar(null); }, [period, refDate, transactions]);
 
   const maxValue = useMemo(() => {
     const max = Math.max(...data.map(d => d.value));
@@ -103,7 +106,7 @@ export function PeriodBarChart({ transactions, period, refDate, title = 'Compara
             {data[selectedBar].label}:
           </Text>
           <Text style={[styles.badgeValue, { color: colors.primary }]}>
-            {formatCompact(data[selectedBar].value)}
+            {hiddenValues ? '••••' : formatCompact(data[selectedBar].value)}
           </Text>
         </View>
       )}
@@ -154,6 +157,9 @@ export function PeriodBarChart({ transactions, period, refDate, title = 'Compara
             {data.map((item, index) => (
               <TouchableOpacity
                 key={item.label}
+                accessibilityRole="button"
+                accessibilityLabel={`${item.label}: ${hiddenValues ? 'valor oculto' : formatCompact(item.value)}`}
+                accessibilityState={{ selected: selectedBar === index }}
                 activeOpacity={0.6}
                 style={{ width: svgToRealX(chartInnerWidth / data.length), height: chartHeight }}
                 onPress={() => setSelectedBar(selectedBar === index ? null : index)}

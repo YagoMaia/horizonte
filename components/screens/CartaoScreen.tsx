@@ -1,800 +1,198 @@
-// components/screens/CartaoScreen.tsx
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
-  FlatList,
-  Modal,
-  Alert,
-  Platform,
-  TextInput,
-} from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, FlatList, ScrollView, Modal, Alert, Platform, TextInput, KeyboardAvoidingView } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/hooks/useTheme';
 import { useStoreContext } from '@/context/StoreContext';
-import {
-  formatCurrency,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  formatDateShort,
-  getInvoiceForTx,
-} from '@/lib/utils';
-import { Account, Transaction } from '@/constants/types';
-
+import { formatCurrency, formatDate } from '@/lib/utils';
+import { dayKey, financialDate } from '@/lib/financialDate';
+import { invoiceDates, invoiceStatus, parseMoney, shiftMonth } from '@/lib/cardInvoices';
+import { normalizeSearch, PaymentStatus } from '@/lib/financialIndex';
+import { Account } from '@/constants/types';
 import { TransactionItem } from '../TransactionItem';
-
-const MONTH_NAMES = [
-  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
-  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
-];
-
-const WEEK_DAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
-
-const ALL_CARDS_VIRTUAL_ACCOUNT: Account = {
-  id: 'all',
-  name: 'Todos os Cartões',
-  color: '#334155', // Slate escoro para manter o texto branco legível
-  type: 'cartao_credito',
-  icon: 'albums',
-  balance: 0,
-};
-
-export function CartaoScreen({ onSelectCard, initialCardId }: { onSelectCard?: (card: Account | null) => void; initialCardId?: string }) {
-  const { colors } = useTheme();
-  const {
-    accounts,
-    transactions,
-    payCreditCardInvoice,
-    anticipateCreditCardPayment,
-    deleteMultipleTransactions,
-  } = useStoreContext() as any;
-
-  const creditCards = useMemo(
-    () => accounts.filter((a: Account) => a.type === 'cartao_credito'),
-    [accounts],
-  );
-
-  // 👉 selectedCardId agora pode ser 'all' (Todos)
-  const [selectedCardId, setSelectedCardId] = useState<string | null>(
-    initialCardId && creditCards.some((card: Account) => card.id === initialCardId) ? initialCardId : creditCards.length > 0 ? 'all' : null,
-  );
-
-  // 👉 Cria um cartão "Virtual" caso a opção Todos esteja selecionada
-  const selectedCard = useMemo(() => {
-    if (selectedCardId === 'all') {
-      return ALL_CARDS_VIRTUAL_ACCOUNT;
-    }
-    return creditCards.find((c: Account) => c.id === selectedCardId) || null;
-  }, [creditCards, selectedCardId]);
-
-  // Informa ao pai qual cartão está selecionado para pré-configurar o modal de transação
-  useEffect(() => {
-    if (onSelectCard) {
-      onSelectCard(selectedCardId === 'all' ? null : selectedCard);
-    }
-  }, [selectedCard, selectedCardId, onSelectCard]);
-
-  const [monthOffset, setMonthOffset] = useState(0);
-
-  useEffect(() => {
-    setMonthOffset(0);
-  }, [selectedCardId]);
-
-  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
-  const [isPaymentTypeModalOpen, setIsPaymentTypeModalOpen] = useState(false);
-  const [sourceAccountId, setSourceAccountId] = useState<string>('');
-
-  const [isAnticipateModalOpen, setIsAnticipateModalOpen] = useState(false);
-  const [anticipateAmountStr, setAnticipateAmountStr] = useState('');
-  const [anticipateSourceAccountId, setAnticipateSourceAccountId] = useState<string>('');
-  const [anticipateDate, setAnticipateDate] = useState(new Date());
-  const [showAnticipateCalendar, setShowAnticipateCalendar] = useState(false);
-  const [anticipateCalendarMonth, setAnticipateCalendarMonth] = useState(new Date());
-
-  const {
-    totalInvoice,
-    pendingInvoice,
-    targetMonth,
-    targetYear,
-    invoiceTransactions,
-    invoiceStatus,
-    globalPendingDebt,
-    isAll,
-  } = useMemo(() => {
-    if (!selectedCard)
-      return {
-        totalInvoice: 0, pendingInvoice: 0, targetMonth: 0, targetYear: 2024,
-        invoiceTransactions: [], limit: 0, availableLimit: 0, limitUsagePercent: 0,
-        invoiceStatus: 'ZERADA', statusColor: colors.mutedForeground, globalPendingDebt: 0,
-        isAll: false
-      };
-
-    const baseDate = new Date();
-    baseDate.setMonth(baseDate.getMonth() + monthOffset);
-
-    // 👉 LÓGICA PARA "TODOS OS CARTÕES"
-    if (selectedCard.id === 'all') {
-      let tInvoice = 0;
-      let pInvoice = 0;
-      let globalDebt = 0;
-      let allTxs: Transaction[] = [];
-
-      creditCards.forEach((card: Account) => {
-        const targetInvoice = getInvoiceForTx(baseDate.toISOString(), card);
-        const tValue = targetInvoice.value;
-        const openInvoiceValue = getInvoiceForTx(new Date().toISOString(), card).value;
-
-        const cardInvTxs = transactions.filter((tx: Transaction) => {
-          if (tx.accountId !== card.id || tx.paymentMethod !== 'credito') return false;
-          return getInvoiceForTx(tx.date, card).value === tValue;
-        });
-
-        allTxs.push(...cardInvTxs);
-
-        tInvoice += cardInvTxs.reduce((sum: number, tx: Transaction) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount), 0);
-        pInvoice += cardInvTxs.filter((t: Transaction) => !t.paid).reduce((sum: number, tx: Transaction) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount), 0);
-
-        const cardDebt = transactions.filter((tx: Transaction) => {
-          if (tx.accountId !== card.id || tx.paymentMethod !== 'credito' || tx.paid) return false;
-          
-          const isInstallment = tx.totalInstallments && tx.totalInstallments > 1;
-          
-          if (!isInstallment) {
-            if (getInvoiceForTx(tx.date, card).value > openInvoiceValue) return false;
-          }
-          return true;
-        }).reduce((sum: number, tx: Transaction) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount), 0);
-
-        globalDebt += cardDebt;
-      });
-
-      allTxs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-
-      let status = 'CONSOLIDADA';
-      if (pInvoice <= 0 && tInvoice > 0) { status = 'PAGA'; }
-      else if (tInvoice <= 0) { status = 'ZERADA'; }
-
-      // Pega o nome do mês usando o primeiro cartão como referência de data
-      const refInvoice = creditCards.length > 0 ? getInvoiceForTx(baseDate.toISOString(), creditCards[0]) : { viewMonth: baseDate.getMonth(), viewYear: baseDate.getFullYear() };
-
-      return {
-        totalInvoice: tInvoice, pendingInvoice: pInvoice, targetMonth: refInvoice.viewMonth, targetYear: refInvoice.viewYear,
-        invoiceTransactions: allTxs,
-        invoiceStatus: status, globalPendingDebt: globalDebt, isAll: true
-      };
-    }
-
-    // 👉 LÓGICA PARA UM CARTÃO ESPECÍFICO (Mantida igual)
-    const targetInvoice = getInvoiceForTx(baseDate.toISOString(), selectedCard);
-    const tMonth = targetInvoice.viewMonth;
-    const tYear = targetInvoice.viewYear;
-    const tValue = targetInvoice.value;
-
-    const invTxs = transactions
-      .filter((tx: Transaction) => {
-        if (tx.accountId !== selectedCard.id || tx.paymentMethod !== 'credito') return false;
-        return getInvoiceForTx(tx.date, selectedCard).value === tValue;
-      })
-      .sort((a: Transaction, b: Transaction) => new Date(b.date).getTime() - new Date(a.date).getTime());
-
-    const tInvoice = invTxs.reduce((sum: number, tx: Transaction) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount), 0);
-    const pInvoice = invTxs.filter((t: Transaction) => !t.paid).reduce((sum: number, tx: Transaction) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount), 0);
-    const openInvoiceValue = getInvoiceForTx(new Date().toISOString(), selectedCard).value;
-
-    const globalPendingDebtValue = transactions
-      .filter((tx: Transaction) => {
-        if (tx.accountId !== selectedCard.id || tx.paymentMethod !== 'credito' || tx.paid) return false;
-        return true; // Conta todas as faturas em aberto, garantindo que o limite consumido inclua passadas
-      })
-      .reduce((sum: number, tx: Transaction) => sum + (tx.type === 'receita' ? -tx.amount : tx.amount), 0);
-
-    let status = 'ABERTA';
-
-    // Neutraliza completamente as horas para evitar falhas de timezone (ex: meia tarde)
-    const today = new Date();
-    const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    
-    const dueDay = selectedCard.dueDay || 5;
-    const dueDate = new Date(tYear, tMonth, dueDay);
-
-    if (tInvoice > 0 && pInvoice <= 0.01 && tValue <= openInvoiceValue) {
-      status = 'PAGA';
-    } else if (tValue > openInvoiceValue) {
-      status = 'FUTURA';
-    } else if (tInvoice <= 0) {
-      status = 'ZERADA';
-    } else if (pInvoice > 0.01 && dueDate.getTime() < todayStart.getTime()) {
-      status = 'VENCIDA';
-    }
-
-    return {
-      totalInvoice: tInvoice, pendingInvoice: pInvoice, targetMonth: tMonth, targetYear: tYear,
-      invoiceTransactions: invTxs,
-      invoiceStatus: status, globalPendingDebt: globalPendingDebtValue, isAll: false
-    };
-  }, [selectedCard, transactions, monthOffset, colors, creditCards]);
-
-  const debitAccounts = useMemo(() => accounts.filter((a: Account) => a.type !== 'cartao_credito'), [accounts]);
-
-  const handlePayInvoice = useCallback(() => {
-    if (Platform.OS === 'web') {
-      setIsPaymentTypeModalOpen(true);
-    } else {
-      Alert.alert(
-        'Pagar Fatura',
-        'Como deseja registrar este pagamento?',
-        [
-          {
-            text: 'Pagar e abater do saldo',
-            onPress: () => {
-              if (debitAccounts.length === 0) {
-                Alert.alert('Aviso', 'Não tem nenhuma conta corrente cadastrada para pagar esta fatura.');
-                return;
-              }
-              setSourceAccountId(debitAccounts[0].id);
-              setIsPaymentModalOpen(true);
-            },
-          },
-          {
-            text: 'Apenas marcar como paga',
-            onPress: async () => {
-              if (!selectedCard || selectedCard.id === 'all') return;
-              try {
-                await payCreditCardInvoice(selectedCard.id, null, targetMonth, targetYear, false);
-                Alert.alert('Sucesso', 'Fatura marcada como paga!');
-              // eslint-disable-next-line @typescript-eslint/no-unused-vars
-              } catch (e) {
-                Alert.alert('Erro', 'Não foi possível processar o pagamento.');
-              }
-            },
-          },
-          {
-            text: 'Cancelar',
-            style: 'cancel',
-          },
-        ]
-      );
-    }
-  }, [debitAccounts, selectedCard, payCreditCardInvoice, targetMonth, targetYear]);
-
-  const confirmMarkAsPaidOnly = useCallback(async () => {
-    if (!selectedCard || selectedCard.id === 'all') return;
-    try {
-      await payCreditCardInvoice(selectedCard.id, null, targetMonth, targetYear, false);
-      if (Platform.OS === 'web') {
-        alert('Fatura marcada como paga!');
-      } else {
-        Alert.alert('Sucesso', 'Fatura marcada como paga!');
-      }
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    } catch (e) {
-      if (Platform.OS === 'web') {
-        alert('Não foi possível processar o pagamento.');
-      } else {
-        Alert.alert('Erro', 'Não foi possível processar o pagamento.');
-      }
-    }
-  }, [selectedCard, payCreditCardInvoice, targetMonth, targetYear]);
-
-  const handleSelectPaymentType = useCallback((type: 'full' | 'markOnly') => {
-    setIsPaymentTypeModalOpen(false);
-    if (type === 'full') {
-      if (debitAccounts.length === 0) {
-        Alert.alert('Aviso', 'Não tem nenhuma conta corrente cadastrada para pagar esta fatura.');
-        return;
-      }
-      setSourceAccountId(debitAccounts[0].id);
-      setIsPaymentModalOpen(true);
-    } else {
-      confirmMarkAsPaidOnly();
-    }
-  }, [debitAccounts, confirmMarkAsPaidOnly]);
-
-  const confirmPayment = useCallback(async () => {
-    if (!selectedCard || !sourceAccountId || selectedCard.id === 'all') return;
-    try {
-      await payCreditCardInvoice(selectedCard.id, sourceAccountId, targetMonth, targetYear);
-      setIsPaymentModalOpen(false);
-      Alert.alert('Sucesso', 'Fatura paga com sucesso!');
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    } catch (e) {
-      Alert.alert('Erro', 'Não foi possível processar o pagamento.');
-    }
-  }, [selectedCard, sourceAccountId, payCreditCardInvoice, targetMonth, targetYear]);
-
-  const handleOpenAnticipate = useCallback(() => {
-    if (debitAccounts.length === 0) {
-      Alert.alert('Aviso', 'Nenhuma conta corrente cadastrada para debitar a antecipação.');
-      return;
-    }
-    if (globalPendingDebt <= 0) {
-      Alert.alert('Aviso', 'Você não tem dívidas pendentes neste cartão para antecipar.');
-      return;
-    }
-    setAnticipateSourceAccountId(debitAccounts[0].id);
-    setAnticipateAmountStr('');
-    setAnticipateDate(new Date());
-    setShowAnticipateCalendar(false);
-    setAnticipateCalendarMonth(new Date());
-    setIsAnticipateModalOpen(true);
-  }, [debitAccounts, globalPendingDebt]);
-
-  const confirmAnticipation = useCallback(async () => {
-    if (!selectedCard || !anticipateSourceAccountId || selectedCard.id === 'all') return;
-    const amount = parseFloat(anticipateAmountStr.replace(',', '.'));
-
-    if (isNaN(amount) || amount <= 0) {
-      Alert.alert('Erro', 'Digite um valor válido maior que zero.');
-      return;
-    }
-
-    if (amount > globalPendingDebt) {
-      Alert.alert('Aviso', `Você só pode antecipar até ${formatCurrency(globalPendingDebt)}, que é o total da sua dívida.`);
-      return;
-    }
-
-    try {
-      await anticipateCreditCardPayment(selectedCard.id, anticipateSourceAccountId, amount, targetMonth, targetYear, anticipateDate);
-      setIsAnticipateModalOpen(false);
-      Alert.alert('Sucesso', 'Fatura antecipada e limite liberado!');
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    } catch (e) {
-      Alert.alert('Erro', 'Não foi possível processar a antecipação.');
-    }
-  }, [selectedCard, anticipateSourceAccountId, anticipateAmountStr, globalPendingDebt, anticipateCreditCardPayment, targetMonth, targetYear, anticipateDate]);
-
-  const handleDeleteAllFromInvoice = useCallback(() => {
-    if (invoiceTransactions.length === 0 || isAll) return;
-
-    const idsToDelete = invoiceTransactions.map((tx: Transaction) => tx.id);
-    const alertMessage = 'Atenção: Se houver compras parceladas nesta fatura, TODAS as parcelas (passadas e futuras) dessas compras também serão excluídas. Deseja continuar?';
-
-    if (Platform.OS === 'web') {
-      if (window.confirm(`${alertMessage}\n\nTem certeza que deseja excluir todos os lançamentos desta fatura?`)) {
-        deleteMultipleTransactions(idsToDelete);
-      }
-    } else {
-      Alert.alert('Excluir Fatura', alertMessage, [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Excluir Todos',
-          style: 'destructive',
-          onPress: () => deleteMultipleTransactions(idsToDelete)
-        }
-      ]);
-    }
-  }, [invoiceTransactions, isAll, deleteMultipleTransactions]);
-
-  const renderTransaction = useCallback(({ item: tx }: { item: Transaction }) => {
-    const txCard = isAll ? accounts.find((a: Account) => a.id === tx.accountId) : null;
-    return (
-      <TransactionItem
-        transaction={tx}
-        account={txCard || undefined}
-        colors={colors}
-        showAccount={isAll}
-      />
-    );
-  }, [isAll, accounts, colors]);
-
-  const renderHeader = useCallback(() => {
-    if (!selectedCard) return null;
-    return (
-      <View style={{ gap: 20, paddingBottom: 16 }}>
-        <View style={styles.monthNav}>
-          <TouchableOpacity onPress={() => setMonthOffset((m) => m - 1)} style={styles.navBtn}>
-            <Ionicons name='chevron-back' size={24} color={colors.foreground} />
-          </TouchableOpacity>
-
-          <View style={{ alignItems: 'center' }}>
-            <Text style={[styles.monthTitle, { color: colors.foreground }]}>{MONTH_NAMES[targetMonth]} {targetYear}</Text>
-          </View>
-
-          <TouchableOpacity onPress={() => setMonthOffset((m) => m + 1)} style={styles.navBtn}>
-            <Ionicons name='chevron-forward' size={24} color={colors.foreground} />
-          </TouchableOpacity>
-        </View>
-
-        <View style={[styles.cardVisual, { backgroundColor: selectedCard.color }]}>
-          <View style={styles.cardHeader}>
-            <Ionicons name={selectedCard.icon as any} size={28} color="#FFF" />
-            <Text style={styles.cardBrand}>{selectedCard.name.toUpperCase()}</Text>
-          </View>
-
-          <View style={styles.cardBody}>
-            <Text style={styles.cardLabel}>Valor total da fatura</Text>
-            <Text style={styles.cardAmount}>{formatCurrency(totalInvoice)}</Text>
-          </View>
-
-          <View style={styles.cardFooter}>
-            <View style={styles.chip} />
-            <View style={[styles.cardStatus, invoiceStatus === 'VENCIDA' && { backgroundColor: colors.destructive }]}>
-              {invoiceStatus === 'VENCIDA' && <Ionicons name="alert-circle" size={12} color="#FFF" style={{ marginRight: 4 }} />}
-              <Text style={styles.cardStatusText}>{invoiceStatus === 'ABERTA' ? 'FATURA EM ABERTO' : `FATURA ${invoiceStatus}`}</Text>
-            </View>
-          </View>
-        </View>
-
-        {!isAll && (
-          <View style={styles.actionButtonsRow}>
-            <TouchableOpacity
-              style={[styles.payButton, { backgroundColor: pendingInvoice > 0 ? colors.primary : colors.border, flex: 1 }]}
-              disabled={pendingInvoice <= 0}
-              onPress={handlePayInvoice}
-            >
-              <Ionicons name={pendingInvoice > 0 ? 'wallet-outline' : 'checkmark-circle-outline'} size={20} color={pendingInvoice > 0 ? '#FFF' : colors.mutedForeground} />
-              <Text style={[styles.payButtonText, { color: pendingInvoice > 0 ? '#FFF' : colors.mutedForeground }]}>
-                {pendingInvoice > 0 ? `Pagar Fatura` : 'Paga'}
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.payButton, { backgroundColor: globalPendingDebt > 0 ? colors.secondary : colors.border, marginLeft: 12, paddingHorizontal: 16 }]}
-              disabled={globalPendingDebt <= 0}
-              onPress={handleOpenAnticipate}
-            >
-              <Ionicons name="flash-outline" size={20} color={globalPendingDebt > 0 ? colors.foreground : colors.mutedForeground} />
-              <Text style={[styles.payButtonText, { color: globalPendingDebt > 0 ? colors.foreground : colors.mutedForeground }]}>
-                Antecipar
-              </Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        <View style={styles.sectionHeader}>
-          <View>
-            <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>ITENS DA FATURA</Text>
-            <Text style={[styles.itemCount, { color: colors.mutedForeground }]}>{invoiceTransactions.length} itens</Text>
-          </View>
-
-          {invoiceTransactions.length > 0 && !isAll && (
-            <TouchableOpacity style={styles.deleteAllBtn} onPress={handleDeleteAllFromInvoice}>
-              <Ionicons name="trash-outline" size={16} color={colors.destructive} />
-              <Text style={[styles.deleteAllText, { color: colors.destructive }]}>Excluir Todos</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      </View>
-    );
-  }, [selectedCard, colors, targetMonth, targetYear, totalInvoice, invoiceStatus, isAll, pendingInvoice, handlePayInvoice, globalPendingDebt, handleOpenAnticipate, invoiceTransactions.length, handleDeleteAllFromInvoice]);
-
-  if (creditCards.length === 0) {
-    return (
-      <View style={[styles.emptyContainer, { backgroundColor: colors.background }]}>
-        <Ionicons name='card-outline' size={64} color={colors.border} />
-        <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>Nenhum cartão de crédito registado.</Text>
-      </View>
-    );
-  }
-
-  return (
-    <View style={{ flex: 1, backgroundColor: colors.background }}>
-      <View style={[styles.carouselContainer, { borderBottomColor: colors.border, backgroundColor: colors.card }]}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.carouselContent}>
-          <TouchableOpacity
-            onPress={() => setSelectedCardId('all')}
-            style={[styles.cardSelectorItem, { backgroundColor: selectedCardId === 'all' ? colors.primary : 'transparent', borderColor: selectedCardId === 'all' ? colors.primary : colors.border }]}
-          >
-            <Ionicons name="albums" size={16} color={selectedCardId === 'all' ? '#FFF' : colors.foreground} style={{ marginRight: 6 }} />
-            <Text style={{ fontSize: 13, fontWeight: '600', color: selectedCardId === 'all' ? '#FFF' : colors.foreground }}>Todos</Text>
-          </TouchableOpacity>
-
-          {creditCards.map((card: Account) => {
-            const isSelected = card.id === selectedCardId;
-            return (
-              <TouchableOpacity
-                key={card.id}
-                onPress={() => setSelectedCardId(card.id)}
-                style={[styles.cardSelectorItem, { backgroundColor: isSelected ? card.color : 'transparent', borderColor: isSelected ? card.color : colors.border }]}
-              >
-                <Ionicons name={card.icon as any} size={16} color={isSelected ? '#FFF' : card.color} style={{ marginRight: 6 }} />
-                <Text style={{ fontSize: 13, fontWeight: '600', color: isSelected ? '#FFF' : colors.foreground }}>{card.name}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-      </View>
-
-      <FlatList
-        data={selectedCard ? invoiceTransactions : []}
-        keyExtractor={(item) => item.id}
-        renderItem={renderTransaction}
-        ListHeaderComponent={renderHeader}
-        contentContainerStyle={styles.content}
-        initialNumToRender={10}
-        maxToRenderPerBatch={10}
-        windowSize={5}
-        removeClippedSubviews={true}
-        ListEmptyComponent={
-          selectedCard ? (
-            <View style={[styles.txContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <Text style={[styles.emptyTxText, { color: colors.mutedForeground }]}>Nenhum gasto nesta fatura.</Text>
-            </View>
-          ) : null
-        }
-      />
-
-      {/* MODAL DE SELEÇÃO DE TIPO DE PAGAMENTO (Para Web e suporte Mobile) */}
-      <Modal visible={isPaymentTypeModalOpen} transparent animationType='slide'>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Text style={[styles.modalTitle, { color: colors.foreground }]}>Pagar Fatura</Text>
-            <Text style={[styles.modalSubtitle, { color: colors.mutedForeground }]}>
-              Como deseja registrar este pagamento?
-            </Text>
-
-            <View style={{ gap: 12, marginBottom: 24 }}>
-              <TouchableOpacity
-                style={[styles.paymentTypeOption, { borderColor: colors.border }]}
-                onPress={() => handleSelectPaymentType('full')}
-              >
-                <View style={[styles.typeIconContainer, { backgroundColor: colors.primary + '20' }]}>
-                  <Ionicons name="wallet-outline" size={24} color={colors.primary} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.typeOptionTitle, { color: colors.foreground }]}>Pagar e abater do saldo</Text>
-                  <Text style={[styles.typeOptionDesc, { color: colors.mutedForeground }]}>Altera o status para paga e cria um lançamento de despesa.</Text>
-                </View>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.paymentTypeOption, { borderColor: colors.border }]}
-                onPress={() => handleSelectPaymentType('markOnly')}
-              >
-                <View style={[styles.typeIconContainer, { backgroundColor: colors.success + '20' }]}>
-                  <Ionicons name="checkmark-done-outline" size={24} color={colors.success} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.typeOptionTitle, { color: colors.foreground }]}>Apenas marcar como paga</Text>
-                  <Text style={[styles.typeOptionDesc, { color: colors.mutedForeground }]}>Altera o status estritamente para fins visuais.</Text>
-                </View>
-              </TouchableOpacity>
-            </View>
-
-            <TouchableOpacity style={[styles.cancelBtn, { width: '100%' }]} onPress={() => setIsPaymentTypeModalOpen(false)}>
-              <Text style={[styles.cancelBtnText, { color: colors.mutedForeground }]}>Cancelar</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* MODALS DE PAGAMENTO, ANTECIPAÇÃO E OPÇÕES */}
-      <Modal visible={isPaymentModalOpen} transparent animationType='slide'>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Text style={[styles.modalTitle, { color: colors.foreground }]}>Pagar Fatura</Text>
-            <Text style={[styles.modalSubtitle, { color: colors.mutedForeground }]}>
-              O valor de {formatCurrency(pendingInvoice)} será debitado da conta selecionada abaixo:
-            </Text>
-
-            <View style={styles.accountSelection}>
-              {debitAccounts.map((acc: Account) => (
-                <TouchableOpacity
-                  key={acc.id}
-                  style={[
-                    styles.accountOption,
-                    { borderColor: sourceAccountId === acc.id ? colors.primary : colors.border, backgroundColor: sourceAccountId === acc.id ? colors.primary + '10' : 'transparent' },
-                  ]}
-                  onPress={() => setSourceAccountId(acc.id)}
-                >
-                  <Ionicons name={acc.icon as any} size={20} color={acc.color} />
-                  <Text style={[styles.accountOptionName, { color: colors.foreground }]}>{acc.name}</Text>
-                  {sourceAccountId === acc.id && <Ionicons name='checkmark' size={18} color={colors.primary} style={{ marginLeft: 'auto' }} />}
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <View style={styles.modalActions}>
-              <TouchableOpacity style={styles.cancelBtn} onPress={() => setIsPaymentModalOpen(false)}>
-                <Text style={[styles.cancelBtnText, { color: colors.mutedForeground }]}>Cancelar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.confirmBtn, { backgroundColor: colors.primary }]} onPress={confirmPayment}>
-                <Text style={styles.confirmBtnText}>Confirmar</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      <Modal visible={isAnticipateModalOpen} transparent animationType='fade'>
-        <View style={[styles.modalOverlay, { justifyContent: 'center', paddingBottom: 0, paddingHorizontal: 20 }]}>
-          <View style={[styles.modalContent, { backgroundColor: colors.card, borderColor: colors.border, maxHeight: '90%', width: '100%', maxWidth: 360, borderRadius: 20, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 16, paddingBottom: 20 }]}>
-          <ScrollView showsVerticalScrollIndicator={false}>
-            <Text style={[styles.modalTitle, { color: colors.foreground, fontSize: 17, marginBottom: 4 }]}>Antecipar Pagamento</Text>
-            <Text style={[styles.modalSubtitle, { color: colors.mutedForeground, fontSize: 13, marginBottom: 16 }]}>
-              Dívida total pendente: {formatCurrency(globalPendingDebt)}
-            </Text>
-
-            <View style={{ marginBottom: 16 }}>
-              <Text style={{ fontSize: 10, fontWeight: '700', textTransform: 'uppercase', color: colors.mutedForeground, marginBottom: 6 }}>
-                Valor a antecipar
-              </Text>
-              <TextInput
-                style={{ fontSize: 26, fontWeight: '700', borderBottomWidth: 1, borderBottomColor: colors.border, paddingBottom: 4, color: colors.foreground }}
-                value={anticipateAmountStr}
-                onChangeText={setAnticipateAmountStr}
-                placeholder="0,00"
-                keyboardType="decimal-pad"
-                placeholderTextColor={colors.mutedForeground}
-              />
-            </View>
-
-            <View style={{ marginBottom: 16 }}>
-              <Text style={{ fontSize: 10, fontWeight: '700', textTransform: 'uppercase', color: colors.mutedForeground, marginBottom: 6 }}>
-                Data do pagamento
-              </Text>
-              <TouchableOpacity
-                style={[styles.anticipateDateBtn, { borderColor: colors.border, backgroundColor: colors.card, padding: 10 }]}
-                onPress={() => setShowAnticipateCalendar(!showAnticipateCalendar)}
-              >
-                <Ionicons name='calendar-outline' size={18} color={colors.primary} />
-                <Text style={{ fontSize: 14, fontWeight: '600', color: colors.foreground }}>
-                  {`${String(anticipateDate.getDate()).padStart(2, '0')}/${String(anticipateDate.getMonth() + 1).padStart(2, '0')}/${anticipateDate.getFullYear()}`}
-                </Text>
-                <Ionicons name={showAnticipateCalendar ? 'chevron-up' : 'chevron-down'} size={14} color={colors.mutedForeground} style={{ marginLeft: 'auto' }} />
-              </TouchableOpacity>
-
-              {showAnticipateCalendar && (() => {
-                const calYear = anticipateCalendarMonth.getFullYear();
-                const calMonth = anticipateCalendarMonth.getMonth();
-                const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
-                const firstDayOfWeek = new Date(calYear, calMonth, 1).getDay();
-                const calDays: (number | null)[] = [];
-                for (let i = 0; i < firstDayOfWeek; i++) calDays.push(null);
-                for (let i = 1; i <= daysInMonth; i++) calDays.push(i);
-                const today = new Date();
-
-                return (
-                  <View style={[styles.inlineCalendar, { borderColor: colors.border, backgroundColor: colors.card, padding: 10 }]}>
-                    <View style={styles.inlineCalendarHeader}>
-                      <TouchableOpacity onPress={() => setAnticipateCalendarMonth(new Date(calYear, calMonth - 1, 1))}>
-                        <Ionicons name='chevron-back' size={16} color={colors.foreground} />
-                      </TouchableOpacity>
-                      <Text style={{ fontWeight: '700', fontSize: 12, color: colors.foreground }}>
-                        {MONTH_NAMES[calMonth]} {calYear}
-                      </Text>
-                      <TouchableOpacity onPress={() => setAnticipateCalendarMonth(new Date(calYear, calMonth + 1, 1))}>
-                        <Ionicons name='chevron-forward' size={16} color={colors.foreground} />
-                      </TouchableOpacity>
-                    </View>
-                    <View style={styles.inlineCalendarGrid}>
-                      {WEEK_DAYS.map((wd, i) => (
-                        <View key={`wd-${i}`} style={styles.inlineCalendarDayCell}>
-                          <Text style={{ fontSize: 9, color: colors.mutedForeground }}>{wd[0]}</Text>
-                        </View>
-                      ))}
-                      {calDays.map((d, i) => {
-                        if (!d) return <View key={`empty-${i}`} style={styles.inlineCalendarDayCell} />;
-                        const isSelected = anticipateDate.getDate() === d && anticipateDate.getMonth() === calMonth && anticipateDate.getFullYear() === calYear;
-                        const isToday = today.getDate() === d && today.getMonth() === calMonth && today.getFullYear() === calYear;
-                        return (
-                          <TouchableOpacity key={`day-${d}`} style={styles.inlineCalendarDayCell} onPress={() => {
-                            setAnticipateDate(new Date(calYear, calMonth, d, 12, 0, 0));
-                            setShowAnticipateCalendar(false);
-                          }}>
-                            <View style={[styles.inlineCalendarDayInner, isSelected && { backgroundColor: colors.primary }, isToday && !isSelected && { borderWidth: 1, borderColor: colors.primary }]}>
-                              <Text style={{ color: isSelected ? '#FFF' : colors.foreground, fontSize: 11 }}>{d}</Text>
-                            </View>
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </View>
-                    <TouchableOpacity style={{ alignItems: 'center', paddingVertical: 4 }} onPress={() => {
-                      setAnticipateDate(new Date());
-                      setAnticipateCalendarMonth(new Date());
-                      setShowAnticipateCalendar(false);
-                    }}>
-                      <Text style={{ color: colors.primary, fontWeight: '600', fontSize: 11 }}>Hoje</Text>
-                    </TouchableOpacity>
-                  </View>
-                );
-              })()}
-            </View>
-
-            <Text style={{ fontSize: 10, fontWeight: '700', textTransform: 'uppercase', color: colors.mutedForeground, marginBottom: 6 }}>
-              Debitar de:
-            </Text>
-            <View style={[styles.accountSelection, { gap: 8, marginBottom: 20 }]}>
-              {debitAccounts.map((acc: Account) => (
-                <TouchableOpacity
-                  key={acc.id}
-                  style={[
-                    styles.accountOption,
-                    { borderColor: anticipateSourceAccountId === acc.id ? colors.primary : colors.border, backgroundColor: anticipateSourceAccountId === acc.id ? colors.primary + '10' : 'transparent', padding: 12 },
-                  ]}
-                  onPress={() => setAnticipateSourceAccountId(acc.id)}
-                >
-                  <Ionicons name={acc.icon as any} size={18} color={acc.color} />
-                  <Text style={[styles.accountOptionName, { color: colors.foreground, fontSize: 14 }]}>{acc.name}</Text>
-                  {anticipateSourceAccountId === acc.id && <Ionicons name='checkmark' size={16} color={colors.primary} style={{ marginLeft: 'auto' }} />}
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <View style={styles.modalActions}>
-              <TouchableOpacity style={[styles.cancelBtn, { paddingVertical: 12 }]} onPress={() => setIsAnticipateModalOpen(false)}>
-                <Text style={[styles.cancelBtnText, { color: colors.mutedForeground, fontSize: 14 }]}>Cancelar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.confirmBtn, { backgroundColor: colors.primary, paddingVertical: 12 }]} onPress={confirmAnticipation}>
-                <Text style={[styles.confirmBtnText, { fontSize: 14 }]}>Antecipar</Text>
-              </TouchableOpacity>
-            </View>
-          </ScrollView>
-          </View>
-        </View>
-      </Modal>
-    </View>
-  );
+export interface CardViewState {
+    cardId: string;
+    month: string;
+    query: string;
+    status: string;
+    hidden: boolean;
 }
-
+interface Props {
+    onSelectCard?: (card: Account | null) => void;
+    initialCardId?: string;
+    viewStateRef?: React.MutableRefObject<CardViewState | null>;
+    onManageAccounts?: () => void;
+    hiddenValues?: boolean;
+    onHiddenValuesChange?: (hidden: boolean) => void;
+}
+const labelMonth = (month: string) => financialDate(`${month}-01`).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+export function paymentDateFromText(text: string) {
+    if (!/^\d{2}\/\d{2}\/\d{4}$/.test(text))
+        throw new Error('Use a data no formato DD/MM/AAAA.');
+    const [d, m, y] = text.split('/').map(Number), date = new Date(y, m - 1, d, 12);
+    if (date.getFullYear() !== y || date.getMonth() !== m - 1 || date.getDate() !== d)
+        throw new Error('Informe uma data válida.');
+    return date;
+}
+const message = (title: string, body: string) => Platform.OS === 'web' ? window.alert(`${title}\n${body}`) : Alert.alert(title, body);
+export function CartaoScreen({ onSelectCard, initialCardId, viewStateRef, onManageAccounts, hiddenValues, onHiddenValuesChange }: Props) {
+    const { colors } = useTheme(), insets = useSafeAreaInsets();
+    const { accounts, transactions, financialIndex, today, payCreditCardInvoice, anticipateCreditCardPayment, deleteMultipleTransactions, reverseCardPayment } = useStoreContext();
+    const cards = useMemo(() => accounts.filter(a => a.type === 'cartao_credito'), [accounts]);
+    const initial = useRef(viewStateRef?.current);
+    const [cardId, setCardId] = useState(initial.current?.cardId || initialCardId || 'all');
+    const [month, setMonth] = useState(initial.current?.month || today.slice(0, 7));
+    const [query, setQuery] = useState(initial.current?.query || '');
+    const [status, setStatus] = useState(initial.current?.status || 'todos');
+    const [hidden, setHidden] = useState(hiddenValues ?? initial.current?.hidden ?? false);
+    const [mode, setMode] = useState<'pay' | 'partial' | 'mark' | 'delete' | 'reverse' | 'month' | null>(null);
+    const [sourceId, setSourceId] = useState(''), [amount, setAmount] = useState(''), [date, setDate] = useState('');
+    const [busy, setBusy] = useState(false), busyRef = useRef(false);
+    const [monthInput, setMonthInput] = useState('');
+    const [reverseId, setReverseId] = useState('');
+    const [error, setError] = useState('');
+    const card = cards.find(c => c.id === cardId);
+    const banks = useMemo(() => accounts.filter(a => a.type !== 'cartao_credito'), [accounts]);
+    const ledger = financialIndex.cardIndex;
+    const selected = useMemo(() => card ? [card] : cards, [card, cards]);
+    const invoices = useMemo(() => selected.map(c => ledger.invoices.get(`${c.id}:${month}`)).filter((v): v is NonNullable<typeof v> => !!v), [selected, ledger, month]);
+    const rows = useMemo(() => invoices.flatMap(i => i.rows).sort((a, b) => financialDate(b.date).getTime() - financialDate(a.date).getTime()), [invoices]);
+    const payments = useMemo(() => {
+        if (!card)
+            return [];
+        const ids = new Set(rows.map(t => t.settledByPaymentId).filter((id): id is string => !!id));
+        transactions.forEach(t => { if (t.paidCardId === card.id && t.invoiceMonth === month && t.cardPaymentId)
+            ids.add(t.cardPaymentId); });
+        return [...ids].map(id => { const bank = transactions.find(t => t.cardPaymentId === id && t.paymentMethod === 'debito'); const settled = rows.find(t => t.settledByPaymentId === id); return { id, date: bank?.date || settled?.settledAt || today, amount: bank?.amount }; });
+    }, [card, rows, transactions, month, today]);
+    const filtered = useMemo(() => rows.filter(t => (!query.trim() || normalizeSearch(t.description).includes(normalizeSearch(query.trim()))) && (status === 'todos' || financialIndex.metadata.get(t.id)?.status === status)), [rows, query, status, financialIndex]);
+    const sum = (field: 'pending' | 'total' | 'rawPending' | 'creditApplied') => invoices.reduce((s, i) => s + i[field], 0) / 100;
+    const remaining = sum('pending'), total = sum('total'), settled = total - sum('rawPending'), applied = sum('creditApplied');
+    const dates = card ? invoiceDates(month, card) : null;
+    const earlier = useMemo(() => [...ledger.invoices.values()].filter(i => selected.some(c => c.id === i.cardId) && i.month < month && i.pending > 0).sort((a, b) => a.month.localeCompare(b.month)), [ledger, selected, month]);
+    const money = (value: number) => hidden ? '••••' : formatCurrency(value);
+    const text = { color: colors.foreground }, muted = { color: colors.mutedForeground }, surface = { backgroundColor: colors.card, borderColor: colors.border };
+    useEffect(() => { if (cardId !== 'all' && !cards.some(c => c.id === cardId))
+        setCardId('all'); }, [cards, cardId]);
+    useEffect(() => { onSelectCard?.(card || null); }, [card, onSelectCard]);
+    useEffect(() => { if (hiddenValues !== undefined)
+        setHidden(hiddenValues); }, [hiddenValues]);
+    useEffect(() => { if (viewStateRef)
+        viewStateRef.current = { cardId, month, query, status, hidden }; }, [cardId, month, query, status, hidden, viewStateRef]);
+    const lastToday = useRef(today);
+    useEffect(() => { const previous = lastToday.current.slice(0, 7); if (previous !== today.slice(0, 7))
+        setMonth(m => m === previous ? today.slice(0, 7) : m); lastToday.current = today; }, [today]);
+    const open = (next: NonNullable<typeof mode>) => { setMonthInput(month.split('-').reverse().join('/')); setSourceId(banks[0]?.id || ''); setAmount(''); setDate(formatDate(today)); setError(''); setMode(next); };
+    const close = () => { if (!busyRef.current)
+        setMode(null); };
+    const run = async (scope: 'invoice' | 'family' = 'invoice') => {
+        if (busyRef.current || !card || !mode)
+            return;
+        busyRef.current = true;
+        setBusy(true);
+        setError('');
+        try {
+            const [year, m] = month.split('-').map(Number);
+            if (mode === 'reverse')
+                await reverseCardPayment(reverseId);
+            else if (mode === 'delete')
+                await deleteMultipleTransactions(rows.map(t => t.id), scope);
+            else {
+                const paidAt = paymentDateFromText(date);
+                if (mode === 'partial')
+                    await anticipateCreditCardPayment(card.id, sourceId, parseMoney(amount), m - 1, year, paidAt);
+                else
+                    await payCreditCardInvoice(card.id, mode === 'mark' ? null : sourceId, m - 1, year, mode !== 'mark', paidAt);
+            }
+            setMode(null);
+            message('Concluído', mode === 'delete' ? 'Lançamentos excluídos.' : mode === 'reverse' ? 'Registro desfeito no aplicativo. Nenhuma operação bancária foi executada.' : 'Registro salvo no aplicativo. Nenhuma operação bancária foi executada.');
+        }
+        catch (e) {
+            setError(e instanceof Error ? e.message : 'Não foi possível salvar. Tente novamente.');
+        }
+        finally {
+            busyRef.current = false;
+            setBusy(false);
+        }
+    };
+    const chip = (title: string, active: boolean, action: () => void) => <TouchableOpacity key={title} accessibilityRole="button" accessibilityState={{ selected: active }} onPress={action} style={[styles.chip, { backgroundColor: active ? colors.foreground : colors.card, borderColor: colors.border }]}><Text style={{ color: active ? colors.background : colors.foreground }}>{title}</Text></TouchableOpacity>;
+    const button = (title: string, action: () => void, disabled = false) => <TouchableOpacity accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled} onPress={action} style={[styles.button, surface, { opacity: disabled ? 0.5 : 1 }]}><Text style={[text, { textAlign: 'center' }]}>{title}</Text></TouchableOpacity>;
+    const header = <View style={styles.section}>
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
+      {chip('Todos', cardId === 'all', () => setCardId('all'))}{cards.map(c => chip(c.name, cardId === c.id, () => setCardId(c.id)))}
+    </ScrollView>
+    <View style={styles.monthNav}>
+      <TouchableOpacity accessibilityRole="button" accessibilityLabel="Fatura do mês anterior" onPress={() => setMonth(m => shiftMonth(m, -1))} style={styles.iconButton}><Ionicons name="chevron-back" size={24} color={colors.foreground}/></TouchableOpacity>
+      <TouchableOpacity accessibilityRole="button" accessibilityLabel="Escolher competência" style={{ flex: 1, paddingVertical: 12 }} onPress={() => open('month')}><Text accessibilityRole="header" style={[styles.title, text, { textAlign: 'center' }]}>{labelMonth(month)}</Text></TouchableOpacity>
+      <TouchableOpacity accessibilityRole="button" accessibilityLabel="Fatura do próximo mês" onPress={() => setMonth(m => shiftMonth(m, 1))} style={styles.iconButton}><Ionicons name="chevron-forward" size={24} color={colors.foreground}/></TouchableOpacity>
+    </View>
+    <View style={styles.wrap}>{button('Mês atual', () => setMonth(today.slice(0, 7)))}{button(hidden ? 'Mostrar valores' : 'Ocultar valores', () => { setHidden(!hidden); onHiddenValuesChange?.(!hidden); })}</View>
+    <Text style={[styles.caption, muted]}>Competência de vencimento. Todos os cartões usam o mesmo mês.</Text>
+    <View style={[styles.card, surface]}>
+      <Text style={[styles.title, text]}>{card?.name || 'Todos os cartões'}</Text>
+      <Text style={muted}>Restante a pagar</Text><Text style={[styles.amount, text]}>{money(remaining)}</Text>
+      <Text style={[styles.caption, muted]}>Total líquido: {money(total)} • Quitado: {money(settled)}</Text>
+      <Text style={[styles.caption, muted]}>Crédito de meses anteriores aplicado: {money(applied)}</Text>
+      {dates && <Text style={[styles.caption, text]}>Fechamento: {formatDate(dates.closing)} • Vencimento: {formatDate(dates.due)}</Text>}
+      {card && <Text style={[styles.label, text]}>{invoiceStatus(invoices[0], today)}</Text>}
+      {card && <>
+        <Text style={[styles.caption, muted]}>Compromissos registrados, com parcelas futuras: {money((ledger.debt.get(card.id) || 0) / 100)}</Text>
+        <Text style={[styles.caption, muted]}>Crédito disponível para próximas faturas: {money((ledger.creditBalances.get(card.id) || 0) / 100)}</Text>
+        {card.creditLimit !== undefined && <Text style={[styles.caption, muted]}>Limite cadastrado: {money(card.creditLimit)} • Disponível estimado: {money(Math.max(0, card.creditLimit - (ledger.debt.get(card.id) || 0) / 100))}. Confira o limite efetivo no banco.</Text>}
+      </>}
+    </View>
+    {!card && cards.map(c => { const invoice = ledger.invoices.get(`${c.id}:${month}`); return <TouchableOpacity key={c.id} accessibilityRole="button" accessibilityLabel={`Consultar fatura de ${c.name}`} onPress={() => setCardId(c.id)} style={[styles.card, surface]}><Text style={[styles.label, text]}>{c.name}</Text><Text style={text}>{money((invoice?.pending || 0) / 100)} • {invoiceStatus(invoice, today)}</Text><Text style={[styles.caption, muted]}>Vence em {formatDate(invoiceDates(month, c).due)}</Text></TouchableOpacity>; })}
+    {earlier.length > 0 && button(`Consultar ${earlier.length} fatura(s) anterior(es) pendente(s)`, () => setMonth(earlier[0].month))}
+    {card && <>
+      <View style={styles.wrap}>{button('Registrar pagamento', () => open('pay'), remaining <= 0 || banks.length === 0)}{button('Antecipar valor parcial', () => open('partial'), remaining <= 0 || banks.length === 0)}</View>
+      {button('Registrar pagamento feito fora do app', () => open('mark'), remaining <= 0 && applied <= 0)}
+      {banks.length === 0 && <Text style={muted}>Cadastre uma conta para registrar saída de dinheiro.</Text>}
+    </>}
+    {card && payments.map((p, i) => <View key={p.id} style={[styles.card, surface]}><Text style={text}>Registro {i + 1} • {formatDate(p.date)} • {p.amount === undefined ? 'Sem débito em conta' : money(p.amount)}</Text>{button('Estornar registro ' + (i + 1), () => { setReverseId(p.id); open('reverse'); })}</View>)}
+    <Text style={[styles.title, text]}>Itens da fatura</Text>
+    <TextInput accessibilityLabel="Buscar na fatura" placeholder="Buscar descrição" placeholderTextColor={colors.mutedForeground} value={query} onChangeText={setQuery} style={[styles.input, surface, text]}/>
+    <View style={styles.wrap}>{(['todos', 'realizado', 'previsto', 'vencido'] as const).map(s => chip({ todos: 'Todos os itens', realizado: 'Realizados', previsto: 'Previstos', vencido: 'Vencidos' }[s], status === s, () => setStatus(s)))}</View>
+    <Text style={[styles.caption, muted]}>{filtered.length} de {rows.length} itens. Busca e situação afetam somente a lista.</Text>
+    {card && rows.length > 0 && button('Excluir lançamentos da fatura', () => open('delete'))}
+  </View>;
+    return <View style={{ flex: 1, backgroundColor: colors.background }}>
+    {cards.length === 0 ? <View style={styles.card}><Text style={[styles.title, text]}>Nenhum cartão cadastrado.</Text>{button('Cadastrar cartão', () => onManageAccounts?.())}</View> : <FlatList data={filtered} keyExtractor={t => t.id} ListHeaderComponent={header} renderItem={({ item }) => <TransactionItem transaction={item} account={financialIndex.accountById.get(item.accountId)} colors={colors} showAccount={!card} status={financialIndex.metadata.get(item.id)?.status as PaymentStatus} hideValues={hidden}/>} initialNumToRender={8} maxToRenderPerBatch={8} windowSize={5} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content} ListEmptyComponent={<Text style={[styles.empty, muted]}>{rows.length ? 'Nenhum item corresponde à busca ou situação.' : 'Nenhum lançamento nesta competência.'}</Text>}/>}
+    <Modal visible={mode !== null} transparent animationType="slide" onRequestClose={close}>
+      <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <View style={[styles.modal, surface, { paddingBottom: Math.max(16, insets.bottom + 12) }]}>
+          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.section}>
+            <Text accessibilityRole="header" style={[styles.title, text]}>{mode === 'month' ? 'Escolher competência' : mode === 'reverse' ? 'Estornar registro' : mode === 'delete' ? 'Excluir lançamentos' : mode === 'partial' ? 'Antecipação parcial' : mode === 'mark' ? 'Pagamento feito fora do app' : 'Registrar pagamento'}</Text>
+            <Text style={[styles.caption, muted]}>{card?.name} • {labelMonth(month)}</Text>
+            {mode === 'month' ? <>
+              <Text style={text}>Mês e ano do vencimento (MM/AAAA)</Text>
+              <TextInput accessibilityLabel="Competência da fatura" value={monthInput} onChangeText={setMonthInput} placeholder="MM/AAAA" keyboardType="numbers-and-punctuation" style={[styles.input, surface, text]}/>
+              {button('Consultar competência', () => { if (!/^(0[1-9]|1[0-2])\/\d{4}$/.test(monthInput) || Number(monthInput.slice(3)) < 1900) {
+            setError('Informe mês e ano válidos no formato MM/AAAA.');
+            return;
+        } setMonth(monthInput.split('/').reverse().join('-')); setMode(null); })}
+            </> : mode === 'reverse' ? <><Text style={text}>Desfaz o registro local, restaura o saldo da conta e reabre os itens quitados. Isso não cancela pagamentos feitos no banco.</Text>{button('Confirmar estorno local', () => void run(), busy)}</> : mode === 'delete' ? <>
+              <Text style={text}>A exclusão da fatura remove seus itens. A opção de famílias também alcança parcelas e recorrências em outros meses. Registros vinculados a pagamentos são protegidos.</Text>
+              {button('Excluir somente esta fatura', () => void run('invoice'), busy)}
+              {button('Excluir também as famílias', () => void run('family'), busy)}
+            </> : <>
+              <Text style={[styles.caption, text]}>Restante desta fatura: {money(remaining)}.</Text>
+              {mode === 'mark' && <Text style={text}>Marca os itens como pagos e remove a dívida das projeções. Não altera o saldo de nenhuma conta. Use quando o pagamento já ocorreu e não deve gerar outra saída.</Text>}
+              {mode === 'partial' && <><Text style={text}>Valor em reais (ex.: 1.234,56), até o restante desta fatura.</Text><TextInput accessibilityLabel="Valor a antecipar" keyboardType="decimal-pad" value={amount} onChangeText={setAmount} placeholder="0,00" placeholderTextColor={colors.mutedForeground} style={[styles.input, surface, text]}/></>}
+              <Text style={text}>Data real do pagamento (até hoje)</Text><TextInput accessibilityLabel="Data do pagamento" value={date} onChangeText={setDate} placeholder="DD/MM/AAAA" keyboardType="numbers-and-punctuation" style={[styles.input, surface, text]}/>
+              {mode !== 'mark' && <><Text style={[styles.label, text]}>Debitar de</Text>{banks.map(a => chip(a.name, sourceId === a.id, () => setSourceId(a.id)))}</>}
+              {button(busy ? 'Salvando…' : 'Confirmar registro', () => void run(), busy || (mode !== 'mark' && !sourceId))}
+            </>}
+            {!!error && <Text accessibilityRole="alert" style={{ color: colors.destructive }}>{error}</Text>}
+            {button('Cancelar', close, busy)}
+          </ScrollView>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  </View>;
+}
 const styles = StyleSheet.create({
-  emptyContainer: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  emptyText: { marginTop: 16, fontSize: 16, fontWeight: '500' },
-  carouselContainer: { borderBottomWidth: StyleSheet.hairlineWidth, paddingVertical: 12 },
-  carouselContent: { paddingHorizontal: 16, gap: 12 },
-  cardSelectorItem: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, borderWidth: 1 },
-  content: { padding: 16, paddingBottom: 40, gap: 20 },
-  monthNav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 8 },
-  navBtn: { padding: 8 },
-  monthTitle: { fontSize: 18, fontWeight: '700' },
-  cardVisual: { marginVertical: 4, padding: 24, borderRadius: 24, minHeight: 210, justifyContent: 'space-between', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 8, elevation: 5 },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  cardBrand: { color: '#FFF', fontSize: 13, fontWeight: '900', letterSpacing: 2 },
-  cardBody: { marginTop: 12 },
-  cardLabel: { color: '#FFF', fontSize: 13, opacity: 0.8, marginBottom: 2 },
-  cardAmount: { color: '#FFF', fontSize: 36, fontWeight: '800', letterSpacing: -1 },
-  limitContainer: { marginTop: 24, gap: 6 },
-  limitBarBackground: { height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.3)', overflow: 'hidden' },
-  limitBarFill: { height: '100%', backgroundColor: '#FF8C00' },
-  limitInfo: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 },
-  limitValue: { color: '#FFF', fontSize: 12, fontWeight: '700' },
-  limitLabel: { color: 'rgba(255,255,255,0.7)', fontSize: 10, fontWeight: '500', marginTop: 2 },
-  cardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: 16 },
-  chip: { width: 42, height: 28, backgroundColor: '#cca633', borderRadius: 6, opacity: 0.9 },
-  cardStatus: { backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6 },
-  cardStatusText: { color: '#FFF', fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
-  actionButtonsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  payButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, borderRadius: 16, gap: 8 },
-  payButtonText: { fontSize: 16, fontWeight: '700' },
-  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 12, marginBottom: 8 },
-  sectionTitle: { fontSize: 15, fontWeight: '700' },
-  itemCount: { fontSize: 12, marginTop: 2 },
-  deleteAllBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,59,48,0.1)', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12 },
-  deleteAllText: { fontSize: 12, fontWeight: '700' },
-  txContainer: { borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
-  emptyTxText: { padding: 24, textAlign: 'center', fontSize: 14 },
-  txItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: StyleSheet.hairlineWidth },
-  txInfo: { flex: 1, gap: 4 },
-  txDesc: { fontSize: 15, fontWeight: '500' },
-  txDate: { fontSize: 12 },
-  txAmount: { fontSize: 15, fontWeight: '700' },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end', alignItems: 'center', paddingBottom: 40 },
-  modalContent: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40, borderWidth: 1 },
-  modalTitle: { fontSize: 20, fontWeight: '700', marginBottom: 8 },
-  modalSubtitle: { fontSize: 14, lineHeight: 20, marginBottom: 24 },
-  accountSelection: { gap: 12, marginBottom: 32 },
-  accountOption: { flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 12, borderWidth: 1, gap: 12 },
-  accountOptionName: { fontSize: 15, fontWeight: '600' },
-  modalActions: { flexDirection: 'row', gap: 12 },
-  cancelBtn: { flex: 1, paddingVertical: 16, alignItems: 'center', justifyContent: 'center', borderRadius: 12 },
-  cancelBtnText: { fontSize: 15, fontWeight: '600' },
-  confirmBtn: { flex: 1, paddingVertical: 16, alignItems: 'center', justifyContent: 'center', borderRadius: 12 },
-  confirmBtnText: { color: '#FFF', fontSize: 15, fontWeight: '700' },
-  optionsMenu: { width: '80%', maxWidth: 350, borderRadius: 16, padding: 20, borderWidth: 1 },
-  optionsTitle: { fontSize: 16, fontWeight: '700', marginBottom: 16, textAlign: 'center' },
-  optionBtn: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, gap: 12 },
-  optionText: { fontSize: 16, fontWeight: '500' },
-  divider: { height: StyleSheet.hairlineWidth, marginVertical: 4 },
-  paymentTypeOption: { flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 16, borderWidth: 1, gap: 16 },
-  typeIconContainer: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
-  typeOptionTitle: { fontSize: 16, fontWeight: '700', marginBottom: 2 },
-  typeOptionDesc: { fontSize: 12, lineHeight: 16 },
-  anticipateDateBtn: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderRadius: 10, padding: 12 },
-  inlineCalendar: { marginTop: 8, borderWidth: 1, borderRadius: 12, padding: 12 },
-  inlineCalendarHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  inlineCalendarGrid: { flexDirection: 'row', flexWrap: 'wrap' },
-  inlineCalendarDayCell: { width: '14.28%', alignItems: 'center', justifyContent: 'center', paddingVertical: 6 },
-  inlineCalendarDayInner: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+    content: { padding: 16, paddingBottom: 32 }, section: { gap: 12, paddingBottom: 16 }, wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, chips: { gap: 8 }, chip: { padding: 12, minHeight: 48, borderWidth: 1, borderRadius: 16 },
+    monthNav: { flexDirection: 'row', alignItems: 'center' }, iconButton: { padding: 12, minWidth: 48, minHeight: 48 }, title: { fontSize: 18, fontWeight: '700', flexShrink: 1 }, label: { fontSize: 15, fontWeight: '600' }, caption: { fontSize: 13, lineHeight: 20 },
+    card: { padding: 18, gap: 10, borderWidth: StyleSheet.hairlineWidth, borderRadius: 18 }, amount: { fontSize: 30, fontWeight: '700', flexShrink: 1 }, button: { padding: 14, minHeight: 48, borderRadius: 12, borderWidth: 1, flexShrink: 1 }, input: { padding: 14, fontSize: 16, borderWidth: 1, borderRadius: 12 }, empty: { padding: 24 },
+    overlay: { flex: 1, justifyContent: 'flex-end', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.6)' }, modal: { width: '100%', maxWidth: 560, maxHeight: '90%', padding: 20, borderTopLeftRadius: 24, borderTopRightRadius: 24 },
 });

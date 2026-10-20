@@ -58,7 +58,16 @@ export default function TransactionDetailScreen() {
 
   const isFamily = !!(transaction.groupId || (transaction.id && String(transaction.id).includes('-')));
 
+  const paymentLinked = !!(transaction.cardPaymentId || transaction.settledByPaymentId);
+  const showError = (error: unknown) => {
+    const message = error instanceof Error ? error.message : 'Não foi possível concluir a operação.';
+    if (Platform.OS === 'web') window.alert(message); else Alert.alert('Aviso', message);
+  };
+  const safeDelete = async (mode: 'single' | 'future' | 'all' = 'single') => {
+    try { await deleteTransaction(transaction.id, mode); } catch (error) { showError(error); }
+  };
   const handleDelete = async () => {
+    if (paymentLinked) { showError(new Error('Estorne o registro na tela Cartões antes de excluir.')); return; }
     if (isFamily) {
       setRecurrenceModalVisible(true);
       return;
@@ -67,7 +76,7 @@ export default function TransactionDetailScreen() {
     if (Platform.OS === 'web') {
       const confirmed = window.confirm(`Deseja excluir "${transaction.description || 'esta transação'}"?`);
       if (confirmed) {
-        await deleteTransaction(transaction.id);
+        await safeDelete();
       }
     } else {
       Alert.alert(
@@ -79,7 +88,7 @@ export default function TransactionDetailScreen() {
             text: 'Excluir',
             style: 'destructive',
             onPress: async () => {
-              await deleteTransaction(transaction.id);
+              await safeDelete();
             },
           },
         ]
@@ -88,11 +97,12 @@ export default function TransactionDetailScreen() {
   };
 
   const handleRecurrenceSelect = async (mode: 'single' | 'future' | 'all') => {
-    await deleteTransaction(transaction.id, mode);
+    await safeDelete(mode);
     setRecurrenceModalVisible(false);
   };
 
   const handleEdit = () => {
+    if (paymentLinked) { showError(new Error('Estorne o registro na tela Cartões antes de editar.')); return; }
     router.push({
       pathname: '/add-transaction',
       params: { txId: transaction.id }
