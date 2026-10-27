@@ -30,23 +30,17 @@ const OverviewSections = React.memo(function OverviewSections({ sections, index,
   const surface = { backgroundColor: colors.card, borderColor: colors.border };
   const activeProjects = useMemo(() => projects.filter(p => p.active !== false), [projects]);
   const summary = index.summary(month);
-  const currentMonth = today.slice(0, 7);
-  const title = month < currentMonth ? 'Saldo realizado ao fim do mês' : month > currentMonth ? 'Saldo projetado ao fim do mês' : 'Saldo realizado hoje';
-  const value = month < currentMonth ? index.closingBalance(month) : month > currentMonth ? index.projectedBalance(month) : index.totalBalance;
+  const totalExpenses = (Math.round(summary.expense * 100) + Math.round(summary.pendingExpense * 100)) / 100;
   return <>
     {sections.filter(s => s.visible).map(section => {
-      if (section.id === 'balance') return <View key={section.id} style={[styles.card, surface, { borderTopWidth: 4, borderTopColor: colors.primary }]}>
-        <Text style={[styles.label, muted]}>{title}</Text>
-        <Text style={[styles.balance, { color: value < 0 ? colors.destructive : colors.foreground }]}>{money(value)}</Text>
-        <Text style={[styles.caption, muted]}>Todas as contas • {monthLabel(month)}</Text>
+      if (section.id === 'balance') return <View key={section.id} testID="saldos-summary" style={[styles.card, surface, { borderTopWidth: 4, borderTopColor: colors.primary }]}>
+        <Text style={[styles.label, muted]}>Saldo realizado hoje</Text>
+        <Text style={[styles.balance, { color: index.totalBalance < 0 ? colors.destructive : colors.foreground }]}>{money(index.totalBalance)}</Text>
+        <Text style={[styles.caption, muted]}>Resumo de {monthLabel(month)}</Text>
         <View style={styles.stats}>
           <View style={[styles.stat, width / fontScale < 340 && { flexBasis: '100%' }]}><Text style={[styles.caption, muted]}>Receitas realizadas</Text><Text style={[styles.value, text]}>{money(summary.income)}</Text></View>
-          <View style={[styles.stat, width / fontScale < 340 && { flexBasis: '100%' }]}><Text style={[styles.caption, muted]}>Despesas realizadas</Text><Text style={[styles.value, text]}>{money(summary.expense)}</Text></View>
-          <View style={[styles.stat, width / fontScale < 340 && { flexBasis: '100%' }]}><Text style={[styles.caption, muted]}>Receitas previstas</Text><Text style={[styles.value, text]}>{money(summary.pendingIncome)}</Text></View>
-          <View style={[styles.stat, width / fontScale < 340 && { flexBasis: '100%' }]}><Text style={[styles.caption, muted]}>Saídas previstas, com faturas</Text><Text style={[styles.value, text]}>{money(summary.pendingExpense)}</Text></View>
+          <View style={[styles.stat, width / fontScale < 340 && { flexBasis: '100%' }]}><Text style={[styles.caption, muted]}>Todas as despesas</Text><Text style={[styles.value, text]}>{money(totalExpenses)}</Text></View>
         </View>
-        <Text style={[styles.caption, muted]}>Ajustes realizados no mês: {money(summary.adjustments)}. Transferências entre suas contas não alteram o total.</Text>
-        {month >= currentMonth && <Text style={[styles.caption, muted]}>Projeção até o fim deste mês: {money(index.projectedBalance(month))}. Inclui pendências anteriores e faturas ainda não pagas.</Text>}
       </View>;
       if (section.id === 'accounts') return <View key={section.id} style={styles.section}>
         <Text style={[styles.title, text]}>Contas e cartões — hoje</Text>
@@ -99,6 +93,8 @@ const OverviewSections = React.memo(function OverviewSections({ sections, index,
 
 export function SaldosScreen({ viewStateRef, onNavigate, hiddenValues, onHiddenValuesChange }: Props) {
   const { colors } = useTheme();
+  const primaryRgb = colors.primary.replace('#', '').match(/.{2}/g)?.map(value => parseInt(value, 16)) || [0, 0, 0];
+  const monthForeground = primaryRgb[0] * 0.299 + primaryRgb[1] * 0.587 + primaryRgb[2] * 0.114 > 150 ? '#1A1A1A' : '#FFFFFF';
   const dimensions = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const width = dimensions.width - insets.left - insets.right;
@@ -185,15 +181,15 @@ export function SaldosScreen({ viewStateRef, onNavigate, hiddenValues, onHiddenV
   }, [index, visibleTransactions, filters.accountId, tagByLabel, colors, hidden, rowRefs, onSwipeOpen, renderActions, busyId, confirmPayment]);
   const blocks = { index, month, today, accounts, projects, goals, colors, hidden, width, fontScale, onNavigate, onProject: setSelectedProject, onAccount: openAccount };
   const header = <View style={styles.section}>
-    <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-      <View style={styles.toolbar}>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Mês anterior" onPress={() => navigateMonth(-1)} style={styles.iconButton}><Ionicons name="chevron-back" size={24} color={colors.foreground} /></TouchableOpacity>
-        <Text accessibilityRole="header" style={[styles.title, { color: colors.foreground, flex: 1, textAlign: 'center' }]}>{monthLabel(month)}</Text>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Próximo mês" onPress={() => navigateMonth(1)} style={styles.iconButton}><Ionicons name="chevron-forward" size={24} color={colors.foreground} /></TouchableOpacity>
+    <View testID="saldos-month-card" style={[styles.card, styles.monthCard, { backgroundColor: colors.primary, borderColor: colors.primary }]}>
+      <View style={styles.monthNavigation}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Mês anterior" onPress={() => navigateMonth(-1)} style={styles.iconButton}><Ionicons name="chevron-back" size={24} color={monthForeground} /></TouchableOpacity>
+        <Text accessibilityRole="header" style={[styles.title, { color: monthForeground, flex: 1, textAlign: 'center' }]}>{monthLabel(month)}</Text>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Próximo mês" onPress={() => navigateMonth(1)} style={styles.iconButton}><Ionicons name="chevron-forward" size={24} color={monthForeground} /></TouchableOpacity>
       </View>
       <View style={styles.toolbar}>
-        <TouchableOpacity accessibilityRole="button" onPress={() => { setMonth(today.slice(0, 7)); setLimit(20); }} style={styles.iconButton}><Text style={{ color: colors.foreground, textDecorationLine: 'underline' }}>Mês atual</Text></TouchableOpacity>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel={hidden ? 'Mostrar valores' : 'Ocultar valores'} onPress={() => { setHidden(!hidden); onHiddenValuesChange?.(!hidden); }} style={styles.iconButton}><Ionicons name={hidden ? 'eye-off-outline' : 'eye-outline'} size={22} color={colors.foreground} /></TouchableOpacity>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Voltar ao mês atual" accessibilityHint="Exibe os lançamentos do mês de hoje" onPress={() => { setMonth(today.slice(0, 7)); setLimit(20); }} style={styles.iconButton}><Ionicons name="today-outline" size={22} color={monthForeground} /></TouchableOpacity>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={hidden ? 'Mostrar valores' : 'Ocultar valores'} onPress={() => { setHidden(!hidden); onHiddenValuesChange?.(!hidden); }} style={styles.iconButton}><Ionicons name={hidden ? 'eye-off-outline' : 'eye-outline'} size={22} color={monthForeground} /></TouchableOpacity>
       </View>
     </View>
     <OverviewSections sections={layout.before} {...blocks} />
@@ -240,6 +236,7 @@ function FilterChip({ label, selected, onPress, colors }: { label: string; selec
   return <TouchableOpacity accessibilityRole="button" accessibilityState={{ selected }} onPress={onPress} style={[styles.chip, { backgroundColor: selected ? colors.foreground : colors.card, borderColor: colors.border }]}><Text style={{ color: selected ? colors.background : colors.foreground }}>{label}</Text></TouchableOpacity>;
 }
 const styles = StyleSheet.create({
+  monthCard: { padding: 8, gap: 0 }, monthNavigation: { flexDirection: 'row', alignItems: 'center' },
   content: { padding: 16, paddingBottom: 32 }, section: { gap: 12, marginBottom: 16 }, card: { padding: 20, borderRadius: 20, borderWidth: StyleSheet.hairlineWidth, gap: 8 },
   title: { fontSize: 17, fontWeight: '700', flexShrink: 1 }, label: { fontSize: 14, fontWeight: '600', marginVertical: 4 }, caption: { fontSize: 13, lineHeight: 19 }, balance: { fontSize: 32, fontWeight: '700', flexShrink: 1 }, value: { fontSize: 17, fontWeight: '600', flexShrink: 1 },
   toolbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }, iconButton: { padding: 12, minHeight: 44, minWidth: 44, alignItems: 'center', justifyContent: 'center' }, stats: { flexDirection: 'row', flexWrap: 'wrap', gap: 16, marginVertical: 8 }, stat: { flexBasis: '44%', flexGrow: 1, gap: 4 },

@@ -26,3 +26,4 @@
 2026-10-20 BRT: ação Cancelar pagamento adicionada às faturas com pagamento registrado. Ela reverte somente o registro local e reabre a fatura. TypeScript e 22 suítes/130 testes com backup privado local aprovados. Ver CORRECOES_CARTOES.md.
 2026-10-20 BRT: iniciada preparação para geração de APK. Adicionados perfil EAS, versionCode Android e scripts de build.
 2026-10-20 BRT: projeto preparado para gerar APK. Adicionados eas.json, versionCode Android, scripts EAS e instruções. Configuração Expo, TypeScript e 22 suítes/130 testes com backup privado local aprovados.
+2026-10-27 BRT: tela Saldos simplificada conforme uso real: seletor na cor principal, atalho calendário e resumo com três valores. TypeScript e 16 testes de Saldos aprovados.

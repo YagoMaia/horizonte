@@ -1,6 +1,6 @@
 import React from 'react';
 import { Alert } from 'react-native';
-import { render, fireEvent, act } from '@testing-library/react-native';
+import { render, fireEvent, act, within } from '@testing-library/react-native';
 import { SaldosScreen, SaldosViewState } from '../components/screens/SaldosScreen';
 import { buildFinancialIndex } from '../lib/financialIndex';
 import { Transaction, Account } from '../constants/types';
@@ -43,23 +43,48 @@ it.each([[320, 1], [360, 1], [412, 1], [360, 2], [780, 1]])('mantém ações e v
   expect(screen.getByLabelText('Filtrar lançamentos, 0 filtros ativos')).toBeTruthy();
 });
 
-it('mostra projeção acumulada, rótulos de período e valores realizados separados', () => {
+it('mantém saldo de hoje e apenas receitas realizadas e todas as despesas do mês selecionado', () => {
   mockStore.transactions = [entry({ id: 'initial', amount: 1000, isAdjustment: true }), entry({ id: 'oct', type: 'despesa', amount: 500, paid: false }), entry({ id: 'nov', type: 'despesa', amount: 300, paid: false, date: '2026-11-10' }), entry({ id: 'dec', amount: 200, paid: false, date: '2026-12-10' })]; refresh();
   const screen = render(<SaldosScreen />);
   fireEvent.press(screen.getByLabelText('Próximo mês')); fireEvent.press(screen.getByLabelText('Próximo mês'));
-  expect(screen.getByText('Saldo projetado ao fim do mês')).toBeTruthy();
-  expect(screen.getByText(formatCurrency(400))).toBeTruthy();
-  expect(screen.getByText('Receitas realizadas')).toBeTruthy();
-  expect(screen.getByText('Receitas previstas')).toBeTruthy();
+  const summary = within(screen.getByTestId('saldos-summary'));
+  expect(summary.getByText('Saldo realizado hoje')).toBeTruthy();
+  expect(summary.getByText(formatCurrency(1000))).toBeTruthy();
+  expect(summary.getByText('Receitas realizadas')).toBeTruthy();
+  expect(summary.getByText('Todas as despesas')).toBeTruthy();
+  expect(summary.queryByText('Receitas previstas')).toBeNull();
+  expect(summary.queryByText(/Projeção/)).toBeNull();
+  expect(summary.queryByText(/Ajustes realizados/)).toBeNull();
 });
 it('mantém seletor de mês mesmo com a lista oculta e retorna ao mês atual', () => {
   mockStore.homeLayout[1].visible = false;
   const screen = render(<SaldosScreen />);
   fireEvent.press(screen.getByLabelText('Próximo mês'));
   expect(screen.getByText('novembro de 2026')).toBeTruthy();
-  fireEvent.press(screen.getByText('Mês atual'));
+  expect(screen.queryByText('Mês atual')).toBeNull();
+  fireEvent.press(screen.getByLabelText('Voltar ao mês atual'));
   expect(screen.queryByText(/novembro de 2026/)).toBeNull();
   expect(screen.queryByLabelText('Buscar lançamentos')).toBeNull();
+});
+it('soma despesas pagas e pendentes e faturas no vencimento sem duplicar compras', () => {
+  mockStore.accounts.push({ ...bank, id: 'card', type: 'cartao_credito', closingDay: 5, dueDay: 28 });
+  mockStore.transactions = [
+    entry({ id: 'income', amount: 1200 }),
+    entry({ id: 'pending-income', amount: 900, paid: false }),
+    entry({ id: 'paid-expense', type: 'despesa', amount: 200 }),
+    entry({ id: 'pending-expense', type: 'despesa', amount: 300, paid: false }),
+    entry({ id: 'adjustment', amount: 50, isAdjustment: true }),
+    entry({ id: 'card-purchase', accountId: 'card', type: 'despesa', amount: 400, date: '2026-10-01', paymentMethod: 'credito', paid: false }),
+  ];
+  refresh();
+  const screen = render(<SaldosScreen />);
+  const summary = within(screen.getByTestId('saldos-summary'));
+  expect(summary.getByText(formatCurrency(1050))).toBeTruthy();
+  expect(summary.getByText(formatCurrency(1200))).toBeTruthy();
+  expect(summary.getByText(formatCurrency(900))).toBeTruthy();
+  expect(screen.getByTestId('saldos-month-card')).toHaveStyle({ backgroundColor: require('../constants/theme').Colors.light.primary });
+  fireEvent.press(screen.getByLabelText('Ocultar valores'));
+  expect(within(screen.getByTestId('saldos-summary')).queryByText(formatCurrency(1050))).toBeNull();
 });
 it('cancelar não aplica filtros e aplicar restringe a lista ao status escolhido', () => {
   mockStore.transactions = [entry({ description: 'Receita confirmada' }), entry({ id: 'late', description: 'Conta atrasada', paid: false, type: 'despesa' })]; refresh();

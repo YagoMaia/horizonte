@@ -37,3 +37,12 @@ Reprodução: `node scripts/benchmark-saldos.cjs`. Dados brutos em `.agent-memor
 - Cálculos com dados preenchidos e ações financeiras validados por testes automatizados; não houve operação com dinheiro real.
 - ESLint não executado porque a dependência não está instalada neste ambiente.
 - Ainda não foi feita medição nativa em Android/iOS nem inspeção em dispositivo pequeno. Não se afirma que toda causa de lentidão do aplicativo foi eliminada; os gargalos identificados em Saldos foram tratados.
+
+## Simplificação do resumo — 27/10/2026
+
+- Seletor de mês com fundo na cor principal do tema e controles contrastantes.
+- Atalho Mês atual substituído por ícone de calendário com descrição para acessibilidade.
+- Resumo contém saldo realizado hoje, receitas realizadas e todas as despesas. O saldo é atual; receitas e despesas correspondem ao mês selecionado.
+- Despesas somam valores realizados e pendentes, incluindo faturas no vencimento e evitando duplicar compras de cartão com pagamentos.
+- Removidos detalhes de projeções, receitas previstas e ajustes do cartão de resumo.
+- Verificações: TypeScript, git diff --check e 16 testes da tela de Saldos aprovados; não houve validação física no S23 nesta etapa.
