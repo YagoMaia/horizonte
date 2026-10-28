@@ -51,6 +51,7 @@ export interface Transaction {
   notes?: string
   tag?: string
   invoiceMonth?: string; // Competência de vencimento YYYY-MM; preserva a data real do pagamento.
+  purchaseDate?: string; // Data original da compra parcelada, independente da competência.
   cardPaymentId?: string;
   paidCardId?: string;
   settledByPaymentId?: string;

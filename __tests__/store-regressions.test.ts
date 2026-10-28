@@ -3,6 +3,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useStore } from '../hooks/useStore';
 import { Account, Transaction } from '../constants/types';
 import { buildBackup, parseBackup } from '../lib/backup';
+import { invoiceMonth } from '../lib/cardInvoices';
+import { dayKey } from '../lib/financialDate';
 
 jest.mock('@react-native-async-storage/async-storage', () =>
   require('@react-native-async-storage/async-storage/jest/async-storage-mock')
@@ -145,6 +147,58 @@ it('distribui centavos das parcelas preservando o total', async () => {
   await act(async () => { await result.current.addTransaction(tx({ amount: 100, totalInstallments: 3 })); });
   expect(result.current.transactions.map(t => t.amount)).toEqual([33.34, 33.33, 33.33]);
   expect(result.current.transactions.map(t => t.installmentNumber)).toEqual([1, 2, 3]);
+});
+
+it.each([
+  [1, 10, '2026-10-01', ['2026-11', '2026-12', '2027-01']],
+  [31, 5, '2026-02-28', ['2026-04', '2026-05', '2026-06']],
+  [25, 5, '2026-12-10', ['2027-01', '2027-02', '2027-03']],
+])('mantém parcelas em competências consecutivas com fechamento %i e vencimento %i', async (closingDay, dueDay, date, expected) => {
+  const card: Account = { ...account, id: 'card', type: 'cartao_credito', closingDay, dueDay };
+  await seed([], [account, card]); const { result, unmount } = await openStore();
+  await act(async () => { await result.current.addTransaction({ ...tx({ accountId: card.id, date }), totalInstallments: 3 }); });
+  expect(result.current.transactions.map(t => invoiceMonth(t, card))).toEqual(expected);
+  expect(result.current.transactions.every(t => t.purchaseDate === date)).toBe(true);
+  const entries = result.current.transactions;
+  await act(async () => { await result.current.updateTransaction({ ...entries[0], description: 'Editada' }, 'all'); });
+  expect(result.current.transactions.map(t => invoiceMonth(t, card))).toEqual(expected);
+  unmount();
+  const reopened = await openStore();
+  expect(reopened.result.current.transactions.map(t => invoiceMonth(t, card))).toEqual(expected);
+  reopened.unmount();
+});
+
+it('serializa criações e usa IDs únicos mesmo no mesmo milissegundo', async () => {
+  await seed([]); const { result } = await openStore();
+  const clock = jest.spyOn(Date, 'now').mockReturnValue(1793188800000);
+  try {
+    await act(async () => {
+      const save = result.current.addTransaction;
+      await Promise.all([save(tx({ description: 'A', amount: 100 })), save(tx({ description: 'B', amount: 200 }))]);
+      await save(tx({ description: 'C', amount: 300 }));
+    });
+    expect(result.current.transactions.map(t => t.description).sort()).toEqual(['A', 'B', 'C']);
+    expect(new Set(result.current.transactions.map(t => t.id)).size).toBe(3);
+    expect(result.current.totalBalance).toBe(600);
+    expect(JSON.parse((await AsyncStorage.getItem('@horizonte:transactions'))!)).toHaveLength(3);
+  } finally { clock.mockRestore(); }
+});
+
+it('uma criação que falhou não bloqueia a fila nem remove dados anteriores', async () => {
+  await seed([tx({ id: 'before' })]); const { result } = await openStore();
+  jest.mocked(AsyncStorage.multiSet).mockRejectedValueOnce(new Error('Sem espaço'));
+  await act(async () => {
+    await expect(result.current.addTransaction(tx({ description: 'Falhou' }))).rejects.toThrow('Sem espaço');
+    await result.current.addTransaction(tx({ description: 'Salvou' }));
+  });
+  expect(result.current.transactions.map(t => t.description)).not.toContain('Falhou');
+  expect(result.current.transactions).toHaveLength(2);
+});
+
+it('quantidade explícita de quinto dia útil conta apenas ocorrências a partir do início', async () => {
+  await seed([]); const { result } = await openStore();
+  await act(async () => { await result.current.addTransaction({ ...tx({ recurrence: 'quinto_dia_util', date: '2026-10-28', paid: false }), calculatedRecurrenceCount: 2 }); });
+  expect(result.current.transactions.map(t => dayKey(t.date))).toEqual(['2026-11-06', '2026-12-07']);
 });
 
 it('falha na exclusao preserva lancamento e saldo em memoria e armazenamento', async () => {

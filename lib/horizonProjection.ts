@@ -25,6 +25,7 @@ export interface HorizonProjectionInput {
   today: Date;
   getBudget: (year: number, month: number) => number;
   includeCardInvoices: boolean;
+  reserveFutureInvoices?: boolean;
   monthsAhead?: number;
 }
 
@@ -100,11 +101,12 @@ export function buildHorizonProjection(input: HorizonProjectionInput) {
       if (invoice.pending <= 0) continue;
       const due = financialDate(invoice.due);
       const futureMonth = invoice.month > dayKey(today).slice(0, 7);
-      const impactDate = futureMonth ? new Date(due.getFullYear(), due.getMonth(), 1, 12) : due < today ? today : due;
+      const reserveOnFirstDay = futureMonth && input.reserveFutureInvoices !== false;
+      const impactDate = reserveOnFirstDay ? new Date(due.getFullYear(), due.getMonth(), 1, 12) : due < today ? today : due;
       const card = input.accounts.find(account => account.id === invoice.cardId);
       add(impactDate, {
         id: `virtual-invoice-${invoice.cardId}-${invoice.month}`,
-        description: futureMonth ? `Fatura de ${card?.name || 'cartão'} — reserva do mês` : 'Fatura de cartão',
+        description: reserveOnFirstDay ? `Fatura de ${card?.name || 'cartão'} — reserva do mês` : 'Fatura de cartão',
         amount: invoice.pending / 100,
         type: 'despesa',
         date: impactDate.toISOString(),

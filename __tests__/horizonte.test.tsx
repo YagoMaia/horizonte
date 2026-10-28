@@ -4,6 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { HorizonteScreen } from '../components/screens/HorizonteScreen';
 import { Account, Transaction } from '../constants/types';
 import { FlatList, ScrollView } from 'react-native';
+import { formatCurrency } from '../lib/utils';
 
 let mockStore: any;
 let mockToday = '2026-10-01';
@@ -96,4 +97,39 @@ it('exibe a reserva de fatura nos detalhes do primeiro dia do mês seguinte', as
   fireEvent.press(ui.getByLabelText('Próximo mês'));
   fireEvent.press(ui.getByLabelText(/1 de Novembro,/));
   expect(ui.getByText('Fatura de Cartão — reserva do mês')).toBeTruthy();
+});
+
+it('controla a reserva diretamente na tela e preserva a preferência ao reabrir', async () => {
+  mockStore.transactions = [{ ...tx, date: '2026-10-10' }];
+  const ui = await screen();
+  expect(ui.getByText('Faturas no dia 1')).toBeTruthy();
+  fireEvent.press(ui.getByLabelText('Próximo mês'));
+  expect(ui.getByLabelText(`1 de Novembro, saldo ${formatCurrency(800)}`)).toBeTruthy();
+  await act(async () => fireEvent(ui.getByLabelText('Reservar faturas no primeiro dia dos próximos meses'), 'valueChange', false));
+  expect(ui.getByLabelText(`1 de Novembro, saldo ${formatCurrency(1000)}`)).toBeTruthy();
+  expect(ui.getByLabelText(`5 de Novembro, saldo ${formatCurrency(800)}`)).toBeTruthy();
+  expect(await AsyncStorage.getItem('@horizonte:reserve_future_invoices')).toBe('false');
+  ui.unmount();
+  const reopened = await screen();
+  expect(reopened.getByLabelText('Reservar faturas no primeiro dia dos próximos meses').props.value).toBe(false);
+});
+
+it('ativa a reserva na grade mesmo quando as faturas estavam excluídas', async () => {
+  await AsyncStorage.multiSet([['@horizonte:include_card_invoices', 'false'], ['@horizonte:view_mode', 'grid']]);
+  mockStore.transactions = [{ ...tx, date: '2026-10-10' }];
+  const ui = await screen();
+  const toggle = ui.getByLabelText('Reservar faturas no primeiro dia dos próximos meses');
+  expect(toggle.props.value).toBe(false);
+  await act(async () => fireEvent(toggle, 'valueChange', true));
+  expect(ui.getByLabelText(`1 Nov, saldo ${formatCurrency(800)}`)).toBeTruthy();
+  expect(await AsyncStorage.getItem('@horizonte:include_card_invoices')).toBe('true');
+  expect(await AsyncStorage.getItem('@horizonte:reserve_future_invoices')).toBe('true');
+});
+
+it('informa falha ao salvar o controle e conserva o cálculo anterior', async () => {
+  const ui = await screen();
+  jest.mocked(AsyncStorage.multiSet).mockRejectedValueOnce(new Error('Sem espaço'));
+  await act(async () => fireEvent(ui.getByLabelText('Reservar faturas no primeiro dia dos próximos meses'), 'valueChange', false));
+  expect(ui.getByText('Não foi possível salvar a opção de faturas. Tente novamente.')).toBeTruthy();
+  expect(ui.getByLabelText('Reservar faturas no primeiro dia dos próximos meses').props.value).toBe(true);
 });

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Alert } from 'react-native';
+import { Alert, KeyboardAvoidingView, ScrollView, Platform } from 'react-native';
 import { act, fireEvent, render } from '@testing-library/react-native';
 import Screen from '../app/add-transaction';
 let mockStore: any;
@@ -30,10 +30,48 @@ it('aguarda persistencia, evita duplo toque e permite tentar apos falha', async 
   fireEvent.changeText(ui.getByPlaceholderText('0,00'), '1000');
   fireEvent.press(ui.getByText('Salvar')); fireEvent.press(ui.getByText('Salvando...'));
   expect(mockBack).not.toHaveBeenCalled(); expect(mockStore.addTransaction).toHaveBeenCalledTimes(1);
+  expect(ui.getByLabelText('Fechar lançamento')).toBeDisabled();
+  fireEvent.press(ui.getByLabelText('Fechar lançamento'));
+  expect(mockBack).not.toHaveBeenCalled();
   await act(async () => reject(new Error('Falha de armazenamento')));
   expect(Alert.alert).toHaveBeenCalled(); expect(mockBack).not.toHaveBeenCalled();
   await act(async () => fireEvent.press(ui.getByText('Salvar')));
   expect(mockBack).toHaveBeenCalledTimes(1);
+});
+
+it('expõe a quantidade da recorrência e salva o número escolhido', async () => {
+  const ui = render(<Screen />);
+  fireEvent.changeText(ui.getByLabelText('Valor do lançamento'), '1000');
+  fireEvent.press(ui.getByLabelText('Repetição: Diária'));
+  expect(ui.getByLabelText('Quantidade de repetições').props.value).toBe('24');
+  expect(ui.getByText(/Serão criados 24 lançamentos/)).toBeTruthy();
+  fireEvent.changeText(ui.getByLabelText('Quantidade de repetições'), '30');
+  await act(async () => fireEvent.press(ui.getByLabelText('Salvar lançamento')));
+  expect(mockStore.addTransaction).toHaveBeenCalledWith(expect.objectContaining({ recurrence: 'diaria', calculatedRecurrenceCount: 30 }));
+});
+
+it.each(['0', '1001', '1.5', 'abc'])('rejeita quantidade de recorrências inválida: %s', value => {
+  const ui = render(<Screen />);
+  fireEvent.changeText(ui.getByLabelText('Valor do lançamento'), '1000');
+  fireEvent.press(ui.getByLabelText('Repetição: Diária'));
+  fireEvent.changeText(ui.getByLabelText('Quantidade de repetições'), value);
+  fireEvent.press(ui.getByLabelText('Salvar lançamento'));
+  expect(mockStore.addTransaction).not.toHaveBeenCalled();
+  expect(Alert.alert).toHaveBeenCalled();
+});
+
+it('identifica campos, seleção e calendário e adapta o formulário ao teclado Android', () => {
+  const platform = jest.replaceProperty(Platform, 'OS', 'android');
+  const ui = render(<Screen />);
+  expect(ui.getByLabelText('Conta de origem: Banco A').props.accessibilityState).toMatchObject({ selected: true });
+  expect(ui.getByLabelText('Lançamento pago ou recebido')).toBeTruthy();
+  expect(ui.UNSAFE_getByType(KeyboardAvoidingView).props.behavior).toBe('height');
+  fireEvent.press(ui.getByLabelText('Data do lançamento'));
+  expect(ui.getByLabelText('Mês anterior do calendário')).toBeTruthy();
+  expect(ui.getByLabelText('Escolher mês e ano')).toBeTruthy();
+  expect(ui.UNSAFE_getAllByType(ScrollView).length).toBeGreaterThan(1);
+  ui.unmount();
+  platform.restore();
 });
 it('invalida destino quando ele passa a ser origem', () => {
   mockParams = { type: 'transferencia' };

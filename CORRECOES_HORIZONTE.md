@@ -41,3 +41,12 @@ Não houve medição de FPS, geração de APK ou instalação no S23. A validaç
 - Com faturas incluídas, o saldo pendente das competências futuras é reservado no primeiro dia de cada mês. Não há novo desconto no vencimento. No mês atual, mantém-se vencimento/hoje para faturas vencidas.
 - Os detalhes do dia 1 identificam cada reserva pelo nome do cartão. Antecipações, faturas quitadas e créditos continuam respeitando o cálculo central.
 - Validação: TypeScript, git diff --check e 14 testes específicos aprovados. Sem validação física no S23 nesta etapa.
+
+## Controle direto no Horizonte — 28/10/2026
+
+- Adicionado controle Faturas no dia 1 na tela principal, visível tanto em lista quanto em grade.
+- Ativado: reserva o saldo pendente das competências futuras no dia 1 e inclui cartões caso estivessem desativados no planejamento.
+- Desativado: as faturas incluídas voltam a ser descontadas no vencimento; a alternância não remove a dívida das projeções.
+- A escolha é salva no dispositivo e restaurada ao reabrir. Falhas ao salvar aparecem na tela e preservam o cálculo atual em memória.
+- O mês atual continua usando o vencimento. Cada fatura é descontada uma única vez.
+- Validação: TypeScript, git diff --check e 18 testes de Horizonte/projeção aprovados. Sem teste físico no S23 nesta etapa.

@@ -45,6 +45,14 @@ it('reserva janeiro no primeiro dia inclusive na virada do ano', () => {
   expect(result['2027-0'][4].expense).toBe(0);
 });
 
+it('com reserva antecipada desligada mantém as faturas futuras apenas no vencimento', () => {
+  const result = buildHorizonProjection({ accounts: [bank, card], transactions: [purchase({ date: '2026-10-10' })], activeAccountIds: ['bank'], year: 2026, month: 10, today: new Date(2026, 9, 27, 12), getBudget: () => 0, includeCardInvoices: true, reserveFutureInvoices: false });
+  expect(result['2026-10'][0].balance).toBe(1000);
+  expect(result['2026-10'][0].expense).toBe(0);
+  expect(result['2026-10'][4].expense).toBe(200);
+  expect(result['2026-10'][29].balance).toBe(800);
+});
+
 it('respeita a escolha de incluir faturas e a seleção de contas', () => {
   const today = new Date(2026, 9, 1, 12);
   expect(project(today, [bank, card], [purchase()], [], true)['2026-9'][4].balance).toBe(0);

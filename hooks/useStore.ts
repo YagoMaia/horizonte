@@ -6,6 +6,8 @@ import * as NotificationService from '../services/notificationService';
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { addMonths, addYears, addWeeks, addDays, setDate } from 'date-fns';
 import { getInvoiceTotal } from '@/lib/utils';
+import { invoiceMonth, shiftMonth } from '@/lib/cardInvoices';
+import { createRecordId, MAX_RECURRENCES } from '@/lib/transactionInput';
 import { financialDate, dayKey } from '@/lib/financialDate';
 import { buildFinancialIndex, calculateAccountBalances, EMPTY_PROJECT } from '@/lib/financialIndex';
 import { useToday } from './useToday';
@@ -48,8 +50,8 @@ const DEFAULT_NOTIFICATION_PREFS: NotificationPreferences = {
 
 export function useStore() {
   const cardWriteLock = useRef(false);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [storedAccounts, setAccounts] = useState<Account[]>([]);
+  const [transactions, setTransactionsState] = useState<Transaction[]>([]);
+  const [storedAccounts, setAccountsState] = useState<Account[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [goals, setGoals] = useState<any[]>([]);
   const [tags, setTags] = useState<Tag[]>(DEFAULT_TAGS);
@@ -73,6 +75,21 @@ export function useStore() {
   const [userSettings, setUserSettings] = useState<UserSettings>(DEFAULT_USER_SETTINGS);
   const [loading, setLoading] = useState(true);
   const transactionsRef = useRef<Transaction[]>([]);
+  const accountsRef = useRef<Account[]>([]);
+  const financialWriteQueue = useRef(Promise.resolve());
+  const setTransactions = useCallback((data: Transaction[]) => {
+    transactionsRef.current = data;
+    setTransactionsState(data);
+  }, []);
+  const setAccounts = useCallback((data: Account[]) => {
+    accountsRef.current = data;
+    setAccountsState(data);
+  }, []);
+  const enqueueFinancialWrite = useCallback(<T,>(operation: () => Promise<T>) => {
+    const write = financialWriteQueue.current.then(operation);
+    financialWriteQueue.current = write.then(() => undefined, () => undefined);
+    return write;
+  }, []);
   const projectsRef = useRef<Project[]>([]);
   const goalsRef = useRef<Goal[]>([]);
   const tagsRef = useRef<Tag[]>([]);
@@ -80,7 +97,6 @@ export function useStore() {
   const goalWriteQueue = useRef(Promise.resolve());
   const tagWriteQueue = useRef(Promise.resolve());
 
-  transactionsRef.current = transactions;
   projectsRef.current = projects;
   goalsRef.current = goals;
   tagsRef.current = tags;
@@ -218,7 +234,7 @@ export function useStore() {
     projectsRef.current = updated;
   }), [enqueueProjectWrite, saveProjects]);
 
-  const deleteProject = useCallback((id: string) => enqueueProjectWrite(async () => {
+  const deleteProject = useCallback((id: string) => enqueueProjectWrite(() => enqueueFinancialWrite(async () => {
     const currentProjects = projectsRef.current;
     if (!currentProjects.some(project => project.id === id)) throw new Error('Projeto não encontrado.');
 
@@ -231,7 +247,7 @@ export function useStore() {
     transactionsRef.current = updatedTransactions;
     setProjects(updatedProjects);
     setTransactions(updatedTransactions);
-  }), [enqueueProjectWrite]);
+  })), [enqueueProjectWrite, enqueueFinancialWrite]);
 
   // --- MÉTODOS PARA METAS (GOALS) ---
   const saveGoals = useCallback(async (newGoals: Goal[]) => {
@@ -258,7 +274,7 @@ export function useStore() {
     await saveGoals(goalsRef.current.map(goal => goal.id === updatedGoal.id ? updatedGoal : goal));
   }), [enqueueGoalWrite, saveGoals]);
 
-  const deleteGoal = useCallback((id: string) => enqueueGoalWrite(async () => {
+  const deleteGoal = useCallback((id: string) => enqueueGoalWrite(() => enqueueFinancialWrite(async () => {
     if (!goalsRef.current.some(goal => goal.id === id)) throw new Error('Meta não encontrada.');
     const updatedGoals = goalsRef.current.filter(goal => goal.id !== id);
     const updatedTransactions = transactionsRef.current.map(tx => {
@@ -274,7 +290,7 @@ export function useStore() {
     transactionsRef.current = updatedTransactions;
     setGoals(updatedGoals);
     setTransactions(updatedTransactions);
-  }), [enqueueGoalWrite]);
+  })), [enqueueGoalWrite, enqueueFinancialWrite]);
 
   const updateHomeLayout = useCallback(async (newLayout: any[]) => {
     setHomeLayout(newLayout);
@@ -410,7 +426,9 @@ export function useStore() {
     setHasSeenOnboarding(true);
   }, []);
   const addAccount = useCallback(
-    async (acc: Account) => {
+    (acc: Account) => enqueueFinancialWrite(async () => {
+      const accounts = accountsRef.current;
+      const transactions = transactionsRef.current;
       const updatedAccounts = [...accounts, acc];
       let finalTransactions = transactions;
 
@@ -436,12 +454,14 @@ export function useStore() {
       await commitLedger(finalTransactions, nextAccounts);
       setTransactions(finalTransactions);
       setAccounts(nextAccounts);
-    },
-    [accounts, transactions],
+    }),
+    [enqueueFinancialWrite, accounts, transactions],
   );
 
   const updateAccount = useCallback(
-    async (updatedAcc: Account, skipAdjustment = false) => {
+    (updatedAcc: Account, skipAdjustment = false) => enqueueFinancialWrite(async () => {
+      const accounts = accountsRef.current;
+      const transactions = transactionsRef.current;
       const oldAcc = accounts.find((a) => a.id === updatedAcc.id);
       if (!oldAcc) throw new Error('Conta não encontrada.');
 
@@ -480,12 +500,14 @@ export function useStore() {
       await commitLedger(finalTransactions, nextAccounts);
       setTransactions(finalTransactions);
       setAccounts(nextAccounts);
-    },
-    [accounts, transactions],
+    }),
+    [enqueueFinancialWrite, accounts, transactions],
   );
 
   const deleteAccount = useCallback(
-    async (id: string) => {
+    (id: string) => enqueueFinancialWrite(async () => {
+      const accounts = accountsRef.current;
+      const transactions = transactionsRef.current;
       const targetAcc = accounts.find(a => a.id === id);
       if (!targetAcc) throw new Error('Conta não encontrada.');
       if (accounts.length <= 1) throw new Error('É necessário manter pelo menos uma conta.');
@@ -496,12 +518,14 @@ export function useStore() {
       const updatedAccounts = accounts.filter((a) => a.id !== id);
       await commitLedger(transactions, updatedAccounts);
       setAccounts(updatedAccounts);
-    },
-    [accounts, transactions],
+    }),
+    [enqueueFinancialWrite, accounts, transactions],
   );
 
   const setPrimaryAccount = useCallback(
-    async (id: string) => {
+    (id: string) => enqueueFinancialWrite(async () => {
+      const accounts = accountsRef.current;
+      const transactions = transactionsRef.current;
       const accIndex = accounts.findIndex((a) => a.id === id);
       if (accIndex <= 0) return;
       if (accounts[accIndex].type === 'cartao_credito') {
@@ -513,8 +537,8 @@ export function useStore() {
       updated.unshift(acc);
 
       await saveAccounts(updated);
-    },
-    [accounts, saveAccounts],
+    }),
+    [enqueueFinancialWrite, accounts, saveAccounts],
   );
 
   const loadData = useCallback(async () => {
@@ -699,14 +723,14 @@ export function useStore() {
   }), [enqueueTagWrite, saveTags]);
 
   const addTransaction = useCallback(
-    async (tx: any) => {
+    (tx: any) => enqueueFinancialWrite(async () => {
+      const accounts = accountsRef.current;
+      const transactions = transactionsRef.current;
       const newTransactions: Transaction[] = [];
       const targetAccount = accounts.find((a) => a.id === tx.accountId);
       const isCreditCard = targetAccount?.type === 'cartao_credito';
       const finalizedTxMethod = isCreditCard ? 'credito' : tx.paymentMethod || 'debito';
 
-      const closingDay = targetAccount?.closingDay || 25;
-      const dueDay = targetAccount?.dueDay || 5;
 
       if (isCreditCard && tx.totalInstallments && tx.totalInstallments > 1) {
         const parts = dayKey(tx.date).split('-').map(Number);
@@ -714,23 +738,12 @@ export function useStore() {
         const installmentsCount = tx.totalInstallments;
         const totalCents = Math.round(tx.amount * 100);
         const installmentCents = Math.floor(totalCents / installmentsCount);
-        const baseId = Date.now().toString();
+        const baseId = createRecordId();
         const cleanDescription = tx.description.replace(/\s\(\d+\/\d+\)$/, "");
 
-        let baseM = baseDate.getMonth() + 1;
-        let baseY = baseDate.getFullYear();
-        if (baseDate.getDate() >= closingDay) baseM += 1;
-        if (dueDay < closingDay) baseM += 1;
-
+        const firstInvoice = invoiceMonth({ ...tx, invoiceMonth: undefined }, targetAccount!);
         for (let i = 0; i < installmentsCount; i++) {
-          let currentDate: Date;
-          if (i === 0) {
-            currentDate = new Date(baseDate);
-          } else {
-            let targetInvM = baseM + i;
-            let monthForDay1 = targetInvM - (dueDay < closingDay ? 1 : 0);
-            currentDate = new Date(baseY, monthForDay1 - 1, 1, 12, 0, 0);
-          }
+          const currentDate = addMonths(baseDate, i);
           newTransactions.push({
             ...tx,
             id: `${baseId}-${i}`,
@@ -739,6 +752,8 @@ export function useStore() {
             description: `${cleanDescription} (${i + 1}/${installmentsCount})`,
             amount: (installmentCents + (i < totalCents % installmentsCount ? 1 : 0)) / 100,
             installmentNumber: i + 1,
+            invoiceMonth: shiftMonth(firstInvoice, i),
+            purchaseDate: tx.date,
             date: currentDate.toISOString(),
             paid: false,
             paymentMethod: finalizedTxMethod,
@@ -747,7 +762,7 @@ export function useStore() {
         }
       }
       else if (tx.recurrence !== 'unica') {
-        const baseId = Date.now().toString();
+        const baseId = createRecordId();
         const parts = dayKey(tx.date).split('-').map(Number);
         let baseDate = new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0);
 
@@ -759,9 +774,13 @@ export function useStore() {
           while ([0, 6].includes(baseDate.getDay())) baseDate = addDays(baseDate, 1);
         }
 
-        const maxRecurrences = tx.calculatedRecurrenceCount || 24;
+        const maxRecurrences = tx.calculatedRecurrenceCount ?? 24;
+        if (!Number.isInteger(maxRecurrences) || maxRecurrences < 1 || maxRecurrences > MAX_RECURRENCES) {
+          throw new Error(`Use de 1 a ${MAX_RECURRENCES} repetições por lançamento.`);
+        }
 
-        for (let i = 0; i < maxRecurrences; i++) {
+        let nextBusinessDay = new Date(baseDate);
+        for (let i = 0; newTransactions.length < maxRecurrences; i++) {
           let effectiveDate: Date;
 
           switch (tx.recurrence) {
@@ -778,16 +797,11 @@ export function useStore() {
               effectiveDate = addDays(baseDate, i);
               break;
             case 'dias_uteis': {
-              let d = new Date(baseDate);
-              let added = 0;
-              while (added < i) {
-                d.setDate(d.getDate() + 1);
-                const dayOfWeek = d.getDay();
-                if (dayOfWeek !== 0 && dayOfWeek !== 6) {
-                  added++;
-                }
+              if (i > 0) {
+                do { nextBusinessDay = addDays(nextBusinessDay, 1); }
+                while ([0, 6].includes(nextBusinessDay.getDay()));
               }
-              effectiveDate = d;
+              effectiveDate = new Date(nextBusinessDay);
               break;
             }
             case 'quinto_dia_util': {
@@ -830,7 +844,7 @@ export function useStore() {
 
         const newTx: Transaction = {
           ...tx,
-          id: Date.now().toString(),
+          id: createRecordId(),
           paymentMethod: finalizedTxMethod,
           paid: isCreditCard ? false : tx.paid,
         };
@@ -846,13 +860,15 @@ export function useStore() {
       setTransactions(updated);
       setAccounts(nextAccounts);
       return newTransactions[0];
-    },
+    }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [transactions, accounts, saveTransactions, syncBalances, notificationPreferences],
+    [enqueueFinancialWrite, transactions, accounts, saveTransactions, syncBalances, notificationPreferences],
   );
 
   const deleteTransaction = useCallback(
-    async (id: string, mode: 'single' | 'future' | 'all' = 'single') => {
+    (id: string, mode: 'single' | 'future' | 'all' = 'single') => enqueueFinancialWrite(async () => {
+      const accounts = accountsRef.current;
+      const transactions = transactionsRef.current;
       const targetTx = transactions.find((t) => t.id === id);
       if (!targetTx) return;
 
@@ -879,12 +895,14 @@ export function useStore() {
       transactionsRef.current = updated;
       setTransactions(updated);
       setAccounts(nextAccounts);
-    },
-    [transactions, accounts, saveTransactions, syncBalances],
+    }),
+    [enqueueFinancialWrite, transactions, accounts, saveTransactions, syncBalances],
   );
 
   const updateTransaction = useCallback(
-    async (updatedTx: Transaction, mode: 'single' | 'future' | 'all' = 'single') => {
+    (updatedTx: Transaction, mode: 'single' | 'future' | 'all' = 'single') => enqueueFinancialWrite(async () => {
+      const accounts = accountsRef.current;
+      const transactions = transactionsRef.current;
       const oldTx = transactions.find((t) => t.id === updatedTx.id);
       if (!oldTx) return;
       if (oldTx.cardPaymentId || oldTx.settledByPaymentId) throw new Error('Estorne o registro na tela Cartões antes de editar.');
@@ -901,32 +919,22 @@ export function useStore() {
         if (txsToMutate.some(t => t.cardPaymentId || t.settledByPaymentId)) throw new Error('A família contém registros de pagamento. Estorne antes de editar.');
         const targetAccount = accounts.find(a => a.id === updatedTx.accountId);
         const isCreditCard = targetAccount?.type === 'cartao_credito';
-        const closingDay = targetAccount?.closingDay || 25;
-        const dueDay = targetAccount?.dueDay || 5;
 
         const parts = dayKey(updatedTx.date).split('-').map(Number);
         const newBaseDate = new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0);
         const refIndex = oldTx.groupIndex || 0;
 
-        let baseM = newBaseDate.getMonth() + 1;
-        let baseY = newBaseDate.getFullYear();
-        if (isCreditCard) {
-            if (newBaseDate.getDate() >= closingDay) baseM += 1;
-            if (dueDay < closingDay) baseM += 1;
-        }
+        const firstInvoice = isCreditCard
+          ? (dayKey(updatedTx.date) === dayKey(oldTx.date) && updatedTx.accountId === oldTx.accountId
+            ? invoiceMonth(oldTx, targetAccount!) : invoiceMonth({ ...updatedTx, invoiceMonth: undefined }, targetAccount!))
+          : undefined;
 
         for (const mutantOld of txsToMutate) {
           const indexDiff = (mutantOld.groupIndex || 0) - refIndex;
           let currentDate = new Date(newBaseDate);
 
           if (isCreditCard && updatedTx.totalInstallments && updatedTx.totalInstallments > 1) {
-             if (indexDiff === 0) {
-                 currentDate = new Date(newBaseDate);
-             } else {
-                 let targetInvM = baseM + indexDiff;
-                 let monthForDay1 = targetInvM - (dueDay < closingDay ? 1 : 0);
-                 currentDate = new Date(baseY, monthForDay1 - 1, 1, 12, 0, 0);
-             }
+             currentDate = addMonths(newBaseDate, indexDiff);
           } else {
              switch (updatedTx.recurrence) {
                 case 'mensal':
@@ -990,6 +998,8 @@ export function useStore() {
             groupIndex: mutantOld.groupIndex, 
             paid: isCreditCard ? mutantOld.paid : (mutantOld.id === oldTx.id ? updatedTx.paid : mutantOld.paid),
             date: currentDate.toISOString(),
+            invoiceMonth: isCreditCard && updatedTx.totalInstallments! > 1 ? shiftMonth(firstInvoice!, indexDiff) : undefined,
+            purchaseDate: mutantOld.purchaseDate,
             description: finalDescription
           };
           finalTransactions = finalTransactions.map(t => t.id === mutantNew.id ? mutantNew : t);
@@ -1007,6 +1017,10 @@ export function useStore() {
         const mergedTx = {
           ...oldTx,
           ...cleanedUpdatedTx,
+          invoiceMonth: isCreditCard
+            ? (dayKey(updatedTx.date) !== dayKey(oldTx.date) || updatedTx.accountId !== oldTx.accountId
+              ? invoiceMonth({ ...oldTx, ...updatedTx, invoiceMonth: undefined }, targetAccount!) : oldTx.invoiceMonth)
+            : undefined,
           // Preservar metadados de família
           groupId: oldTx.groupId,
           groupIndex: oldTx.groupIndex,
@@ -1024,8 +1038,8 @@ export function useStore() {
       transactionsRef.current = finalTransactions;
       setTransactions(finalTransactions);
       setAccounts(nextAccounts);
-    },
-    [transactions, accounts, saveTransactions, syncBalances],
+    }),
+    [enqueueFinancialWrite, transactions, accounts, saveTransactions, syncBalances],
   );
 
   const getEffectiveBudget = useCallback(
@@ -1045,7 +1059,8 @@ export function useStore() {
 
   const totalBalance = financialIndex.totalBalance;
 
-  const recordCardPayment = useCallback(async (request: CardPaymentRequest) => {
+  const recordCardPayment = useCallback((request: CardPaymentRequest) => enqueueFinancialWrite(async () => {
+    const accounts = accountsRef.current;
     if (cardWriteLock.current) throw new Error('Um pagamento já está sendo processado.');
     cardWriteLock.current = true;
     try {
@@ -1055,8 +1070,9 @@ export function useStore() {
       transactionsRef.current = next;
       setTransactions(next); setAccounts(updatedAccounts);
     } finally { cardWriteLock.current = false; }
-  }, [accounts]);
-  const reverseCardPayment = useCallback(async (paymentId: string) => {
+  }), [enqueueFinancialWrite, accounts]);
+  const reverseCardPayment = useCallback((paymentId: string) => enqueueFinancialWrite(async () => {
+    const accounts = accountsRef.current;
     if (cardWriteLock.current) throw new Error('Aguarde a gravação atual.');
     cardWriteLock.current = true;
     try {
@@ -1065,7 +1081,7 @@ export function useStore() {
       await commitLedger(next, updatedAccounts);
       transactionsRef.current = next; setTransactions(next); setAccounts(updatedAccounts);
     } finally { cardWriteLock.current = false; }
-  }, [accounts]);
+  }), [enqueueFinancialWrite, accounts]);
   const payCreditCardInvoice = useCallback(async (creditCardId: string, sourceAccountId: string | null, targetMonth: number, targetYear: number, gerarLancamento = true, paymentDate = new Date()) => {
     await recordCardPayment({ cardId: creditCardId, sourceId: sourceAccountId, month: dayKey(new Date(targetYear, targetMonth, 1, 12)).slice(0,7), markOnly: !gerarLancamento, date: paymentDate });
   }, [recordCardPayment]);
@@ -1074,7 +1090,9 @@ export function useStore() {
   }, [recordCardPayment]);
 
   const deleteMultipleTransactions = useCallback(
-    async (txIds: string[], scope: 'invoice' | 'family' = 'invoice') => {
+    (txIds: string[], scope: 'invoice' | 'family' = 'invoice') => enqueueFinancialWrite(async () => {
+      const accounts = accountsRef.current;
+      const transactions = transactionsRef.current;
       if (transactions.some(t => txIds.includes(t.id) && (t.cardPaymentId || t.settledByPaymentId))) throw new Error('Esta seleção contém pagamentos vinculados. Preserve os registros para manter a conciliação.');
       let idsToRemove = new Set<string>();
 
@@ -1100,15 +1118,17 @@ export function useStore() {
 
       await saveTransactions(updated);
       await syncBalances(updated, accounts);
-    },
-    [transactions, accounts, saveTransactions, syncBalances],
+    }),
+    [enqueueFinancialWrite, transactions, accounts, saveTransactions, syncBalances],
   );
 
-  const purgeAdjustments = useCallback(async () => {
+  const purgeAdjustments = useCallback(() => enqueueFinancialWrite(async () => {
+      const accounts = accountsRef.current;
+      const transactions = transactionsRef.current;
     const updatedTxs = transactions.filter((tx) => !tx.isAdjustment);
     await saveTransactions(updatedTxs);
     await syncBalances(updatedTxs, accounts);
-  }, [transactions, accounts, saveTransactions, syncBalances]);
+  }), [enqueueFinancialWrite, transactions, accounts, saveTransactions, syncBalances]);
 
   const getProjectStats = useCallback((projectId: string) => {
     const stats = financialIndex.projects.get(projectId) || EMPTY_PROJECT;
