@@ -70,6 +70,7 @@ export interface Transaction {
   /** Lançamento calculado apenas para uma projeção, nunca persistido. */
   isVirtual?: boolean;
   notificationId?: string;
+  notificationImportId?: string;
   projectId?: string; // 👉 Novo: ID do projeto vinculado
   goalIds?: string[]; // 👉 ID(s) das metas vinculadas
   notifyRecurrence?: boolean; // 👉 Novo: Preferência individual de notificação para a recorrência

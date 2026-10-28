@@ -1,3 +1,4 @@
+import { DeviceEventEmitter } from 'react-native';
 // hooks/useStore.ts
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -693,6 +694,7 @@ export function useStore() {
       { id: 'period', visible: true },
     ]);
     setUserSettings(DEFAULT_USER_SETTINGS);
+    DeviceEventEmitter.emit('horizonte:clear-import');
   }, []);
 
   const setShowPending = useCallback(async (value: boolean) => {
@@ -726,6 +728,10 @@ export function useStore() {
     (tx: any) => enqueueFinancialWrite(async () => {
       const accounts = accountsRef.current;
       const transactions = transactionsRef.current;
+      if (tx.notificationImportId) {
+        const imported = transactions.find(item => item.notificationImportId === tx.notificationImportId);
+        if (imported) return imported;
+      }
       const newTransactions: Transaction[] = [];
       const targetAccount = accounts.find((a) => a.id === tx.accountId);
       const isCreditCard = targetAccount?.type === 'cartao_credito';

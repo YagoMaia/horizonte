@@ -184,6 +184,16 @@ it('serializa criações e usa IDs únicos mesmo no mesmo milissegundo', async (
   } finally { clock.mockRestore(); }
 });
 
+it('reprocessar a mesma notificação não cria uma segunda despesa', async () => {
+  await seed([]); const { result } = await openStore();
+  await act(async () => {
+    await result.current.addTransaction({ ...tx({ type: 'despesa' }), notificationImportId: 'capture-id' });
+    await result.current.addTransaction({ ...tx({ type: 'despesa' }), notificationImportId: 'capture-id' });
+  });
+  expect(result.current.transactions).toHaveLength(1);
+  expect(result.current.totalBalance).toBe(-100);
+});
+
 it('uma criação que falhou não bloqueia a fila nem remove dados anteriores', async () => {
   await seed([tx({ id: 'before' })]); const { result } = await openStore();
   jest.mocked(AsyncStorage.multiSet).mockRejectedValueOnce(new Error('Sem espaço'));

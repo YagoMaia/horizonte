@@ -105,3 +105,7 @@ O app suporta dark mode automático via `useColorScheme()`. As cores são defini
 ## Persistência
 
 Todos os dados são salvos localmente com `@react-native-async-storage/async-storage`. Ao primeiro acesso, são carregados dados de exemplo.
+
+## Compras por notificações (Android)
+
+Acesse Menu → Importar compras de notificações no novo APK. Escolha o aplicativo do banco, ative a captura e configure crédito/débito independentemente. Conceda acesso às notificações na tela Android. O app captura em segundo plano e processa a fila ao reabrir; com ele aberto, verifica a cada 10 segundos. Consulte `IMPORTACAO_NOTIFICACOES.md` para regras, testes e limitações de validação nativa.

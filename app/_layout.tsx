@@ -7,6 +7,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { ThemeProvider as NavThemeProvider, DefaultTheme, DarkTheme } from '@react-navigation/native'
 import * as SystemUI from 'expo-system-ui'
 import { StoreProvider } from '@/context/StoreContext'
+import { PurchaseImportProvider } from '@/context/PurchaseImportContext'
 import { ThemeProvider, useThemeContext } from '@/context/ThemeContext'
 
 // Suprime warning falso-positivo do Reanimated 3.16 com Switch nativo (bug conhecido)
@@ -72,7 +73,7 @@ export default function RootLayout() {
       <SafeAreaProvider>
         <ThemeProvider>
           <StoreProvider>
-            <AppContent />
+            <PurchaseImportProvider><AppContent /></PurchaseImportProvider>
           </StoreProvider>
         </ThemeProvider>
       </SafeAreaProvider>

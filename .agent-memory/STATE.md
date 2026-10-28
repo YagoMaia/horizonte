@@ -1,8 +1,8 @@
 Projeto: Horizonte, aplicativo móvel de finanças.
-Última tarefa: tasks/completed/2026-10-28-controle-faturas-horizonte.md
-Estado: controle Faturas no dia 1 disponível na tela principal do Horizonte, em lista e grade.
-Decisão: ligado reserva competências futuras no dia 1; desligado usa vencimento para faturas incluídas. Escolha persistida; ativação inclui cartões antes excluídos.
-Verificações: TypeScript, git diff --check e 18 testes específicos aprovados.
-Preferências: Galaxy S23, valores sempre visíveis e backup privado intacto.
-Limites: sem teste físico; backup privado indisponível no caminho original.
-Próxima etapa: aguardar nova solicitação.
+Tarefa atual: tasks/active/2026-10-28-importar-notificacoes.md
+Estado: implementação da importação pronta no código; compilação e validação nativa pendentes.
+Entrega: IMPORTACAO_NOTIFICACOES.md; Menu → Importar compras de notificações, regras por app/crédito/débito, revisão, fila nativa e deduplicação.
+Decisões: captura opt-in; processamento a cada 10s em primeiro plano e ao retornar. App fechado guarda capturas para processamento ao reabrir; ambiguidades/parcelas vão para revisão.
+Verificações: TypeScript/autolinking aprovados; 166 testes gerais mais dois novos de interface aprovados. Quatro testes privados ignorados por arquivo ausente.
+Limites: SDK localizado, mas Java indisponível; módulo Kotlin não compilado, sem APK ou teste físico.
+Próxima etapa: build EAS e roteiro de validação no S23.

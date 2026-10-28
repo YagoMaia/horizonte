@@ -91,7 +91,8 @@ export default function HomePage() {
         )
       case 'menu': 
         return (
-          <MenuScreen 
+          <MenuScreen
+            onNavigateToNotificationImport={() => router.push('/notification-import' as never)}
             onNavigateToAccounts={() => setActiveTab('contas')} 
             onNavigateToProjects={() => setActiveTab('projetos')}
             onNavigateToMetas={() => setActiveTab('metas')}
