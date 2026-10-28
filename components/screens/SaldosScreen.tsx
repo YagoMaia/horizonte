@@ -13,18 +13,18 @@ import { ProjectTransactionsModal } from '../ProjectTransactionsModal';
 import { RecurrenceActionModal } from '../RecurrenceActionModal';
 import { TransactionItem } from '../TransactionItem';
 
-export interface SaldosViewState { month: string; filters: SaldosFilters; limit: number; hideValues: boolean; scrollOffset: number }
-interface Props { hiddenValues?: boolean; onHiddenValuesChange?: (hidden: boolean) => void; viewStateRef?: React.MutableRefObject<SaldosViewState | null>; onNavigate?: (tab: TabType, accountId?: string) => void }
+export interface SaldosViewState { month: string; filters: SaldosFilters; limit: number; scrollOffset: number }
+interface Props { viewStateRef?: React.MutableRefObject<SaldosViewState | null>; onNavigate?: (tab: TabType, accountId?: string) => void }
 const EMPTY_TRANSACTIONS: Transaction[] = [];
 const monthLabel = (month: string) => financialDate(`${month}-01`).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
 const filterCount = (f: SaldosFilters) => Number(f.type !== 'todas') + Number(f.accountId !== 'todas') + Number(f.status !== 'todos') + Number(!!f.query.trim()) + Number(f.includeAdjustments);
 
 // Blocos independentes da busca e paginação: digitar não reconstrói todos os cards.
-const OverviewSections = React.memo(function OverviewSections({ sections, index, month, today, accounts, projects, goals, colors, hidden, width, fontScale, onNavigate, onProject, onAccount }: {
+const OverviewSections = React.memo(function OverviewSections({ sections, index, month, today, accounts, projects, goals, colors, width, fontScale, onNavigate, onProject, onAccount }: {
   sections: HomeSection[]; index: FinancialIndex; month: string; today: string; accounts: Account[]; projects: Project[]; goals: Goal[];
-  colors: ThemeColors; hidden: boolean; width: number; fontScale: number; onNavigate?: Props['onNavigate']; onProject: (project: Project) => void; onAccount: (account: Account) => void;
+  colors: ThemeColors; width: number; fontScale: number; onNavigate?: Props['onNavigate']; onProject: (project: Project) => void; onAccount: (account: Account) => void;
 }) {
-  const money = (value: number) => hidden ? '••••' : formatCurrency(value);
+  const money = (value: number) => formatCurrency(value);
   const text = { color: colors.foreground };
   const muted = { color: colors.mutedForeground };
   const surface = { backgroundColor: colors.card, borderColor: colors.border };
@@ -91,7 +91,7 @@ const OverviewSections = React.memo(function OverviewSections({ sections, index,
   </>;
 });
 
-export function SaldosScreen({ viewStateRef, onNavigate, hiddenValues, onHiddenValuesChange }: Props) {
+export function SaldosScreen({ viewStateRef, onNavigate }: Props) {
   const { colors } = useTheme();
   const primaryRgb = colors.primary.replace('#', '').match(/.{2}/g)?.map(value => parseInt(value, 16)) || [0, 0, 0];
   const monthForeground = primaryRgb[0] * 0.299 + primaryRgb[1] * 0.587 + primaryRgb[2] * 0.114 > 150 ? '#1A1A1A' : '#FFFFFF';
@@ -104,8 +104,6 @@ export function SaldosScreen({ viewStateRef, onNavigate, hiddenValues, onHiddenV
   const [month, setMonth] = useState(initial.current?.month || today.slice(0, 7));
   const [filters, setFilters] = useState<SaldosFilters>(initial.current?.filters || DEFAULT_SALDOS_FILTERS);
   const [limit, setLimit] = useState(initial.current?.limit || 20);
-  useEffect(() => { if (hiddenValues !== undefined) setHidden(hiddenValues); }, [hiddenValues]);
-  const [hidden, setHidden] = useState(hiddenValues ?? initial.current?.hideValues ?? false);
   const [draft, setDraft] = useState(filters);
   const [filterOpen, setFilterOpen] = useState(false);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
@@ -131,8 +129,8 @@ export function SaldosScreen({ viewStateRef, onNavigate, hiddenValues, onHiddenV
     previousToday.current = today;
   }, [today, month]);
   useEffect(() => {
-    if (viewStateRef) viewStateRef.current = { month, filters, limit, hideValues: hidden, scrollOffset: scrollOffset.current };
-  }, [month, filters, limit, hidden, viewStateRef]);
+    if (viewStateRef) viewStateRef.current = { month, filters, limit, scrollOffset: scrollOffset.current };
+  }, [month, filters, limit, viewStateRef]);
   useEffect(() => { closeRow(); }, [month, filters, closeRow]);
   useEffect(() => {
     if (filters.accountId !== 'todas' && !index.accountById.has(filters.accountId)) setFilters(previous => ({ ...previous, accountId: 'todas' }));
@@ -176,10 +174,10 @@ export function SaldosScreen({ viewStateRef, onNavigate, hiddenValues, onHiddenV
     const previous = visibleTransactions[position - 1];
     return <View>
       {(!previous || index.metadata.get(previous.id)?.day !== meta.day) && <Text style={[styles.dayHeading, { color: colors.mutedForeground }]}>{formatDate(meta.day)}</Text>}
-      <TransactionItem transaction={tx} account={index.accountById.get(tx.accountId)} targetAccount={index.accountById.get(tx.targetAccountId || '')} selectedAccountId={filters.accountId} status={meta.status} tag={tagByLabel.get(tx.tag || '')} colors={colors} hideIcon hideValues={hidden} swipeable rowRefs={rowRefs} onSwipeableWillOpen={onSwipeOpen} renderRightActions={renderActions} onConfirm={busyId ? undefined : confirmPayment} />
+      <TransactionItem transaction={tx} account={index.accountById.get(tx.accountId)} targetAccount={index.accountById.get(tx.targetAccountId || '')} selectedAccountId={filters.accountId} status={meta.status} tag={tagByLabel.get(tx.tag || '')} colors={colors} hideIcon swipeable rowRefs={rowRefs} onSwipeableWillOpen={onSwipeOpen} renderRightActions={renderActions} onConfirm={busyId ? undefined : confirmPayment} />
     </View>;
-  }, [index, visibleTransactions, filters.accountId, tagByLabel, colors, hidden, rowRefs, onSwipeOpen, renderActions, busyId, confirmPayment]);
-  const blocks = { index, month, today, accounts, projects, goals, colors, hidden, width, fontScale, onNavigate, onProject: setSelectedProject, onAccount: openAccount };
+  }, [index, visibleTransactions, filters.accountId, tagByLabel, colors, rowRefs, onSwipeOpen, renderActions, busyId, confirmPayment]);
+  const blocks = { index, month, today, accounts, projects, goals, colors, width, fontScale, onNavigate, onProject: setSelectedProject, onAccount: openAccount };
   const header = <View style={styles.section}>
     <View testID="saldos-month-card" style={[styles.card, styles.monthCard, { backgroundColor: colors.primary, borderColor: colors.primary }]}>
       <View style={styles.monthNavigation}>
@@ -189,7 +187,6 @@ export function SaldosScreen({ viewStateRef, onNavigate, hiddenValues, onHiddenV
       </View>
       <View style={styles.toolbar}>
         <TouchableOpacity accessibilityRole="button" accessibilityLabel="Voltar ao mês atual" accessibilityHint="Exibe os lançamentos do mês de hoje" onPress={() => { setMonth(today.slice(0, 7)); setLimit(20); }} style={styles.iconButton}><Ionicons name="today-outline" size={22} color={monthForeground} /></TouchableOpacity>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel={hidden ? 'Mostrar valores' : 'Ocultar valores'} onPress={() => { setHidden(!hidden); onHiddenValuesChange?.(!hidden); }} style={styles.iconButton}><Ionicons name={hidden ? 'eye-off-outline' : 'eye-outline'} size={22} color={monthForeground} /></TouchableOpacity>
       </View>
     </View>
     <OverviewSections sections={layout.before} {...blocks} />
@@ -228,7 +225,7 @@ export function SaldosScreen({ viewStateRef, onNavigate, hiddenValues, onHiddenV
       </View>
     </Modal>
     <RecurrenceActionModal visible={!!deleteFamilyId} actionType="delete" onClose={() => setDeleteFamilyId(null)} onSelect={mode => { if (deleteFamilyId) void remove(deleteFamilyId, mode); setDeleteFamilyId(null); }} />
-    {selectedProject && <ProjectTransactionsModal project={selectedProject} hideValues={hidden} onClose={() => setSelectedProject(null)} />}
+    {selectedProject && <ProjectTransactionsModal project={selectedProject} onClose={() => setSelectedProject(null)} />}
   </View>;
 }
 

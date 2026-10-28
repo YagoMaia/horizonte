@@ -49,9 +49,11 @@ it('calcula a média da semana em andamento pelos dias transcorridos', () => {
   expect(totalsDaysElapsed('semana', sunday, new Date(2026, 10, 3, 12))).toBe(3);
 });
 
-it('compartilha a privacidade, permite controlar pendências e escolher mês diretamente', () => {
-  const ui = render(<TotaisScreen hiddenValues />);
-  expect(ui.getAllByText('••••').length).toBeGreaterThan(0);
+it('mostra valores sem botão de ocultação, controla pendências e escolhe mês diretamente', () => {
+  const ui = render(<TotaisScreen />);
+  expect(ui.queryByText('••••')).toBeNull();
+  expect(ui.queryByLabelText('Ocultar valores')).toBeNull();
+  expect(ui.queryByLabelText('Mostrar valores')).toBeNull();
   fireEvent.press(ui.getByLabelText('Incluir lançamentos previstos'));
   expect(mockStore.setShowPending).toHaveBeenCalledWith(false);
   fireEvent.press(ui.getByLabelText('Escolher período'));

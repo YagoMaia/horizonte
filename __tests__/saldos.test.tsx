@@ -83,8 +83,8 @@ it('soma despesas pagas e pendentes e faturas no vencimento sem duplicar compras
   expect(summary.getByText(formatCurrency(1200))).toBeTruthy();
   expect(summary.getByText(formatCurrency(900))).toBeTruthy();
   expect(screen.getByTestId('saldos-month-card')).toHaveStyle({ backgroundColor: require('../constants/theme').Colors.light.primary });
-  fireEvent.press(screen.getByLabelText('Ocultar valores'));
-  expect(within(screen.getByTestId('saldos-summary')).queryByText(formatCurrency(1050))).toBeNull();
+  expect(screen.queryByLabelText('Ocultar valores')).toBeNull();
+  expect(screen.queryByLabelText('Mostrar valores')).toBeNull();
 });
 it('cancelar não aplica filtros e aplicar restringe a lista ao status escolhido', () => {
   mockStore.transactions = [entry({ description: 'Receita confirmada' }), entry({ id: 'late', description: 'Conta atrasada', paid: false, type: 'despesa' })]; refresh();
@@ -150,12 +150,12 @@ it('cards oferecem atalhos e metas com aporte zero mostram sem previsão', () =>
   expect(onNavigate).toHaveBeenCalledWith('metas', 'g');
   expect(screen.getByText(/Sem previsão/)).toBeTruthy();
 });
-it('oculta valores monetários inclusive na acessibilidade dos lançamentos', () => {
+it('mantém valores visíveis nos lançamentos e na acessibilidade', () => {
   mockStore.transactions = [entry({ amount: 4321.23 })]; refresh();
   const screen = render(<SaldosScreen />);
-  fireEvent.press(screen.getByLabelText('Ocultar valores'));
-  expect(screen.queryByText(formatCurrency(4321.23))).toBeNull();
-  expect(screen.getByLabelText('Salário, Recebido, valor oculto')).toBeTruthy();
+  expect(screen.getByText(`+${formatCurrency(4321.23)}`)).toBeTruthy();
+  expect(screen.getByLabelText(`Salário, Recebido, +${formatCurrency(4321.23)}`)).toBeTruthy();
+  expect(screen.queryByText('••••')).toBeNull();
 });
 it('oferece ajustes no filtro sem misturá-los aos subtotais de receita', () => {
   mockStore.transactions = [entry({ description: 'Saldo inicial', isAdjustment: true, amount: 987 })]; refresh();

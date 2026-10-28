@@ -21,7 +21,6 @@ interface TransactionItemProps {
   targetAccount?: Account;
   selectedAccountId?: string;
   status?: PaymentStatus;
-  hideValues?: boolean;
   onConfirm?: (transaction: Transaction) => void;
   tag?: Tag;
   colors: ThemeColors;
@@ -44,7 +43,6 @@ export const TransactionItem = React.memo(({
   targetAccount,
   selectedAccountId,
   status,
-  hideValues = false,
   onConfirm,
   tag,
   colors,
@@ -94,7 +92,7 @@ export const TransactionItem = React.memo(({
       ]}
       onPress={handlePress}
       accessibilityRole="button"
-      accessibilityLabel={`${transaction.description}, ${statusLabel}, ${hideValues ? 'valor oculto' : sign + formatCurrency(transaction.amount)}`}
+      accessibilityLabel={`${transaction.description}, ${statusLabel}, ${sign + formatCurrency(transaction.amount)}`}
       activeOpacity={0.7}
     >
       {!hideIcon && (
@@ -132,7 +130,7 @@ export const TransactionItem = React.memo(({
       </View>
       <View style={[styles.amountContainer, stacked && styles.stackedAmount]}>
         <Text style={[styles.txAmount, { color: amountColor }]}>
-          {hideValues ? '••••' : `${sign}${formatCurrency(transaction.amount)}`}
+          {`${sign}${formatCurrency(transaction.amount)}`}
         </Text>
         {onConfirm && !transaction.paid && transaction.paymentMethod !== 'credito' && (
           <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Confirmar ${isReceita ? 'recebimento' : 'pagamento'} de ${transaction.description}`} onPress={(event) => { event.stopPropagation(); onConfirm(transaction); }} style={{ paddingVertical: 10, paddingHorizontal: 4 }}>

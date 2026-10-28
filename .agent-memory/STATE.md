@@ -1,9 +1,8 @@
 Projeto: Horizonte, aplicativo móvel de finanças.
-Última tarefa: tasks/completed/2026-10-27-simplificar-saldos.md
-Estado: simplificação visual e do resumo de Saldos concluída.
-Entrega: seletor de mês na cor principal e atalho calendário; resumo com saldo realizado hoje, receitas realizadas e todas as despesas do mês selecionado.
-Decisões: saldo principal sempre atual; receitas e despesas seguem o mês selecionado, incluindo faturas no vencimento sem dupla contagem.
-Verificações: TypeScript, git diff --check e 16 testes de Saldos aprovados.
+Última tarefa: tasks/completed/2026-10-27-remover-ocultacao.md
+Estado: botões e lógica de ocultação de valores removidos de todas as telas e detalhes.
+Decisão do usuário: valores sempre visíveis, sem botão de ocultar/mostrar.
+Verificações: TypeScript, git diff --check e 21 suítes/133 testes aprovados; quatro testes privados não rodaram por ausência do arquivo de backup no caminho antigo.
 Preferências: Galaxy S23, telas adaptáveis e backup privado intacto.
-Limites: sem teste físico no S23 nesta etapa.
+Limites: sem validação física no S23; backup privado indisponível no caminho original.
 Próxima etapa: aguardar nova solicitação.

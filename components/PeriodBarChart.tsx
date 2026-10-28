@@ -15,10 +15,9 @@ interface PeriodBarChartProps {
   period: Period;
   refDate: Date;
   title?: string;
-  hiddenValues?: boolean;
 }
 
-export function PeriodBarChart({ transactions, period, refDate, title = 'Comparativo de Gastos', hiddenValues = false }: PeriodBarChartProps) {
+export function PeriodBarChart({ transactions, period, refDate, title = 'Comparativo de Gastos' }: PeriodBarChartProps) {
   const { colors } = useTheme();
   const [selectedBar, setSelectedBar] = useState<number | null>(null);
   const [containerWidth, setContainerWidth] = useState(320);
@@ -106,7 +105,7 @@ export function PeriodBarChart({ transactions, period, refDate, title = 'Compara
             {data[selectedBar].label}:
           </Text>
           <Text style={[styles.badgeValue, { color: colors.primary }]}>
-            {hiddenValues ? '••••' : formatCompact(data[selectedBar].value)}
+            {formatCompact(data[selectedBar].value)}
           </Text>
         </View>
       )}
@@ -158,7 +157,7 @@ export function PeriodBarChart({ transactions, period, refDate, title = 'Compara
               <TouchableOpacity
                 key={item.label}
                 accessibilityRole="button"
-                accessibilityLabel={`${item.label}: ${hiddenValues ? 'valor oculto' : formatCompact(item.value)}`}
+                accessibilityLabel={`${item.label}: ${formatCompact(item.value)}`}
                 accessibilityState={{ selected: selectedBar === index }}
                 activeOpacity={0.6}
                 style={{ width: svgToRealX(chartInnerWidth / data.length), height: chartHeight }}

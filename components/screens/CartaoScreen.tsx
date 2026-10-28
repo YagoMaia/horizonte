@@ -15,15 +15,12 @@ export interface CardViewState {
     month: string;
     query: string;
     status: string;
-    hidden: boolean;
 }
 interface Props {
     onSelectCard?: (card: Account | null) => void;
     initialCardId?: string;
     viewStateRef?: React.MutableRefObject<CardViewState | null>;
     onManageAccounts?: () => void;
-    hiddenValues?: boolean;
-    onHiddenValuesChange?: (hidden: boolean) => void;
 }
 const labelMonth = (month: string) => financialDate(`${month}-01`).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
 /** A tela abre na próxima competência de vencimento, que é a fatura a pagar após o mês atual. */
@@ -37,7 +34,7 @@ export function paymentDateFromText(text: string) {
     return date;
 }
 const message = (title: string, body: string) => Platform.OS === 'web' ? window.alert(`${title}\n${body}`) : Alert.alert(title, body);
-export function CartaoScreen({ onSelectCard, initialCardId, viewStateRef, onManageAccounts, hiddenValues, onHiddenValuesChange }: Props) {
+export function CartaoScreen({ onSelectCard, initialCardId, viewStateRef, onManageAccounts }: Props) {
     const { colors } = useTheme(), insets = useSafeAreaInsets();
     const { accounts, transactions, financialIndex, today, payCreditCardInvoice, anticipateCreditCardPayment, deleteMultipleTransactions, reverseCardPayment } = useStoreContext();
     const cards = useMemo(() => accounts.filter(a => a.type === 'cartao_credito'), [accounts]);
@@ -46,7 +43,6 @@ export function CartaoScreen({ onSelectCard, initialCardId, viewStateRef, onMana
     const [month, setMonth] = useState(initial.current?.month || defaultInvoiceMonth(today));
     const [query, setQuery] = useState(initial.current?.query || '');
     const [status, setStatus] = useState(initial.current?.status || 'todos');
-    const [hidden, setHidden] = useState(hiddenValues ?? initial.current?.hidden ?? false);
     const [mode, setMode] = useState<'pay' | 'partial' | 'mark' | 'delete' | 'reverse' | 'month' | null>(null);
     const [sourceId, setSourceId] = useState(''), [amount, setAmount] = useState(''), [date, setDate] = useState('');
     const [busy, setBusy] = useState(false), busyRef = useRef(false);
@@ -72,15 +68,13 @@ export function CartaoScreen({ onSelectCard, initialCardId, viewStateRef, onMana
     const remaining = sum('pending'), total = sum('total'), settled = total - sum('rawPending'), applied = sum('creditApplied');
     const dates = card ? invoiceDates(month, card) : null;
     const earlier = useMemo(() => [...ledger.invoices.values()].filter(i => selected.some(c => c.id === i.cardId) && i.month < month && i.pending > 0).sort((a, b) => a.month.localeCompare(b.month)), [ledger, selected, month]);
-    const money = (value: number) => hidden ? '••••' : formatCurrency(value);
+    const money = (value: number) => formatCurrency(value);
     const text = { color: colors.foreground }, muted = { color: colors.mutedForeground }, surface = { backgroundColor: colors.card, borderColor: colors.border };
     useEffect(() => { if (cardId !== 'all' && !cards.some(c => c.id === cardId))
         setCardId('all'); }, [cards, cardId]);
     useEffect(() => { onSelectCard?.(card || null); }, [card, onSelectCard]);
-    useEffect(() => { if (hiddenValues !== undefined)
-        setHidden(hiddenValues); }, [hiddenValues]);
     useEffect(() => { if (viewStateRef)
-        viewStateRef.current = { cardId, month, query, status, hidden }; }, [cardId, month, query, status, hidden, viewStateRef]);
+        viewStateRef.current = { cardId, month, query, status }; }, [cardId, month, query, status, viewStateRef]);
     const lastToday = useRef(today);
     useEffect(() => { const previous = lastToday.current.slice(0, 7); if (previous !== today.slice(0, 7))
         setMonth(m => m === shiftMonth(previous, 1) ? defaultInvoiceMonth(today) : m); lastToday.current = today; }, [today]);
@@ -128,7 +122,7 @@ export function CartaoScreen({ onSelectCard, initialCardId, viewStateRef, onMana
       <TouchableOpacity accessibilityRole="button" accessibilityLabel="Escolher competência" style={{ flex: 1, paddingVertical: 12 }} onPress={() => open('month')}><Text accessibilityRole="header" style={[styles.title, text, { textAlign: 'center' }]}>{labelMonth(month)}</Text></TouchableOpacity>
       <TouchableOpacity accessibilityRole="button" accessibilityLabel="Fatura do próximo mês" onPress={() => setMonth(m => shiftMonth(m, 1))} style={styles.iconButton}><Ionicons name="chevron-forward" size={24} color={colors.foreground}/></TouchableOpacity>
     </View>
-    <View style={styles.wrap}>{button('Mês atual', () => setMonth(today.slice(0, 7)))}{button(hidden ? 'Mostrar valores' : 'Ocultar valores', () => { setHidden(!hidden); onHiddenValuesChange?.(!hidden); })}</View>
+    <View style={styles.wrap}>{button('Mês atual', () => setMonth(today.slice(0, 7)))}</View>
     <Text style={[styles.caption, muted]}>Competência de vencimento. Todos os cartões usam o mesmo mês.</Text>
     <View style={[styles.card, surface]}>
       <Text style={[styles.title, text]}>{card?.name || 'Todos os cartões'}</Text>
@@ -158,7 +152,7 @@ export function CartaoScreen({ onSelectCard, initialCardId, viewStateRef, onMana
     {card && rows.length > 0 && button('Excluir lançamentos da fatura', () => open('delete'))}
   </View>;
     return <View style={{ flex: 1, backgroundColor: colors.background }}>
-    {cards.length === 0 ? <View style={styles.card}><Text style={[styles.title, text]}>Nenhum cartão cadastrado.</Text>{button('Cadastrar cartão', () => onManageAccounts?.())}</View> : <FlatList data={filtered} keyExtractor={t => t.id} ListHeaderComponent={header} renderItem={({ item }) => <TransactionItem transaction={item} account={financialIndex.accountById.get(item.accountId)} colors={colors} showAccount={!card} status={financialIndex.metadata.get(item.id)?.status as PaymentStatus} hideValues={hidden}/>} initialNumToRender={8} maxToRenderPerBatch={8} windowSize={5} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content} ListEmptyComponent={<Text style={[styles.empty, muted]}>{rows.length ? 'Nenhum item corresponde à busca ou situação.' : 'Nenhum lançamento nesta competência.'}</Text>}/>}
+    {cards.length === 0 ? <View style={styles.card}><Text style={[styles.title, text]}>Nenhum cartão cadastrado.</Text>{button('Cadastrar cartão', () => onManageAccounts?.())}</View> : <FlatList data={filtered} keyExtractor={t => t.id} ListHeaderComponent={header} renderItem={({ item }) => <TransactionItem transaction={item} account={financialIndex.accountById.get(item.accountId)} colors={colors} showAccount={!card} status={financialIndex.metadata.get(item.id)?.status as PaymentStatus}/>} initialNumToRender={8} maxToRenderPerBatch={8} windowSize={5} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content} ListEmptyComponent={<Text style={[styles.empty, muted]}>{rows.length ? 'Nenhum item corresponde à busca ou situação.' : 'Nenhum lançamento nesta competência.'}</Text>}/>}
     <Modal visible={mode !== null} transparent animationType="slide" onRequestClose={close}>
       <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <View style={[styles.modal, surface, { paddingBottom: Math.max(16, insets.bottom + 12) }]}>

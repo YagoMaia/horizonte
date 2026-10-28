@@ -30,7 +30,6 @@ export default function HomePage() {
   const { colors } = useTheme()
   const store = useStoreContext()
   const [activeTab, setActiveTab] = useState<TabType>('saldos')
-  const [hiddenValues, setHiddenValues] = useState(false)
   const cardViewRef = useRef<CardViewState | null>(null)
   const saldosViewRef = useRef<SaldosViewState | null>(null)
   const [initialCardId, setInitialCardId] = useState<string | undefined>()
@@ -73,9 +72,9 @@ export default function HomePage() {
 
   const renderScreen = () => {
     switch (activeTab) {
-      case 'saldos': return <SaldosScreen hiddenValues={hiddenValues} onHiddenValuesChange={setHiddenValues} viewStateRef={saldosViewRef} onNavigate={navigateFromSaldos} />
-      case 'totais': return <TotaisScreen hiddenValues={hiddenValues} onHiddenValuesChange={setHiddenValues} />
-      case 'horizonte': return <HorizonteScreen hiddenValues={hiddenValues} onHiddenValuesChange={setHiddenValues} />
+      case 'saldos': return <SaldosScreen viewStateRef={saldosViewRef} onNavigate={navigateFromSaldos} />
+      case 'totais': return <TotaisScreen />
+      case 'horizonte': return <HorizonteScreen />
       case 'contas': return <ContasScreen />
       case 'projetos': return <ProjetosScreen />
       case 'metas': return <MetasScreen />
@@ -86,8 +85,6 @@ export default function HomePage() {
           <CartaoScreen 
             initialCardId={initialCardId}
             viewStateRef={cardViewRef}
-            hiddenValues={hiddenValues}
-            onHiddenValuesChange={setHiddenValues}
             onManageAccounts={() => setActiveTab('contas')}
             onSelectCard={handleSelectCard} 
           />

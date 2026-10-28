@@ -19,6 +19,32 @@ it('move fatura vencida para hoje sem retroagir o saldo atual', () => {
   expect(days[16].balance).toBe(800);
 });
 
+it('reserva as faturas futuras no dia 1 sem novo desconto no vencimento', () => {
+  const rows = [purchase({ date: '2026-10-10', amount: 200 }), purchase({ id: 'dec', date: '2026-11-10', amount: 300 })];
+  const result = project(new Date(2026, 9, 27, 12), [bank, card], rows);
+  expect(result['2026-9'][30].balance).toBe(1000);
+  expect(result['2026-10'][0].balance).toBe(800);
+  expect(result['2026-10'][0].expense).toBe(200);
+  expect(result['2026-10'][0].transactions[0].description).toContain('reserva do mês');
+  expect(result['2026-10'][4].expense).toBe(0);
+  expect(result['2026-10'][29].balance).toBe(800);
+  expect(result['2026-11'][0].balance).toBe(500);
+  expect(result['2026-11'][4].expense).toBe(0);
+});
+
+it('reserva só o restante após antecipação e mantém o cálculo ao abrir mês futuro diretamente', () => {
+  const rows = [purchase({ date: '2026-10-10' }), purchase({ id: 'credit', date: '2026-10-15', invoiceMonth: '2026-11', type: 'receita', amount: 50 })];
+  const result = buildHorizonProjection({ accounts: [bank, card], transactions: rows, activeAccountIds: ['bank'], year: 2026, month: 10, today: new Date(2026, 9, 27, 12), getBudget: () => 0, includeCardInvoices: true });
+  expect(result['2026-10'][0].expense).toBe(150);
+  expect(result['2026-10'][0].balance).toBe(850);
+});
+
+it('reserva janeiro no primeiro dia inclusive na virada do ano', () => {
+  const result = project(new Date(2026, 11, 27, 12), [bank, card], [purchase({ date: '2026-12-10' })]);
+  expect(result['2027-0'][0].expense).toBe(200);
+  expect(result['2027-0'][4].expense).toBe(0);
+});
+
 it('respeita a escolha de incluir faturas e a seleção de contas', () => {
   const today = new Date(2026, 9, 1, 12);
   expect(project(today, [bank, card], [purchase()], [], true)['2026-9'][4].balance).toBe(0);

@@ -11,13 +11,12 @@ import { financialDate } from '@/lib/financialDate';
 interface Props {
   project: Project | null;
   onClose: () => void;
-  hideValues?: boolean;
 }
 
-export function ProjectTransactionsModal({ project, onClose, hideValues = false }: Props) {
+export function ProjectTransactionsModal({ project, onClose }: Props) {
   const { colors } = useTheme();
   const { transactions, getProjectSpent, financialIndex } = useStoreContext();
-  const money = (value: number) => hideValues ? '••••' : formatCurrency(value);
+  const money = (value: number) => formatCurrency(value);
 
   const projectTransactions = useMemo(() => {
     if (!project) return [];
@@ -47,11 +46,10 @@ export function ProjectTransactionsModal({ project, onClose, hideValues = false 
         transaction={tx}
         colors={colors}
         showAccount={false}
-        hideValues={hideValues}
         status={financialIndex.metadata.get(tx.id)?.status}
       />
     );
-  }, [colors, hideValues, financialIndex]);
+  }, [colors, financialIndex]);
 
   const keyExtractor = useCallback((item: Transaction) => item.id, []);
 

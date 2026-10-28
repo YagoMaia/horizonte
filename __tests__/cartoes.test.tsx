@@ -67,9 +67,11 @@ it('rejeita data impossível e permite fechar modal pelo Voltar', async () => {
     fireEvent(s.UNSAFE_getByType(require('react-native').Modal), 'requestClose');
     expect(s.queryByText('Confirmar registro')).toBeNull();
 });
-it('explica pagamento externo e respeita privacidade compartilhada', () => {
-    const s = render(<CartaoScreen initialCardId="c" hiddenValues/>);
-    expect(s.getByLabelText('Compra, Previsto, valor oculto')).toBeTruthy();
+it('explica pagamento externo e mantém valores visíveis', () => {
+    const s = render(<CartaoScreen initialCardId="c"/>);
+    expect(s.getByLabelText(`Compra, Previsto, -${formatCurrency(100)}`)).toBeTruthy();
+    expect(s.queryByText('Ocultar valores')).toBeNull();
+    expect(s.queryByText('Mostrar valores')).toBeNull();
     fireEvent.press(s.getByText('Registrar pagamento feito fora do app'));
     expect(s.getByText(/remove a dívida das projeções/)).toBeTruthy();
 });

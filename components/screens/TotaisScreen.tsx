@@ -11,11 +11,10 @@ import { CategoryDonutChart } from '../CategoryDonutChart';
 import { CategoryTransactionsModal } from '../CategoryTransactionsModal';
 import { PeriodBarChart } from '../PeriodBarChart';
 
-interface Props { hiddenValues?: boolean; onHiddenValuesChange?: (hidden: boolean) => void; }
 const MONTH_NAMES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
-const money = (value: number, hidden: boolean) => hidden ? '••••' : formatCurrency(value);
+const money = formatCurrency;
 
-export function TotaisScreen({ hiddenValues, onHiddenValuesChange }: Props) {
+export function TotaisScreen() {
   const { colors } = useTheme();
   const { transactions, showPending, setShowPending, totaisLayout } = useStoreContext();
   const todayKey = useToday();
@@ -26,10 +25,7 @@ export function TotaisScreen({ hiddenValues, onHiddenValuesChange }: Props) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerYear, setPickerYear] = useState(() => financialDate(todayKey).getFullYear());
   const [refDate, setRefDate] = useState(() => financialDate(todayKey));
-  const [hidden, setHidden] = useState(hiddenValues ?? false);
 
-  React.useEffect(() => { if (hiddenValues !== undefined) setHidden(hiddenValues); }, [hiddenValues]);
-  const changeHidden = () => setHidden(value => { onHiddenValuesChange?.(!value); return !value; });
   const movePeriod = (offset: number) => setRefDate(value => {
     const next = new Date(value.getFullYear(), value.getMonth(), 1, 12);
     if (period === 'semana') next.setDate(value.getDate() + offset * 7);
@@ -56,7 +52,6 @@ export function TotaisScreen({ hiddenValues, onHiddenValuesChange }: Props) {
       <View style={[styles.segmented, { backgroundColor: colors.secondary }]}>
         {(['semana', 'mes', 'ano'] as TotalsPeriod[]).map(value => <TouchableOpacity key={value} accessibilityRole="button" accessibilityState={{ selected: period === value }} accessibilityLabel={`Exibir ${value}`} style={[styles.segBtn, period === value && { backgroundColor: colors.card }]} onPress={() => { setPeriod(value); setCurrentPeriod(); }}><Text style={[styles.segText, { color: period === value ? colors.foreground : colors.mutedForeground }]}>{value[0].toUpperCase() + value.slice(1)}</Text></TouchableOpacity>)}
       </View>
-      <TouchableOpacity accessibilityRole="button" accessibilityLabel={hidden ? 'Mostrar valores' : 'Ocultar valores'} onPress={changeHidden} style={[styles.iconButton, { backgroundColor: colors.card, borderColor: colors.border }]}><Ionicons name={hidden ? 'eye-off-outline' : 'eye-outline'} size={21} color={colors.foreground} /></TouchableOpacity>
     </View>
     <View style={[styles.periodNav, { borderColor: colors.border, backgroundColor: colors.card }]}>
       <TouchableOpacity accessibilityRole="button" accessibilityLabel="Período anterior" onPress={() => movePeriod(-1)} style={styles.navBtn}><Ionicons name="chevron-back" size={22} color={colors.foreground} /></TouchableOpacity>
@@ -66,16 +61,16 @@ export function TotaisScreen({ hiddenValues, onHiddenValuesChange }: Props) {
     <TouchableOpacity accessibilityRole="switch" accessibilityState={{ checked: showPending }} accessibilityLabel="Incluir lançamentos previstos" onPress={() => setShowPending(!showPending)} style={[styles.pendingControl, { backgroundColor: colors.secondary, borderColor: colors.border }]}><Ionicons name={showPending ? 'calendar-outline' : 'checkmark-circle-outline'} size={18} color={colors.primary} /><Text style={[styles.pendingText, { color: colors.foreground }]}>{status}</Text></TouchableOpacity>
     {totaisLayout.filter(section => section.visible).map(section => {
       if (section.id === 'stats') return <View key="stats"><Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>Cálculos do período</Text><View style={[styles.stats, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <Stat label="Performance" value={money(totals.performance, hidden)} status={totals.performance >= 0 ? 'Sobrou dinheiro' : 'Faltou dinheiro'} color={totals.performance >= 0 ? colors.success : colors.destructive} />
+        <Stat label="Performance" value={money(totals.performance)} status={totals.performance >= 0 ? 'Sobrou dinheiro' : 'Faltou dinheiro'} color={totals.performance >= 0 ? colors.success : colors.destructive} />
         <Stat label="Economizado" value={`${totals.savingsPercent.toFixed(0)}%`} status={totals.savingsPercent > 0 ? 'Guardado' : 'Nada guardado'} color={colors.foreground} />
-        <Stat label="Custo de vida" value={money(totals.expense, hidden)} status={totals.expense > totals.income ? 'Acima da renda' : 'Dentro da renda'} color={colors.foreground} />
-        <Stat label="Diário médio" value={money(totals.dailyAverage, hidden)} status="Média de gastos" color={colors.foreground} last />
+        <Stat label="Custo de vida" value={money(totals.expense)} status={totals.expense > totals.income ? 'Acima da renda' : 'Dentro da renda'} color={colors.foreground} />
+        <Stat label="Diário médio" value={money(totals.dailyAverage)} status="Média de gastos" color={colors.foreground} last />
       </View></View>;
-      if (section.id === 'category') return <CategoryDonutChart key="category" transactions={chartTransactions} hiddenValues={hidden} title="Gastos por categoria" headerComponent={<View style={[styles.chartSelector, { backgroundColor: colors.secondary }]}>{(['debito', 'credito', 'total'] as TotalsChartFilter[]).map(value => <TouchableOpacity key={value} accessibilityRole="button" accessibilityState={{ selected: selectedChart === value }} accessibilityLabel={`Exibir gastos no ${value}`} style={[styles.chartSelectorBtn, selectedChart === value && { backgroundColor: colors.card }]} onPress={() => setSelectedChart(value)}><Text style={[styles.chartSelectorText, { color: selectedChart === value ? colors.foreground : colors.mutedForeground }]}>{value === 'debito' ? 'Débito' : value === 'credito' ? 'Crédito' : 'Total'}</Text></TouchableOpacity>)}</View>} onCategoryPress={setSelectedCategory} />;
-      if (section.id === 'period') return <PeriodBarChart key="period" transactions={chartTransactions} period={period} refDate={refDate} hiddenValues={hidden} title="Evolução dos gastos" />;
+      if (section.id === 'category') return <CategoryDonutChart key="category" transactions={chartTransactions} title="Gastos por categoria" headerComponent={<View style={[styles.chartSelector, { backgroundColor: colors.secondary }]}>{(['debito', 'credito', 'total'] as TotalsChartFilter[]).map(value => <TouchableOpacity key={value} accessibilityRole="button" accessibilityState={{ selected: selectedChart === value }} accessibilityLabel={`Exibir gastos no ${value}`} style={[styles.chartSelectorBtn, selectedChart === value && { backgroundColor: colors.card }]} onPress={() => setSelectedChart(value)}><Text style={[styles.chartSelectorText, { color: selectedChart === value ? colors.foreground : colors.mutedForeground }]}>{value === 'debito' ? 'Débito' : value === 'credito' ? 'Crédito' : 'Total'}</Text></TouchableOpacity>)}</View>} onCategoryPress={setSelectedCategory} />;
+      if (section.id === 'period') return <PeriodBarChart key="period" transactions={chartTransactions} period={period} refDate={refDate} title="Evolução dos gastos" />;
       return null;
     })}
-    {selectedCategory && <CategoryTransactionsModal category={selectedCategory} transactions={chartTransactions} hiddenValues={hidden} onClose={() => setSelectedCategory(null)} />}
+    {selectedCategory && <CategoryTransactionsModal category={selectedCategory} transactions={chartTransactions} onClose={() => setSelectedCategory(null)} />}
     <Modal visible={pickerOpen} transparent animationType="fade" onRequestClose={() => setPickerOpen(false)}><View style={styles.pickerOverlay}><View style={[styles.picker, { backgroundColor: colors.card, borderColor: colors.border }]}><View style={styles.pickerHeader}><TouchableOpacity accessibilityRole="button" accessibilityLabel="Ano anterior" style={styles.navBtn} onPress={() => setPickerYear(year => year - 1)}><Ionicons name="chevron-back" size={22} color={colors.foreground} /></TouchableOpacity><Text style={[styles.pickerTitle, { color: colors.foreground }]}>{period === 'mes' ? `Escolher mês de ${pickerYear}` : 'Escolher ano'}</Text><TouchableOpacity accessibilityRole="button" accessibilityLabel="Ano seguinte" style={styles.navBtn} onPress={() => setPickerYear(year => year + 1)}><Ionicons name="chevron-forward" size={22} color={colors.foreground} /></TouchableOpacity></View><View style={styles.pickerGrid}>{period === 'mes' ? MONTH_NAMES.map((month, index) => <TouchableOpacity key={month} accessibilityRole="button" accessibilityState={{ selected: refDate.getFullYear() === pickerYear && refDate.getMonth() === index }} style={[styles.pickerCell, refDate.getFullYear() === pickerYear && refDate.getMonth() === index && { backgroundColor: colors.primary }]} onPress={() => { setRefDate(new Date(pickerYear, index, 1, 12)); setPickerOpen(false); }}><Text style={{ color: refDate.getFullYear() === pickerYear && refDate.getMonth() === index ? '#FFF' : colors.foreground, fontWeight: '700' }}>{month.slice(0, 3)}</Text></TouchableOpacity>) : Array.from({ length: 12 }, (_, index) => pickerYear - 5 + index).map(year => <TouchableOpacity key={year} accessibilityRole="button" accessibilityState={{ selected: refDate.getFullYear() === year }} style={[styles.pickerCell, refDate.getFullYear() === year && { backgroundColor: colors.primary }]} onPress={() => { setRefDate(new Date(year, 0, 1, 12)); setPickerOpen(false); }}><Text style={{ color: refDate.getFullYear() === year ? '#FFF' : colors.foreground, fontWeight: '700' }}>{year}</Text></TouchableOpacity>)}</View><TouchableOpacity accessibilityRole="button" style={styles.closePicker} onPress={() => setPickerOpen(false)}><Text style={{ color: colors.primary, fontWeight: '800' }}>Fechar</Text></TouchableOpacity></View></View></Modal>
   </ScrollView>;
 }

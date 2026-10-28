@@ -53,7 +53,7 @@ export function parseBudgetMoney(text: string) {
   return Math.round(amount * 100) / 100;
 }
 
-/** Motor único e testável da tela Horizonte. Valores de cartão entram no vencimento da fatura. */
+/** No mês atual, faturas entram no vencimento; nos meses futuros, ficam reservadas no dia 1. */
 export function buildHorizonProjection(input: HorizonProjectionInput) {
   const monthsAhead = input.monthsAhead ?? 2;
   const today = startOfDay(input.today);
@@ -99,10 +99,12 @@ export function buildHorizonProjection(input: HorizonProjectionInput) {
     for (const invoice of invoices.invoices.values()) {
       if (invoice.pending <= 0) continue;
       const due = financialDate(invoice.due);
-      const impactDate = due < today ? today : due;
+      const futureMonth = invoice.month > dayKey(today).slice(0, 7);
+      const impactDate = futureMonth ? new Date(due.getFullYear(), due.getMonth(), 1, 12) : due < today ? today : due;
+      const card = input.accounts.find(account => account.id === invoice.cardId);
       add(impactDate, {
         id: `virtual-invoice-${invoice.cardId}-${invoice.month}`,
-        description: 'Fatura de cartão',
+        description: futureMonth ? `Fatura de ${card?.name || 'cartão'} — reserva do mês` : 'Fatura de cartão',
         amount: invoice.pending / 100,
         type: 'despesa',
         date: impactDate.toISOString(),

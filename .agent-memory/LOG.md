@@ -27,3 +27,5 @@
 2026-10-20 BRT: iniciada preparação para geração de APK. Adicionados perfil EAS, versionCode Android e scripts de build.
 2026-10-20 BRT: projeto preparado para gerar APK. Adicionados eas.json, versionCode Android, scripts EAS e instruções. Configuração Expo, TypeScript e 22 suítes/130 testes com backup privado local aprovados.
 2026-10-27 BRT: tela Saldos simplificada conforme uso real: seletor na cor principal, atalho calendário e resumo com três valores. TypeScript e 16 testes de Saldos aprovados.
+2026-10-27 BRT: Horizonte ajustado para abrir hoje em lista/grade; removido aviso e adicionada reserva de faturas futuras no dia 1, sem duplicar vencimentos. TypeScript e 14 testes específicos aprovados.
+2026-10-27 BRT: removidos botões e lógica de ocultar valores de todas as telas e detalhes. TypeScript, integridade do diff e 133 testes aprovados; backup privado ausente no caminho antigo, impedindo quatro testes opt-in.

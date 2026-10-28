@@ -32,3 +32,12 @@ Concluídas em 18/10/2026, a partir do diagnóstico em `ANALISE_TELA_HORIZONTE.m
 ## Limites
 
 Não houve medição de FPS, geração de APK ou instalação no S23. A validação nativa de teclado, gestos e fluidez ainda depende de abrir esta versão no aparelho. ESLint continua indisponível porque o pacote não existe em `node_modules`.
+
+## Hoje e reserva de faturas — 27/10/2026
+
+- A lista renderiza os dias até hoje na abertura e repete a rolagem caso os itens ainda não tenham sido medidos.
+- A grade também abre na linha de hoje. Mês atual reposiciona o dia mesmo quando o mês já está selecionado.
+- Removido o aviso de que as faturas estão fora da projeção; a configuração de inclusão permanece disponível.
+- Com faturas incluídas, o saldo pendente das competências futuras é reservado no primeiro dia de cada mês. Não há novo desconto no vencimento. No mês atual, mantém-se vencimento/hoje para faturas vencidas.
+- Os detalhes do dia 1 identificam cada reserva pelo nome do cartão. Antecipações, faturas quitadas e créditos continuam respeitando o cálculo central.
+- Validação: TypeScript, git diff --check e 14 testes específicos aprovados. Sem validação física no S23 nesta etapa.

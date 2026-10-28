@@ -13,11 +13,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 interface CategoryTransactionsModalProps {
   category: string;
   transactions: Transaction[];
-  hiddenValues?: boolean;
   onClose: () => void;
 }
 
-export function CategoryTransactionsModal({ category, transactions, hiddenValues = false, onClose }: CategoryTransactionsModalProps) {
+export function CategoryTransactionsModal({ category, transactions, onClose }: CategoryTransactionsModalProps) {
   const { colors } = useTheme();
   const { accounts, tags } = useStoreContext();
   const insets = useSafeAreaInsets();
@@ -55,7 +54,7 @@ export function CategoryTransactionsModal({ category, transactions, hiddenValues
         <View style={[styles.summaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <Text style={[styles.summaryLabel, { color: colors.mutedForeground }]}>Total Gasto</Text>
           <Text style={[styles.summaryValue, { color: colors.destructive }]}>
-            - {hiddenValues ? '••••' : formatCurrency(totalAmount)}
+            - {formatCurrency(totalAmount)}
           </Text>
         </View>
 
@@ -82,7 +81,6 @@ export function CategoryTransactionsModal({ category, transactions, hiddenValues
                 isFirst={index === 0}
                 isLast={index === categoryTransactions.length - 1}
                 hideIcon={true}
-                hideValues={hiddenValues}
               />
             );
           }}
