@@ -41,4 +41,5 @@ app-example
 # generated native folders
 /ios
 /android
+/modules/notification-capture/android/build/
 node_modules

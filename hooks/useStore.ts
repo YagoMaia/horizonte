@@ -1,4 +1,6 @@
-import { DeviceEventEmitter } from 'react-native';
+import { IMPORT_RESET_KEY, withPurchaseImportPaused } from '@/lib/purchaseImportLifecycle';
+import { clearPurchaseImportStorage } from '@/lib/purchaseImportStorage';
+import { findPotentialPurchaseDuplicate, PossiblePurchaseDuplicateError } from '@/lib/purchaseImport';
 // hooks/useStore.ts
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -651,6 +653,10 @@ export function useStore() {
   }, [scheduleEnabledNotifications]);
 
   const clearAllData = useCallback(async () => {
+    await AsyncStorage.setItem(IMPORT_RESET_KEY, '1');
+    return withPurchaseImportPaused(async () => {
+    await Promise.all([projectWriteQueue.current, goalWriteQueue.current, tagWriteQueue.current]);
+    return enqueueFinancialWrite(async () => {
     await Promise.all([
       NotificationService.cancelDailyReminder(),
       NotificationService.cancelExpenseReminder(),
@@ -671,7 +677,10 @@ export function useStore() {
       STORAGE_KEYS.USER_SETTINGS,
       '@horizonte:project_journal',
       '@horizonte:goal_journal',
+      '@horizonte:ledger_journal',
+      '@horizonte:restore_journal',
     ]);
+    await clearPurchaseImportStorage();
     setTransactions(DEFAULT_TRANSACTIONS);
     setAccounts(DEFAULT_ACCOUNTS);
     setTags(DEFAULT_TAGS);
@@ -694,8 +703,10 @@ export function useStore() {
       { id: 'period', visible: true },
     ]);
     setUserSettings(DEFAULT_USER_SETTINGS);
-    DeviceEventEmitter.emit('horizonte:clear-import');
-  }, []);
+    await AsyncStorage.removeItem(IMPORT_RESET_KEY);
+    });
+    });
+  }, [enqueueFinancialWrite]);
 
   const setShowPending = useCallback(async (value: boolean) => {
     setShowPendingState(value);
@@ -725,12 +736,14 @@ export function useStore() {
   }), [enqueueTagWrite, saveTags]);
 
   const addTransaction = useCallback(
-    (tx: any) => enqueueFinancialWrite(async () => {
+    (input: any) => enqueueFinancialWrite(async () => {
+      const { notificationImportOverride, ...tx } = input;
       const accounts = accountsRef.current;
       const transactions = transactionsRef.current;
       if (tx.notificationImportId) {
         const imported = transactions.find(item => item.notificationImportId === tx.notificationImportId);
         if (imported) return imported;
+        if (!notificationImportOverride && findPotentialPurchaseDuplicate(transactions, tx)) throw new PossiblePurchaseDuplicateError();
       }
       const newTransactions: Transaction[] = [];
       const targetAccount = accounts.find((a) => a.id === tx.accountId);

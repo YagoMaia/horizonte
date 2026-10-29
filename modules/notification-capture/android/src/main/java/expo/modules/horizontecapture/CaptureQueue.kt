@@ -6,11 +6,12 @@ import org.json.JSONObject
 
 object CaptureQueue {
   private fun prefs(context: Context) = context.getSharedPreferences("horizonte_capture", Context.MODE_PRIVATE)
+  @Synchronized fun isEnabled(context: Context, packageName: String): Boolean = prefs(context).getStringSet("packages", emptySet())!!.contains(packageName)
   @Synchronized fun configure(context: Context, packages: List<String>) {
-    prefs(context).edit().putStringSet("packages", packages.toSet()).commit()
+    check(prefs(context).edit().putStringSet("packages", packages.toSet()).commit()) { "Não foi possível salvar os aplicativos de captura." }
   }
   @Synchronized fun add(context: Context, item: JSONObject) {
-    if (!prefs(context).getStringSet("packages", emptySet())!!.contains(item.getString("packageName"))) return
+    if (!isEnabled(context, item.getString("packageName"))) return
     val rows = JSONArray(prefs(context).getString("queue", "[]"))
     for (i in 0 until rows.length()) if (rows.getJSONObject(i).getString("id") == item.getString("id")) return
     // Bound disk use; account for overflow rather than silently claiming full capture.
@@ -26,8 +27,8 @@ object CaptureQueue {
   @Synchronized fun acknowledge(context: Context, ids: List<String>) {
     val rows = JSONArray(read(context)); val next = JSONArray(); val removed = ids.toSet()
     for (i in 0 until rows.length()) if (!removed.contains(rows.getJSONObject(i).getString("id"))) next.put(rows.getJSONObject(i))
-    prefs(context).edit().putString("queue", next.toString()).commit()
+    check(prefs(context).edit().putString("queue", next.toString()).commit()) { "Não foi possível confirmar as capturas." }
   }
   @Synchronized fun dropped(context: Context): Int = prefs(context).getInt("dropped", 0)
-  @Synchronized fun clear(context: Context) { prefs(context).edit().clear().commit() }
+  @Synchronized fun clear(context: Context) { check(prefs(context).edit().clear().commit()) { "Não foi possível limpar as capturas." } }
 }

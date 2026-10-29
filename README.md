@@ -109,3 +109,5 @@ Todos os dados são salvos localmente com `@react-native-async-storage/async-sto
 ## Compras por notificações (Android)
 
 Acesse Menu → Importar compras de notificações no novo APK. Escolha o aplicativo do banco, ative a captura e configure crédito/débito independentemente. Conceda acesso às notificações na tela Android. O app captura em segundo plano e processa a fila ao reabrir; com ele aberto, verifica a cada 10 segundos. Consulte `IMPORTACAO_NOTIFICACOES.md` para regras, testes e limitações de validação nativa.
+
+Associe os finais dos cartões aos destinos. Compras sem final ficam para revisão, a menos que você autorize usar o destino padrão nessa situação. Finais desconhecidos e possíveis duplicatas exigem revisão. É possível confirmar parcelas nessa tela, informando se o valor corresponde ao total ou a cada parcela.

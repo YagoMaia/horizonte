@@ -194,6 +194,42 @@ it('reprocessar a mesma notificação não cria uma segunda despesa', async () =
   expect(result.current.totalBalance).toBe(-100);
 });
 
+it('identificadores diferentes da mesma compra e lançamento manual exigem confirmação', async () => {
+  await seed([tx({ type: 'despesa', description: 'Registrada manualmente' })]);
+  const { result } = await openStore();
+  await act(async () => {
+    await expect(result.current.addTransaction({ ...tx({ type: 'despesa' }), notificationImportId: 'other-event' })).rejects.toThrow('parecido');
+    await result.current.addTransaction({ ...tx({ type: 'despesa' }), notificationImportId: 'other-event', notificationImportOverride: true });
+  });
+  expect(result.current.transactions).toHaveLength(2);
+  expect(result.current.transactions[0]).not.toHaveProperty('notificationImportOverride');
+  await act(async () => {
+    await expect(result.current.addTransaction({ ...tx({ type: 'despesa' }), notificationImportId: 'third-event' })).rejects.toThrow('parecido');
+  });
+  expect(result.current.transactions).toHaveLength(2);
+});
+
+it('duas capturas simultâneas com IDs diferentes não atravessam a conferência de duplicatas', async () => {
+  await seed([]); const { result } = await openStore();
+  let writes: PromiseSettledResult<unknown>[] = [];
+  await act(async () => { writes = await Promise.allSettled(['event-a', 'event-b'].map(notificationImportId => result.current.addTransaction({ ...tx({ type: 'despesa' }), notificationImportId }))); });
+  expect(writes.map(write => write.status).sort()).toEqual(['fulfilled', 'rejected']);
+  expect(result.current.transactions).toHaveLength(1);
+});
+
+it('reenvio de compra parcelada reconhece o total e não cria novas parcelas', async () => {
+  const card: Account = { ...account, id: 'card', type: 'cartao_credito', closingDay: 20, dueDay: 28 };
+  await seed([], [card]); const { result } = await openStore();
+  const purchase = { ...tx({ type: 'despesa', amount: 100.01, accountId: 'card', date: '2026-10-10' }), totalInstallments: 3 };
+  await act(async () => {
+    await result.current.addTransaction({ ...purchase, notificationImportId: 'first-event' });
+    await expect(result.current.addTransaction({ ...purchase, notificationImportId: 'second-event' })).rejects.toThrow('parecido');
+    await result.current.addTransaction({ ...purchase, notificationImportId: 'first-event' });
+  });
+  expect(result.current.transactions).toHaveLength(3);
+  expect(Math.round(result.current.transactions.reduce((sum, t) => sum + t.amount, 0) * 100)).toBe(10001);
+});
+
 it('uma criação que falhou não bloqueia a fila nem remove dados anteriores', async () => {
   await seed([tx({ id: 'before' })]); const { result } = await openStore();
   jest.mocked(AsyncStorage.multiSet).mockRejectedValueOnce(new Error('Sem espaço'));
