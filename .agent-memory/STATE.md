@@ -9,3 +9,4 @@ Ambiente: Java 17 localizado no cache Gradle, fora do PATH; SDK disponível. Sem
 Próxima etapa: APK e roteiro de validação física no S23 com mensagens reais dos bancos.
 Interface em 30/10: importação acessível em Saldos; atalho mês atual removido de Saldos; Faturas no dia 1 agora dentro de Planejamento do Horizonte (tipos e nove testes aprovados).
 Importação em 30/10: interface reorganizada em Bancos e Para revisar, com edição separada de crédito/débito; TypeScript e 13 testes aprovados. Ver tasks/completed/2026-10-30-visual-importacao.md.
+Cabeçalho em 30/10: título e atalhos na mesma linha; Horizonte/Importar compactos (ícones) no celular, respeitando escala de fonte e áreas de toque de 48.

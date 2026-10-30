@@ -6,6 +6,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
+  useWindowDimensions,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
@@ -28,6 +29,8 @@ import { Redirect, useRouter } from 'expo-router'
 export default function HomePage() {
   const router = useRouter();
   const { colors } = useTheme()
+  const { width, fontScale } = useWindowDimensions()
+  const compactHeader = width / fontScale < 440
   const store = useStoreContext()
   const [activeTab, setActiveTab] = useState<TabType>('saldos')
   const cardViewRef = useRef<CardViewState | null>(null)
@@ -116,8 +119,12 @@ export default function HomePage() {
         <View style={styles.headerRight}>
           {/* Horizonte shortcut */}
           <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel={activeTab === 'horizonte' ? 'Voltar aos saldos' : 'Abrir Horizonte'}
+            accessibilityState={{ selected: activeTab === 'horizonte' }}
             style={[
               styles.horizonBtn,
+              compactHeader && styles.compactShortcut,
               { backgroundColor: activeTab === 'horizonte' ? colors.primary : colors.secondary }
             ]}
             onPress={() => {
@@ -128,25 +135,25 @@ export default function HomePage() {
           >
             <Ionicons
               name="calendar-outline"
-              size={16}
+              size={20}
               color={activeTab === 'horizonte' ? '#FFF' : colors.mutedForeground}
             />
-            <Text style={[
+            {!compactHeader && <Text style={[
               styles.horizonBtnText,
               { color: activeTab === 'horizonte' ? '#FFF' : colors.mutedForeground }
             ]}>
               Horizonte
-            </Text>
+            </Text>}
           </TouchableOpacity>
           <TouchableOpacity
             accessibilityRole="button"
             accessibilityLabel="Importar notificações"
-            style={[styles.horizonBtn, { backgroundColor: colors.secondary }]}
+            style={[styles.horizonBtn, compactHeader && styles.compactShortcut, { backgroundColor: colors.secondary }]}
             onPress={() => router.push('/notification-import' as never)}
             activeOpacity={0.8}
           >
-            <Ionicons name="notifications-outline" size={18} color={colors.mutedForeground} />
-            <Text style={[styles.horizonBtnText, { color: colors.mutedForeground }]}>Importar</Text>
+            <Ionicons name="notifications-outline" size={20} color={colors.mutedForeground} />
+            {!compactHeader && <Text style={[styles.horizonBtnText, { color: colors.mutedForeground }]}>Importar</Text>}
           </TouchableOpacity>
         </View>
       </View>
@@ -188,7 +195,6 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   header: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: 8,
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -198,25 +204,27 @@ const styles = StyleSheet.create({
   },
   headerLeft: {
     flexDirection: 'row',
+    flex: 1,
+    minWidth: 0,
     alignItems: 'center',
     gap: 8,
   },
   headerRight: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    maxWidth: '100%',
+    flexShrink: 0,
     alignItems: 'center',
     gap: 8,
   },
   logo: {
     width: 34,
+    flexShrink: 0,
     height: 34,
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
   logoText: { color: '#FFF', fontWeight: '700', fontSize: 16 },
-  logoName: { fontSize: 17, fontWeight: '600' },
+  logoName: { fontSize: 17, fontWeight: '600', flexShrink: 1 },
   headerBtn: {
     width: 36,
     height: 36,
@@ -230,10 +238,12 @@ const styles = StyleSheet.create({
     minWidth: 48,
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 14,
+    justifyContent: 'center',
+    paddingHorizontal: 10,
     paddingVertical: 8,
     borderRadius: 20,
   },
   horizonBtnText: { fontSize: 13, fontWeight: '500' },
+  compactShortcut: { width: 48, paddingHorizontal: 0, borderRadius: 14 },
   content: { flex: 1 },
 })
