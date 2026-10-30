@@ -56,13 +56,14 @@ it('mantém saldo de hoje e apenas receitas realizadas e todas as despesas do m�
   expect(summary.queryByText(/Projeção/)).toBeNull();
   expect(summary.queryByText(/Ajustes realizados/)).toBeNull();
 });
-it('mantém seletor de mês mesmo com a lista oculta e retorna ao mês atual', () => {
+it('mantém navegação entre meses com a lista oculta, sem atalho para o mês atual', () => {
   mockStore.homeLayout[1].visible = false;
   const screen = render(<SaldosScreen />);
   fireEvent.press(screen.getByLabelText('Próximo mês'));
   expect(screen.getByText('novembro de 2026')).toBeTruthy();
   expect(screen.queryByText('Mês atual')).toBeNull();
-  fireEvent.press(screen.getByLabelText('Voltar ao mês atual'));
+  expect(screen.queryByLabelText('Voltar ao mês atual')).toBeNull();
+  fireEvent.press(screen.getByLabelText('Mês anterior'));
   expect(screen.queryByText(/novembro de 2026/)).toBeNull();
   expect(screen.queryByLabelText('Buscar lançamentos')).toBeNull();
 });

@@ -3,11 +3,12 @@
 ## Como usar
 
 1. Gere e instale um novo APK com `npm run build:apk`. O módulo nativo não existe no APK anterior, Expo Go ou web.
-2. Abra Menu → Importar compras de notificações.
-3. Escolha o aplicativo instalado do banco, ative a captura e configure crédito e débito separadamente: Desativado, Revisar antes ou Automático.
+2. Abra cabeçalho → Importar (ao lado de Horizonte).
+3. Na aba Bancos, toque em Adicionar banco e escolha o aplicativo instalado. Ative a captura e configure Crédito e Débito nas suas respectivas áreas: Desativado, Revisar antes ou Automático. Salve as regras.
 4. Associe os finais de quatro dígitos aos cartões/contas correspondentes. O mesmo aplicativo pode ter vários destinos, e cartões virtuais podem ter vários finais, separados por vírgula. Selecione também o destino padrão. Compras sem final exigem revisão, exceto se você ativar explicitamente a opção de usar o destino padrão sem identificação. Final diferente dos cadastrados sempre exige revisão. Salve as regras.
 5. Use Autorizar acesso no Android e conceda acesso ao Horizonte na tela do sistema. A permissão de enviar notificações é diferente desse acesso.
 6. Faça uma compra de teste e confira a importação e o destino. Textos que não informam claramente modalidade, valor ou parcelas são enviados para revisão.
+7. Acesse Para revisar para conferir as pendências. Ao abrir uma compra, informe os dados e confirme o lançamento ou descarte a sugestão. O texto completo fica em Ver notificação original.
 
 ## Comportamento
 

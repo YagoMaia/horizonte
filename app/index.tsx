@@ -92,7 +92,6 @@ export default function HomePage() {
       case 'menu': 
         return (
           <MenuScreen
-            onNavigateToNotificationImport={() => router.push('/notification-import' as never)}
             onNavigateToAccounts={() => setActiveTab('contas')} 
             onNavigateToProjects={() => setActiveTab('projetos')}
             onNavigateToMetas={() => setActiveTab('metas')}
@@ -138,6 +137,16 @@ export default function HomePage() {
             ]}>
               Horizonte
             </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Importar notificações"
+            style={[styles.horizonBtn, { backgroundColor: colors.secondary }]}
+            onPress={() => router.push('/notification-import' as never)}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="notifications-outline" size={18} color={colors.mutedForeground} />
+            <Text style={[styles.horizonBtnText, { color: colors.mutedForeground }]}>Importar</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -194,6 +203,8 @@ const styles = StyleSheet.create({
   },
   headerRight: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    maxWidth: '100%',
     alignItems: 'center',
     gap: 8,
   },
@@ -215,6 +226,8 @@ const styles = StyleSheet.create({
   },
   horizonBtn: {
     flexDirection: 'row',
+    minHeight: 48,
+    minWidth: 48,
     alignItems: 'center',
     gap: 6,
     paddingHorizontal: 14,

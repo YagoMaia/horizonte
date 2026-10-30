@@ -67,7 +67,6 @@ function MenuItem({ icon, label, value, onPress, danger, disabled = false, color
 }
 
 interface MenuScreenProps {
-  onNavigateToNotificationImport?: () => void;
   onNavigateToAccounts: () => void
   onNavigateToProjects: () => void
   onNavigateToMetas: () => void
@@ -75,7 +74,7 @@ interface MenuScreenProps {
   onNavigateToTotaisLayout: () => void
 }
 
-export function MenuScreen({ onNavigateToNotificationImport, onNavigateToAccounts, onNavigateToProjects, onNavigateToMetas, onNavigateToHomeLayout, onNavigateToTotaisLayout }: MenuScreenProps) {
+export function MenuScreen({ onNavigateToAccounts, onNavigateToProjects, onNavigateToMetas, onNavigateToHomeLayout, onNavigateToTotaisLayout }: MenuScreenProps) {
   const { colors, themeMode, setThemeMode, primaryColor, setPrimaryColor, reloadTheme } = useTheme()
   const { 
     accounts, 
@@ -410,7 +409,6 @@ export function MenuScreen({ onNavigateToNotificationImport, onNavigateToAccount
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
     >
-      <MenuItem icon="notifications-outline" label="Importar compras de notificações" onPress={onNavigateToNotificationImport} colors={colors} />
       {/* Stats */}
       <View style={styles.statsRow}>
         <View style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border }]}>

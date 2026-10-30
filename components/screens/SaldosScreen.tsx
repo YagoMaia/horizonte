@@ -185,9 +185,6 @@ export function SaldosScreen({ viewStateRef, onNavigate }: Props) {
         <Text accessibilityRole="header" style={[styles.title, { color: monthForeground, flex: 1, textAlign: 'center' }]}>{monthLabel(month)}</Text>
         <TouchableOpacity accessibilityRole="button" accessibilityLabel="Próximo mês" onPress={() => navigateMonth(1)} style={styles.iconButton}><Ionicons name="chevron-forward" size={24} color={monthForeground} /></TouchableOpacity>
       </View>
-      <View style={styles.toolbar}>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Voltar ao mês atual" accessibilityHint="Exibe os lançamentos do mês de hoje" onPress={() => { setMonth(today.slice(0, 7)); setLimit(20); }} style={styles.iconButton}><Ionicons name="today-outline" size={22} color={monthForeground} /></TouchableOpacity>
-      </View>
     </View>
     <OverviewSections sections={layout.before} {...blocks} />
     {layout.transactions && <View style={styles.section}>
